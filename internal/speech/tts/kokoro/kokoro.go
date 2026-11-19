@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -87,13 +88,18 @@ func (k *TextToSpeech) Voices(ctx context.Context) ([]string, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("kokoro: voices refused with status %d", resp.StatusCode)
 	}
+	// A pointer, so an answer with no list or a null one is told from an empty list: a service that
+	// answers so is not working, and no voice can be named against it.
 	var list struct {
-		Voices []string `json:"voices"`
+		Voices *[]string `json:"voices"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxVoicesBytes)).Decode(&list); err != nil {
 		return nil, fmt.Errorf("kokoro: voices: %w", err)
 	}
-	return list.Voices, nil
+	if list.Voices == nil {
+		return nil, errors.New("kokoro: voices: the answer has no list")
+	}
+	return *list.Voices, nil
 }
 
 // Speak asks Kokoro for each phrase once the phrase before is made, so the next is made while

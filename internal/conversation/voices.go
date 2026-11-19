@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
 )
@@ -53,18 +54,21 @@ func checkVoiceSettings(r StartRequest) error {
 	return nil
 }
 
+// defaultVoicesTimeout is how long the voice list is waited for: a list is a few hundred bytes
+// from a service on the same network, answered in milliseconds, so 2s is a wide margin that still
+// answers 503 well inside a start's 10s when the text-to-speech service stalls. A round guess, to
+// be measured against Kokoro-FastAPI under load.
+const defaultVoicesTimeout = 2 * time.Second
+
 // checkVoiceOffered refuses a voice the text-to-speech service doesn't offer.
 // A start naming none doesn't ask, so a text-only session never depends on it.
 func (s *Service) checkVoiceOffered(ctx context.Context, voice string) error {
 	if voice == "" {
 		return nil
 	}
-	if s.voices == nil {
-		return fmt.Errorf("%w: no text-to-speech service to ask", ErrVoicesUnavailable)
-	}
-	offered, err := s.voices.Voices(ctx)
+	offered, err := s.Voices(ctx)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrVoicesUnavailable, err)
+		return err
 	}
 	if !slices.Contains(offered, voice) {
 		return fmt.Errorf("%w: %q isn't one of the text-to-speech service's voices", ErrUnknownVoice, voice)
@@ -73,16 +77,20 @@ func (s *Service) checkVoiceOffered(ctx context.Context, voice string) error {
 }
 
 // Voices lists the voices a session may speak in, for a product's server to
-// choose from.
+// choose from: the text-to-speech service's, less any whose name a start would
+// refuse, so a listed voice can always be named. A service that stalls or
+// fails is ErrVoicesUnavailable.
 func (s *Service) Voices(ctx context.Context) ([]string, error) {
 	if s.voices == nil {
 		return nil, fmt.Errorf("%w: no text-to-speech service to ask", ErrVoicesUnavailable)
 	}
+	ctx, cancel := context.WithTimeout(ctx, cmp.Or(s.settings.VoicesTimeout, defaultVoicesTimeout))
+	defer cancel()
 	offered, err := s.voices.Voices(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrVoicesUnavailable, err)
 	}
-	return offered, nil
+	return slices.DeleteFunc(slices.Clone(offered), func(name string) bool { return !agents.IsVoiceName(name) }), nil
 }
 
 // voiceOf is the voice and speed a session speaks in: the start's, else the

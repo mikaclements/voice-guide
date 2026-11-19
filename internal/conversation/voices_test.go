@@ -6,32 +6,21 @@ import (
 	"math"
 	"slices"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/conversation"
+	voicefake "github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
-// offeredVoices is the text-to-speech service's list in these tests: the fake of conversation's
-// voice port. It counts the times it was asked, and fails them while err is set.
-type offeredVoices struct {
-	names []string
-	err   error
-	asked int
-}
-
-func (o *offeredVoices) Voices(context.Context) ([]string, error) {
-	o.asked++
-	return slices.Clone(o.names), o.err
-}
-
 // withVoices returns the harness with a service that checks voices against the list, and
 // speaks in the server's af_heart at its own pace unless the agent or the start says otherwise.
-func withVoices(t *testing.T) (serviceOverFakes, *offeredVoices) {
+func withVoices(t *testing.T) (serviceOverFakes, *voicefake.List) {
 	t.Helper()
 	h := newServiceOverFakes(t)
-	list := &offeredVoices{names: []string{"af_heart", "bf_emma", "am_adam"}}
+	list := voicefake.New("af_heart", "bf_emma", "am_adam")
 	h.settings.Voice, h.settings.Speed = "af_heart", 1
 	h.svc = conversation.NewService(agents.NewCatalog(h.agents), h.sessions, h.turns, h.model, usercontext.NewService(h.items), h.settings, conversation.WithVoices(list))
 	return h, list
@@ -70,8 +59,8 @@ func TestASessionSpeaksInTheServersVoiceUnlessTheAgentOrTheStartNamesOne(t *test
 	if err != nil || voiceOnly.Voice != "af_heart" || voiceOnly.Speed != 1.25 {
 		t.Errorf("a start naming a voice only = %q at %v (%v), want af_heart at the agent's 1.25", voiceOnly.Voice, voiceOnly.Speed, err)
 	}
-	if list.asked != 2 {
-		t.Errorf("the voices were asked %d times, want 2: once for each start that named a voice, none for the others", list.asked)
+	if list.Asked() != 2 {
+		t.Errorf("the voices were asked %d times, want 2: once for each start that named a voice, none for the others", list.Asked())
 	}
 }
 
@@ -106,8 +95,8 @@ func TestAVoiceOrSpeedOutOfFormOrRangeIsRefusedBeforeAnyRequestToTheService(t *t
 			h, list := withVoices(t)
 			r.Agent, r.RequestID = keeperID, uuid.NewV7()
 			_, _, err := h.startAs(caller, r)
-			if !errors.Is(err, conversation.ErrVoiceSettings) || list.asked != 0 || h.sessions.Count() != 0 {
-				t.Errorf("StartSession = %v, asked %d times, %d sessions; want ErrVoiceSettings, none asked, none saved", err, list.asked, h.sessions.Count())
+			if !errors.Is(err, conversation.ErrVoiceSettings) || list.Asked() != 0 || h.sessions.Count() != 0 {
+				t.Errorf("StartSession = %v, asked %d times, %d sessions; want ErrVoiceSettings, none asked, none saved", err, list.Asked(), h.sessions.Count())
 			}
 		})
 	}
@@ -125,20 +114,20 @@ func TestASpeedAtEitherEndOfTheRangeIsAccepted(t *testing.T) {
 
 func TestAStartNamingNoVoiceNeverAsksSoATextOnlySessionDoesNotDependOnTheService(t *testing.T) {
 	h, list := withVoices(t)
-	list.err = errors.New("text-to-speech is down")
-	if _, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7()}); err != nil || list.asked != 0 {
-		t.Errorf("StartSession = %v, voices asked %d times; want a start without asking", err, list.asked)
+	list.Fail(errors.New("text-to-speech is down"))
+	if _, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7()}); err != nil || list.Asked() != 0 {
+		t.Errorf("StartSession = %v, voices asked %d times; want a start without asking", err, list.Asked())
 	}
 }
 
 func TestAStartNamingAVoiceWhileTheListIsUnreachableIsRefusedAndTheSameRequestCanBeTriedAgain(t *testing.T) {
 	h, list := withVoices(t)
-	list.err = errors.New("text-to-speech is down")
+	list.Fail(errors.New("text-to-speech is down"))
 	r := conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), Voice: "bf_emma"}
 	if _, _, err := h.startAs(caller, r); !errors.Is(err, conversation.ErrVoicesUnavailable) || h.sessions.Count() != 0 {
 		t.Fatalf("StartSession = %v with %d sessions, want ErrVoicesUnavailable and none", err, h.sessions.Count())
 	}
-	list.err = nil
+	list.Fail(nil)
 	if got, isNew, err := h.startAs(caller, r); err != nil || !isNew || got.Voice != "bf_emma" {
 		t.Errorf("the same request after it came back = %+v, %v, %v; want a new session in bf_emma", got, isNew, err)
 	}
@@ -167,13 +156,49 @@ func TestARepeatedStartKeepsTheFirstStartsVoiceAndSpeed(t *testing.T) {
 func TestTheVoicesAServiceListsAreThoseTheTextToSpeechServiceOffers(t *testing.T) {
 	h, list := withVoices(t)
 	got, err := h.svc.Voices(context.Background())
-	if err != nil || !slices.Equal(got, list.names) {
-		t.Errorf("Voices = %v, %v; want %v", got, err, list.names)
+	if err != nil || !slices.Equal(got, []string{"af_heart", "bf_emma", "am_adam"}) {
+		t.Errorf("Voices = %v, %v; want the three it holds", got, err)
 	}
-	list.err = errors.New("down")
+	list.Fail(errors.New("down"))
 	if _, err := h.svc.Voices(context.Background()); !errors.Is(err, conversation.ErrVoicesUnavailable) {
 		t.Errorf("Voices = %v while the list is down, want ErrVoicesUnavailable", err)
 	}
 }
 
 func nan() float64 { return math.NaN() }
+
+func TestARepeatedStartWhileTheListIsDownGetsItsFirstSessionBackWithoutAsking(t *testing.T) {
+	h, list := withVoices(t)
+	r := conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), Voice: "bf_emma"}
+	first, _, err := h.startAs(caller, r)
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	list.Fail(errors.New("text-to-speech is down"))
+	again, isNew, err := h.startAs(caller, r)
+	if err != nil || isNew || again.ID != first.ID || list.Asked() != 1 {
+		t.Errorf("the repeat = %+v, new %v, %v, voices asked %d times; want the first session back and the list asked once, for the first start", again, isNew, err, list.Asked())
+	}
+}
+
+func TestAListThatStallsIsGivenUpOnQuicklyAndTheStartCanBeTriedAgain(t *testing.T) {
+	h, list := withVoices(t)
+	list.Block = true
+	h.settings.VoicesTimeout = 20 * time.Millisecond
+	h.svc = conversation.NewService(agents.NewCatalog(h.agents), h.sessions, h.turns, h.model, usercontext.NewService(h.items), h.settings, conversation.WithVoices(list))
+	began := time.Now()
+	_, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), Voice: "bf_emma"})
+	if !errors.Is(err, conversation.ErrVoicesUnavailable) || time.Since(began) > 5*time.Second || h.sessions.Count() != 0 {
+		t.Errorf("StartSession = %v after %s with %d sessions; want ErrVoicesUnavailable soon and none saved", err, time.Since(began), h.sessions.Count())
+	}
+}
+
+func TestTheVoicesListedAreOnlyThoseAStartWouldAccept(t *testing.T) {
+	h, _ := withVoices(t)
+	blended := voicefake.New("af_heart", "af_bella+af_sky", "../x", "BF_emma", "af_v0bella")
+	h.svc = conversation.NewService(agents.NewCatalog(h.agents), h.sessions, h.turns, h.model, usercontext.NewService(h.items), h.settings, conversation.WithVoices(blended))
+	got, err := h.svc.Voices(context.Background())
+	if want := []string{"af_heart", "af_v0bella"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("Voices = %v, %v; want %v: a blend, a path and capitals left out", got, err, want)
+	}
+}

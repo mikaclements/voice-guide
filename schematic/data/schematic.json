@@ -1746,7 +1746,7 @@
           "path": "voices.go",
           "summary": "The voices the text-to-speech service offers, to check a voice a start names.",
           "members": ["Voices() → []string"],
-          "description": "The port for the voices on offer: a start naming a voice is checked against it, and GET /v1/voices lists it. A start naming no voice never asks, so a session in text doesn't depend on the text-to-speech service. Conversation stays text-only: it keeps a session's voice and speed as settings, and speech's text-to-speech, wired in by cmd/voice, answers the list.",
+          "description": "The port for the voices on offer: a start naming a voice is checked against it, and GET /v1/voices lists it. A start naming no voice never asks, so a session in text doesn't depend on the text-to-speech service. Conversation stays text-only: it keeps a session's voice and speed as settings, and the Kokoro adapter of speech's text-to-speech, wired in by cmd/voice, answers the list. The list is waited for 2 s at most, and names a start would refuse are left out.",
           "why": "Only a voice named at a start is checked, so a text-only session never depends on the text-to-speech service.",
           "considerations": ["kokoro"],
           "drill": "types-conversation",
@@ -1949,7 +1949,7 @@
           "from": "x-speech",
           "to": "p-voices",
           "style": "implements",
-          "detail": "cmd/voice hands conversation speech's text-to-speech, which lists the voices."
+          "detail": "cmd/voice hands conversation the Kokoro adapter of speech's text-to-speech, which also lists the voices; speech's own core never asks for them."
         },
         {
           "id": "pg-sessions",
@@ -2426,8 +2426,8 @@
           "path": "texttospeech.go",
           "setting": "VOICE_TTS: kokoro · fake",
           "summary": "Reply text in, 20 ms Opus packets out.",
-          "members": ["Speak(voice, speed, <-chan string) → <-chan Packet", "Voices() → []string"],
-          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it, in the session's voice and at its speed, and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out. Voices lists the voices the service offers, which conversation checks a voice named at a start against.",
+          "members": ["Speak(voice, speed, <-chan string) → <-chan Packet"],
+          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it, in the session's voice and at its speed, and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out.",
           "why": "Each phrase's packets mark where it ends in the reply, so after an interrupt voice knows how much was heard.",
           "considerations": ["kokoro", "heard"],
           "drill": "types-speech",
@@ -3674,6 +3674,7 @@
     "internal/conversation/model/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/conversation/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/conversation/webhook/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
+    "internal/conversation/voicelist/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/jobs/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/productkey/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/speech/detection/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",

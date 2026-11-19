@@ -221,13 +221,8 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 
 	userContext := usercontext.NewService(usercontextstore.New(pool))
 	sessions, turns := conversationstore.NewSessions(pool), conversationstore.NewTurns(pool)
-	// Text-to-speech also lists the voices a session may start with, which conversation checks a
-	// voice named at a start against.
-	var tts speech.TextToSpeech = kokoro.New(cfg.ttsURL, kokoro.Options{FirstAudio: cfg.firstAudio})
-	if cfg.tts == "fake" {
-		tts = ttsfake.TextToSpeech{}
-	}
-	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings, conversation.WithVoices(tts))
+	tts, voices := newTextToSpeech(cfg)
+	svc := newConversation(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg, voices)
 	deliveries := conversation.NewDeliveries(sessions, turns, conversationstore.NewWebhooks(pool), userContext, webhookhttp.New(webhookhttp.Deadline))
 	transport, err := webrtctransport.New(cfg.audio, speech.MessageLimit(svc.TurnLimit()), log)
 	if err != nil {
@@ -296,6 +291,24 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	}
 	log.Info("voice stopped cleanly")
 	return nil
+}
+
+// newTextToSpeech returns what speaks replies and, from the same service, the list of voices a
+// session may be started with: speech's core never asks for the list, so it is the adapter's own
+// method, handed to conversation as its port.
+func newTextToSpeech(cfg config) (speech.TextToSpeech, conversation.VoiceList) {
+	if cfg.tts == "fake" {
+		return ttsfake.TextToSpeech{}, ttsfake.TextToSpeech{}
+	}
+	k := kokoro.New(cfg.ttsURL, kokoro.Options{FirstAudio: cfg.firstAudio})
+	return k, k
+}
+
+// newConversation returns the conversation service, checking the voice a start names against
+// voices. Kept apart from run so a test can build it as run does: a service built without the
+// list refuses every start that names a voice.
+func newConversation(catalog *agents.Catalog, sessions conversation.Sessions, turns conversation.Turns, model conversation.Model, userContext *usercontext.Service, cfg config, voices conversation.VoiceList) *conversation.Service {
+	return conversation.NewService(catalog, sessions, turns, model, userContext, cfg.settings, conversation.WithVoices(voices))
 }
 
 // summaryJob runs a session's summary job. When the model service has no free place for it, the

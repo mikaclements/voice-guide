@@ -22,9 +22,6 @@ type TextToSpeech interface {
 	// closed after the last packet, or soon after cancelling ctx stops the
 	// speech; a failure ends it with one Packet carrying Err.
 	Speak(ctx context.Context, voice string, speed float64, text <-chan string) <-chan Packet
-	// Voices returns the names of the voices it can speak in, which a session
-	// may be started with.
-	Voices(ctx context.Context) ([]string, error)
 }
 
 // Packet is one packet of a reply's speech, or the failure that ended it.

@@ -429,11 +429,13 @@ func TestVoicesAreListedFromKokorosVoicesRoute(t *testing.T) {
 	}
 }
 
-func TestVoicesFailWhenKokoroIsDownOrAnswersWhatItShouldNot(t *testing.T) {
+func TestVoicesFailWhenKokoroIsDownOrAnswersWithoutAList(t *testing.T) {
 	for name, h := range map[string]http.HandlerFunc{
-		"refusing":   func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) },
-		"not JSON":   func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>")) },
-		"not a list": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":"af_heart"}`)) },
+		"refusing":    func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) },
+		"not JSON":    func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>")) },
+		"not a list":  func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":"af_heart"}`)) },
+		"no list":     func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) },
+		"a null list": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":null}`)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got, err := serving(t, h).Voices(t.Context()); err == nil {
@@ -445,5 +447,12 @@ func TestVoicesFailWhenKokoroIsDownOrAnswersWhatItShouldNot(t *testing.T) {
 	srv.Close()
 	if _, err := kokoro.New(srv.URL, kokoro.Options{}).Voices(t.Context()); err == nil {
 		t.Error("Voices with nothing listening, want an error")
+	}
+}
+
+func TestAnEmptyListOfVoicesIsAnswered(t *testing.T) {
+	tts := serving(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":[]}`)) })
+	if got, err := tts.Voices(t.Context()); err != nil || len(got) != 0 {
+		t.Errorf("Voices = %v, %v; want an empty list and no error", got, err)
 	}
 }

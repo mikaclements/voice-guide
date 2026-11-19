@@ -49,6 +49,8 @@ type Settings struct {
 	Voice string
 	// Speed is how fast that voice speaks, 1 its own pace, when neither names one.
 	Speed float64
+	// VoicesTimeout is how long the voice list is waited for; a default when zero.
+	VoicesTimeout time.Duration
 }
 
 // NewService returns the service over the agents the catalog offers, the
