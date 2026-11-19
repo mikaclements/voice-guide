@@ -14,35 +14,6 @@ A product, such as a job site, puts an agent on its own page in a few lines of H
 - **Embeds in a product.** The drop-in client puts a `<voice-guide-session>` element on the page, and a signed webhook goes to the product's server with the transcript and summary when a session ends.
 - **Agents are Markdown files.** Each holds the agent's persona, the context it needs and how it sums up a session.
 
-<a id="how-it-works"></a>
-## How it works
-
-```mermaid
-%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
-flowchart LR
-    P[Product's server] -- product key: start, end --> G
-    B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
-    B <-- WebRTC audio --> G
-    G -- signed webhook --> P
-    G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
-    G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
-    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
-    G <--> DB[(PostgreSQL)]
-```
-
-A box's last lines name the settings that switch it, in `.env` or the agent file.
-
-At voice-guide's centre is one Go service, scaled by running more copies. It has four modules:
-- **Conversation** keeps sessions and their turns, in text.
-- **Speech** runs the audio connection, hearing the user and speaking the agent.
-- **User context** loads what an agent may know about the user, and saves what a session learned.
-- **Agents** holds the published versions of each agent file.
-
-Conversation and speech together are voice: the part of voice-guide that gives an agent a voice.
-
-<a id="schematic"></a>
-**The schematic** is a clickable map of all of it, from the services down to the types in the code, with what flows over every connection and the design decisions behind each part. Each level has walk-throughs to play, such as "You say something" or "A session ends", that light up the parts involved one step at a time. Run `scripts/schematic.sh` (nothing else needs to be running), open http://127.0.0.1:5180, and double-click a card to go down a level.
-
 <a id="quickstart"></a>
 ## Quickstart
 
@@ -104,6 +75,35 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 - If what you say isn't heard: the web page shows "Listening" only once the browser has the microphone, so allow it when asked, and check the button doesn't say "Unmute". The log in the script's terminal shows "speech noticed" as you speak. A warning about hearing what you said means the speech-to-text service isn't answering (`docker compose ps stt`).
 
 </details>
+
+<a id="how-it-works"></a>
+## How it works
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
+flowchart LR
+    P[Product's server] -- product key: start, end --> G
+    B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
+    B <-- WebRTC audio --> G
+    G -- signed webhook --> P
+    G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
+    G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
+    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
+    G <--> DB[(PostgreSQL)]
+```
+
+A box's last lines name the settings that switch it, in `.env` or the agent file.
+
+At voice-guide's centre is one Go service, scaled by running more copies. It has four modules:
+- **Conversation** keeps sessions and their turns, in text.
+- **Speech** runs the audio connection, hearing the user and speaking the agent.
+- **User context** loads what an agent may know about the user, and saves what a session learned.
+- **Agents** holds the published versions of each agent file.
+
+Conversation and speech together are voice: the part of voice-guide that gives an agent a voice.
+
+<a id="schematic"></a>
+**The schematic** is a clickable map of all of it, from the services down to the types in the code, with what flows over every connection and the design decisions behind each part. Each level has walk-throughs to play, such as "You say something" or "A session ends", that light up the parts involved one step at a time. Run `scripts/schematic.sh` (nothing else needs to be running), open http://127.0.0.1:5180, and double-click a card to go down a level.
 
 <a id="embedding"></a>
 ## Put an agent on a product
