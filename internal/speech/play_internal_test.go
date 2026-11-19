@@ -63,7 +63,7 @@ func TestPacketsArePacedAndASilenceIsCountedNotMadeUp(t *testing.T) {
 		packets <- Packet{Opus: []byte{0xf8, 0xff, 0xfe}}
 	}
 	close(packets)
-	play(context.Background(), tr, packets, clock, offAir)
+	play(context.Background(), tr, packets, clock, time.Time{}, offAir)
 
 	ms := time.Millisecond
 	// One every 20 ms; after the gap the count starts again at once, with no burst to catch up.
@@ -74,6 +74,36 @@ func TestPacketsArePacedAndASilenceIsCountedNotMadeUp(t *testing.T) {
 		if tr.at[i] != wantAt[i] || tr.silences[i] != wantSilences[i] {
 			t.Errorf("packet %d played at %s after %s of silence, want at %s after %s", i, tr.at[i], tr.silences[i], wantAt[i], wantSilences[i])
 		}
+	}
+}
+
+func TestThePauseSinceTheReplyBeforeIsCountedAsSilence(t *testing.T) {
+	ms := time.Millisecond
+	for _, tc := range []struct {
+		name        string
+		due, now    time.Duration // since the clock's start; due 0 is no reply before
+		wantAt      time.Duration
+		wantSilence time.Duration
+	}{
+		{"seconds after the reply before", 40 * ms, 7040 * ms, 7040 * ms, 7000 * ms},
+		{"the first reply", 0, 500 * ms, 500 * ms, 0},
+		{"before the reply before's next packet was due", 40 * ms, 30 * ms, 40 * ms, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := &testClock{now: time.Time{}.Add(tc.now)}
+			tr := &track{clock: clock}
+			packets := make(chan Packet, 1)
+			packets <- Packet{Opus: []byte{0xf8, 0xff, 0xfe}}
+			close(packets)
+			var due time.Time
+			if tc.due > 0 {
+				due = time.Time{}.Add(tc.due)
+			}
+			play(context.Background(), tr, packets, clock, due, offAir)
+			if tr.at[0] != tc.wantAt || tr.silences[0] != tc.wantSilence {
+				t.Errorf("first packet played at %s after %s of silence, want at %s after %s", tr.at[0], tr.silences[0], tc.wantAt, tc.wantSilence)
+			}
+		})
 	}
 }
 
@@ -99,7 +129,7 @@ func TestNoPacketGoesOutOnceTheUserHasCutIn(t *testing.T) {
 		packets <- Packet{Opus: []byte{0xf8, 0xff, 0xfe}}
 	}
 	close(packets)
-	p := play(ctx, tr, packets, clock, offAir)
+	p := play(ctx, tr, packets, clock, time.Time{}, offAir)
 	if len(tr.at) != 2 || len(p.sent) != 2 || p.stopped.IsZero() {
 		t.Errorf("played %d packets, recorded %d, stopped at %v; want 2, 2 and the time it stopped", len(tr.at), len(p.sent), p.stopped)
 	}

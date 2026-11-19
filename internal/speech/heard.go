@@ -102,6 +102,17 @@ func (a *aired) note(run *turnRun, at time.Time, playing bool) {
 	}
 }
 
+// due returns when the next packet would have gone out after the last one
+// sent, or zero before any.
+func (a *aired) due() time.Time {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.latest.IsZero() {
+		return time.Time{}
+	}
+	return a.latest.Add(PacketDuration)
+}
+
 // heard returns the turn whose reply's audio was reaching the user when they
 // said what reached voice at at, or nil: by the same estimate as the part of a
 // reply heard, its first packet had been heard by then, and it was still
