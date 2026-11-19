@@ -178,11 +178,11 @@ def check_engineering_fields(text):
 
 
 def check_coverage(text):
-    """Every use case defined in a feature is listed in section 4.1, and every quality has a target."""
+    """Every use case defined in a feature is listed in section 3.1, and every quality has a target."""
     defined = re.findall(r'^- <a id="((?:' + USE_CASES.lower() + r')\d+)"></a>', text, re.M)
     listed = re.findall(r"^\| \[[^\]]+\]\(#[^)]+\) \| \[(?:" + USE_CASES + r")\d+\]\(#((?:" + USE_CASES.lower() + r")\d+)\) ", text, re.M)
     if sorted(defined) != sorted(listed):
-        problem(DESIGN, 0, f"use cases in the features and in section 4.1 differ: {sorted(set(defined) ^ set(listed))}")
+        problem(DESIGN, 0, f"use cases in the features and in section 3.1 differ: {sorted(set(defined) ^ set(listed))}")
     for nfr in re.findall(r'<a id="(nfr\d+)"></a>', text):
         if not re.search(r"^\| \[" + nfr.upper() + r" [^\]]+\]\(#" + nfr + r"\) \|", text, re.M):
             problem(DESIGN, 0, f"{nfr.upper()} has no target in any Qualities table")
