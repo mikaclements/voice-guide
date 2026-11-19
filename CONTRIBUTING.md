@@ -1,6 +1,6 @@
 # Contributing
 
-How voice-guide is built, in plain words. The complete rules, with the reasoning behind each engineering decision, are in [docs/reference/contributing.md](docs/reference/contributing.md): same sections, more detail, and it wins where the two differ. Setting up, the commands and where things are come first; the rules follow.
+How voice-guide is built, in plain words. Setting up, the commands and where things are come first. The rules follow, in numbered sections. [docs/reference/contributing.md](docs/reference/contributing.md) has the same numbered sections in more detail, with the reasoning behind each engineering decision, and it wins where the two differ.
 
 <a id="setup"></a>
 ### Set up for development
