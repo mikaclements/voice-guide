@@ -110,11 +110,11 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 
 A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in element. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
 
-`scripts/product-key.sh` and `scripts/webhook.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s.
+`scripts/product-key.sh` and `scripts/webhook.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s. So start `scripts/run.sh` before using them: under `scripts/up.sh`, a key `scripts/product-key.sh` made is refused with `401`.
 
 ### Start a session from the product's server
 
-The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
+The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. On your machine, `VOICE_DEV_PRODUCT_KEY` in `.env` works too, under either `scripts/up.sh` or `scripts/run.sh`. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
 
 ```sh
 curl https://voice.example.com/v1/sessions \
@@ -129,9 +129,9 @@ curl https://voice.example.com/v1/sessions \
 ```
 
 - `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description` and the `session_context` it needs.
-- `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new.
+- `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new. A repeat must carry the same `agent_id` and `session_context`, or it is refused with `422` and the problem type `/v1/problems/request-reused`.
 - `user`: the product's own stable ID for the user, not a name or an email address. It is at most 200 printable characters, on one line. The same ID is the same user every time, so the agent remembers them.
-- `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty.
+- `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty. Its blocks hold at most 20,000 characters in all (`VOICE_SESSION_CONTEXT_MAX_CHARS`); more is refused with `413`.
 
 The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
 
@@ -145,7 +145,11 @@ The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
 }
 ```
 
-The server hands its page `id` and `ticket`, and nothing else. A repeat whose session has ended also carries `ended_at`. A repeat past the ticket's four hours has no `ticket`. In either case, start a new session. An error comes as problem details (`application/problem+json`), and its `detail` says what to fix. A `503` means send the same request again. The server can end a session with `POST /v1/sessions/<session ID>/end` and the same key.
+The server hands its page `id` and `ticket`, and nothing else. A repeat whose session has ended also carries `ended_at`. A repeat past the ticket's four hours has no `ticket`. In either case, start a new session with a new `request_id`.
+
+An error comes as problem details (`application/problem+json`). Its `detail` says what to fix; a `500` has none. A `503` means send the same request again.
+
+The server ends a session with `POST /v1/sessions/<session ID>/end` and the same key. It answers `200` with the session, now carrying `ended_at`, and answers the same to a repeat.
 
 ### Hold the conversation on the product's page
 
