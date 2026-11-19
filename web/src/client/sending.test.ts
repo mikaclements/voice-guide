@@ -176,7 +176,7 @@ test("a send refused as the session ended gives the words back and tells the pag
     update: () => {},
     giveBack: (_you, _reply, words) => givenBack.push(words),
     takeBack: () => {},
-    sessionEnded: () => ended++,
+    sessionOver: () => ended++,
   });
   const refused = (type: string): Turns => ({
     interrupts: false,
@@ -197,7 +197,7 @@ test("a turn refused as ticket-expired, or by any other 401, tells the page the 
     update: () => {},
     giveBack: () => {},
     takeBack: () => {},
-    sessionEnded: (why) => told.push(why),
+    sessionOver: (why) => told.push(why),
   });
   const refusedWith = (type: string): Turns => ({
     interrupts: false,

@@ -69,15 +69,15 @@ export function afterAudioFailure(err: unknown, tries: number): "over" | "retry"
 
 // The page found out its session is over, for why. alreadyOver says whether it knew before. If the
 // ticket ran out and the page did not know, End goes once with that ticket; a second report finds
-// the session already over and sends nothing more. Then showOver shows the session over.
+// the session already over and sends nothing more. Then markOver shows the session over.
 export function reactToOver(
   alreadyOver: boolean,
   why: Over,
   end: () => Promise<unknown>,
-  showOver: (why: Over) => void,
+  markOver: (why: Over) => void,
 ): void {
   if (endsOnExpiry(why, alreadyOver)) end().catch(() => {});
-  showOver(why);
+  markOver(why);
 }
 
 // Ends the session: the audio closes first, so a reply still playing is cut where the user stopped

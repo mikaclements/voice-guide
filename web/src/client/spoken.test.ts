@@ -44,7 +44,7 @@ function harness() {
   const sent: { request_id: string }[] = [];
   const turns = new ChannelTurns(
     (m) => sent.push(JSON.parse(m)),
-    (id, words, follow, lost) => spoken.userSpeech(id, words, follow, lost),
+    (id, words, follow, lost) => spoken.onUserSpeech(id, words, follow, lost),
   );
   const say = (m: object) => turns.receive(JSON.stringify({ request_id: "v1", ...m }));
   return { shown, givenBack, why, say, turns, sender, sent, clock };

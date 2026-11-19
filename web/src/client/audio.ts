@@ -45,7 +45,7 @@ export class ChannelTurns implements Turns {
   private readonly onUserSpeech: OnUserSpeech;
   private readonly turns = new Map<string, Pending>();
   // The words of each spoken turn voice is still hearing, by request ID.
-  private readonly speaking = new Map<string, string>();
+  private readonly userWords = new Map<string, string>();
 
   constructor(send: (msg: string) => void, onUserSpeech: OnUserSpeech = () => {}) {
     this.send = send;
@@ -92,8 +92,8 @@ export class ChannelTurns implements Turns {
       const follow: Follow | undefined = taken
         ? (onText) => this.follow(m.request_id, onText)
         : undefined;
-      if (m.final) this.speaking.delete(m.request_id);
-      else this.speaking.set(m.request_id, words);
+      if (m.final) this.userWords.delete(m.request_id);
+      else this.userWords.set(m.request_id, words);
       this.onUserSpeech(m.request_id, words, follow, Boolean(m.failed));
       return;
     }
@@ -138,9 +138,9 @@ export class ChannelTurns implements Turns {
   // The data channel closed: a reply that had started is lost; one that hadn't may have been taken.
   // Words still being heard are the user's to send or say again: no turn was taken with them.
   closed(): void {
-    for (const [requestId, words] of this.speaking)
+    for (const [requestId, words] of this.userWords)
       this.onUserSpeech(requestId, words, undefined, true);
-    this.speaking.clear();
+    this.userWords.clear();
     for (const t of this.turns.values()) {
       if (t.started) t.ended?.({ ended: "lost" });
       else t.failed?.(new TurnFailure("unsure", "the audio connection closed"));

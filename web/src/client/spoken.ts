@@ -26,7 +26,7 @@ export class SpokenTurns {
 
   // voice heard words of the turn requestId; follow is set once it took the turn with them, and lost
   // once it couldn't hear them all and took none.
-  userSpeech(requestId: string, words: string, follow?: Follow, lost?: boolean): void {
+  onUserSpeech(requestId: string, words: string, follow?: Follow, lost?: boolean): void {
     const youId = `${requestId}:you`;
     if (follow) {
       const unspoke = this.clock?.spoke();

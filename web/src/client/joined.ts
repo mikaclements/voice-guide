@@ -139,7 +139,7 @@ export type Joining = {
 
 // One audio connection the session holds, with its playback once the agent's stream arrives; asked
 // is set once the agent's opening was asked for on it.
-type Opened = { connection: Audio; playback?: Playback; asked?: boolean };
+type HeldAudio = { connection: Audio; playback?: Playback; asked?: boolean };
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -160,7 +160,7 @@ export class JoinedSession {
   // turn still being answered over HTTP is called off.
   private left = false;
   private readonly stop = new AbortController();
-  private audio: Opened | undefined;
+  private audio: HeldAudio | undefined;
   private turns: Turns;
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   // The cap on the greeting's hold of the microphone, while it lasts.
@@ -192,7 +192,7 @@ export class JoinedSession {
           this.note({ error: why });
         },
       ),
-      sessionEnded: (why, err) => this.sessionTurnedOver(why, err),
+      sessionOver: (why, err) => this.foundOver(why, err),
     };
     this.sender = new Sender(this.clock, page);
     this.spoken = new SpokenTurns(page, (words, id) => this.sender.keep(words, id), this.clock);
@@ -328,7 +328,7 @@ export class JoinedSession {
 
   // The session is over, shown by a refusal or by the audio closing. If its ticket ran out, End goes
   // once with that ticket, so the session ends now and its summary runs.
-  private sessionTurnedOver(why: Over, err?: unknown): void {
+  private foundOver(why: Over, err?: unknown): void {
     if (this.left) return;
     reactToOver(
       !!this.state.over,
@@ -369,7 +369,7 @@ export class JoinedSession {
           fetcher: this.deps.fetcher,
           onRefused: () => this.note({ microphone: microphoneRefused }),
           onUserSpeech: (id, words, follow, lost) =>
-            this.spoken.userSpeech(id, words, follow, lost),
+            this.spoken.onUserSpeech(id, words, follow, lost),
         },
       );
       mine = connection;
@@ -377,7 +377,7 @@ export class JoinedSession {
         connection.close(); // let go, or over, while it opened
         return;
       }
-      const opened: Opened = { connection };
+      const opened: HeldAudio = { connection };
       connection.stream.then((stream) => this.startPlayback(opened, stream));
       // The session's first connection, before its opening: a reconnect once it has turns holds nothing.
       if (!this.openedInText && !this.state.messages.length) this.hold();
@@ -397,7 +397,7 @@ export class JoinedSession {
   private afterAudioClosed(why: Closing): void {
     const next = afterClosing(why);
     if (next === "over") {
-      this.sessionTurnedOver(why === "expired" ? "expired" : "ended");
+      this.foundOver(why === "expired" ? "expired" : "ended");
       return;
     }
     this.closeAudio();
@@ -408,7 +408,7 @@ export class JoinedSession {
 
   // Plays the agent's stream of a connection that is still the session's, and asks for the agent's
   // opening once the browser plays it.
-  private startPlayback(opened: Opened, stream: MediaStream): void {
+  private startPlayback(opened: HeldAudio, stream: MediaStream): void {
     if (this.audio !== opened) return;
     opened.playback = this.play(
       stream,
@@ -418,7 +418,7 @@ export class JoinedSession {
   }
 
   // The browser refuses to play the agent until a press, or plays it again after one.
-  private onPlaybackBlocked(opened: Opened, blocked: boolean): void {
+  private onPlaybackBlocked(opened: HeldAudio, blocked: boolean): void {
     if (this.audio !== opened) return;
     this.set({ blocked });
     // The agent's opening, once the browser plays it, at once or from the user's press: a greeting
@@ -431,7 +431,7 @@ export class JoinedSession {
     void this.sender.open(opened.connection.turns, release).finally(release);
   }
 
-  // Opening the audio failed with err and tries are left: try again, or go on in text.
+  // Opening the audio failed with err: try again while tries are left, go on in text, or show the session over.
   private afterConnectFailure(err: unknown, tries: number): void {
     if (this.left) return;
     const next = afterAudioFailure(err, tries);
@@ -439,7 +439,7 @@ export class JoinedSession {
       this.openedInText = true;
       void this.sender.open(this.turns); // shown, not heard, rather than waiting on the tries
     }
-    if (next === "over") this.sessionTurnedOver(whyOver(err) ?? "ended", err);
+    if (next === "over") this.foundOver(whyOver(err) ?? "ended", err);
     else if (next === "retry") {
       this.reconnect = setTimeout(() => this.connect(tries - 1), reconnectEveryMs);
     } else if (next === "text") {

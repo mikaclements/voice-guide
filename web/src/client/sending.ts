@@ -40,7 +40,7 @@ export interface Page {
   takeBack(youId: string, replyId: string): void;
   // Voice refused a send because the session is over: ended, its ticket run out, or refused, with
   // the refusal itself.
-  sessionEnded?(why: Over, err: unknown): void;
+  sessionOver?(why: Over, err: unknown): void;
 }
 
 // One message of a page's transcript; live marks the user's words while voice is still hearing them.
@@ -168,7 +168,7 @@ export class Sender {
       unsend();
       if (this.lastReply === replyId) this.lastReply = before;
       const over = whyOver(err);
-      if (over) this.page.sessionEnded?.(over, err);
+      if (over) this.page.sessionOver?.(over, err);
     }
   }
 
@@ -230,7 +230,7 @@ export class Sender {
         this.page.giveBack(youId, replyId, words, err instanceof Error ? err.message : String(err));
       }
       const over = whyOver(err);
-      if (over) this.page.sessionEnded?.(over, err);
+      if (over) this.page.sessionOver?.(over, err);
     }
   }
 }

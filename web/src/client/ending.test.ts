@@ -84,11 +84,11 @@ test("a page that learns its ticket ran out sends End once; End too late is not 
   assert.equal(endsOnExpiry("unusable", false), false, "a refused ticket can't end it either");
 });
 
-// What reactToOver was told, learning why, over saying whether the page knew already.
-function learning(why: "expired" | "ended" | "unusable", over = false) {
+// What reactToOver was told, saying why, and whether the page knew already.
+function learning(why: "expired" | "ended" | "unusable", alreadyOver = false) {
   const calls: string[] = [];
   reactToOver(
-    over,
+    alreadyOver,
     why,
     async () => {
       calls.push("end");
