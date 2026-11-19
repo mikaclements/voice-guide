@@ -4,7 +4,7 @@ AI agents your users talk to out loud, embedded in your product, that remember t
 
 Early development: English only, runs on one machine, not deployed anywhere yet.
 
-voice-guide is a service, called voice, that gives an AI agent a voice and the context it needs. It hears the user, works out when they've finished, streams the agent's reply as speech, lets the user cut in, and remembers what the agent learned about this user. Speech-to-text (Moonshine), end-of-turn detection (Smart Turn) and text-to-speech (Kokoro) all run on your machine.
+voice-guide is a service that gives an AI agent a voice and the context it needs. It hears the user, works out when they've finished, streams the agent's reply as speech, lets the user cut in, and remembers what the agent learned about this user. Speech-to-text (Moonshine), end-of-turn detection (Smart Turn) and text-to-speech (Kokoro) all run on your machine.
 
 A product, such as a job site, puts an agent on its own page in a few lines of HTML. Its server holds a secret product key and starts each session. The user's browser only ever gets a ticket: a pass for that one session.
 
@@ -13,6 +13,35 @@ A product, such as a job site, puts an agent on its own page in a few lines of H
 - **Agents remember.** When a session ends, the agent writes a summary, and the next session with that user opens with it.
 - **Embeds in a product.** A drop-in `<voice-guide-session>` element on the page, and a signed webhook to the product's server with the transcript and summary when a session ends.
 - **Agents are Markdown files.** Each holds the agent's persona, the context it needs and how it sums up a session.
+
+<a id="how-it-works"></a>
+## How it works
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
+flowchart LR
+    P[Product's server] -- product key: start, end --> G
+    B[Browser: drop-in element] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
+    B <-- WebRTC audio --> G
+    G -- signed webhook --> P
+    G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
+    G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
+    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
+    G <--> DB[(PostgreSQL)]
+```
+
+A box's last lines name the settings that switch it, in `.env` or the agent file.
+
+At voice-guide's centre is one Go service, scaled by running more copies. It has four modules:
+- **Conversation** keeps sessions and their turns, in text.
+- **Speech** runs the audio connection, hearing the user and speaking the agent.
+- **User context** loads what an agent may know about the user, and saves what a session learned.
+- **Agents** holds the published versions of each agent file.
+
+Conversation and speech together are voice: the part of voice-guide that gives an agent a voice.
+
+<a id="schematic"></a>
+**The schematic** is a clickable map of all of it, from the services down to the types in the code, with what flows over every connection and the design decisions behind each part. Each level has walk-throughs to play, such as "You say something" or "A session ends", that light up the parts involved one step at a time. Run `scripts/schematic.sh` (nothing else needs to be running), open http://127.0.0.1:5180, and double-click a card to go down a level.
 
 <a id="quickstart"></a>
 ## Quickstart
@@ -46,7 +75,7 @@ What you need installed:
 <a id="sample-interviewer"></a>
 ## Test it with the sample interviewer
 
-http://127.0.0.1:5173 is voice-guide's test page. It plays the part of a product: its own small server holds a development product key and starts each session for a sample user, sending their resume. So you can talk to an agent without building anything.
+http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product: its own small server holds a development product key and starts each session for a sample user, sending their resume. So you can talk to an agent without building anything.
 
 1. Open http://127.0.0.1:5173, pick the mock interviewer, press Start and allow the microphone.
 2. It greets you by the resume's name, asks about the resume, and follows up on your answers:
@@ -58,7 +87,7 @@ http://127.0.0.1:5173 is voice-guide's test page. It plays the part of a product
 <a id="your-own-data"></a>
 ### Use your own interviewer and resume
 
-- **The interviewer's persona:** `agents/mock-interviewer.md`. A Markdown file: a settings block between `---` lines (its name, who speaks first with `opens`, its `model`, the context it needs with `session_context`, and how it sums up a session with `summary`), then the persona in plain prose. Edit it and restart `scripts/up.sh` or `scripts/run.sh`, which publishes the change as a new version.
+- **The interviewer:** `agents/mock-interviewer.md`, a Markdown file: a settings block between `---` lines, then the persona in plain prose. [Tune it](#tune) lists the settings. Edit it and restart `scripts/up.sh` or `scripts/run.sh`, which publishes the change as a new version.
 - **Your resume:** `seed/local/resume.md`, in Markdown or plain text.
 - **You, as a user:** `seed/local/reference.txt`, any ID you choose. A new ID is a new user with no past sessions, so the interviewer has no "last time" to open with.
 
@@ -70,107 +99,16 @@ http://127.0.0.1:5173 is voice-guide's test page. It plays the part of a product
 <summary>If you hear nothing, or you aren't heard</summary>
 
 - "first sound" under a reply means the audio reached the browser: check the tab isn't muted, and check the computer's sound output.
-- No "first sound" means the audio connection didn't open, or another tab took it. The page goes on in text; press Start again.
+- No "first sound" means the audio connection didn't open, or another tab took it. The web page goes on in text; press Start again.
 - An earlier run still holding port 8080, 8091 or 5173 answers instead, or stops `scripts/up.sh` or `scripts/run.sh` from starting. Stop it (`lsof -nP -iTCP:8080 -sTCP:LISTEN` shows what holds a port) and start again.
-- If what you say isn't heard: the page shows "Listening" only once the browser has the microphone, so allow it when asked, and check the button doesn't say "Unmute". voice's log shows "speech noticed" as you speak. A warning about hearing what you said means the speech-to-text service isn't answering (`docker compose ps stt`).
+- If what you say isn't heard: the web page shows "Listening" only once the browser has the microphone, so allow it when asked, and check the button doesn't say "Unmute". The log in the script's terminal shows "speech noticed" as you speak. A warning about hearing what you said means the speech-to-text service isn't answering (`docker compose ps stt`).
 
 </details>
-
-<a id="faster"></a>
-## Faster voice on an Apple silicon Mac
-
-`scripts/run.sh` runs voice, the model service and the page on the Mac itself, with the database and speech-to-text in Docker. It's the path for developing voice-guide, and the way to the faster voice: Kokoro on the Mac's GPU through Apple's MLX. It keeps a database of its own, apart from `scripts/up.sh`'s, and uses the same ports, so stop `scripts/up.sh` first.
-
-What you need installed, besides Docker:
-- [Go](https://go.dev/dl/), the version in `go.mod`, which builds voice (`go version`).
-- Node 26, the version in `.node-version`, for the model service and the page (`node --version`).
-- OpenSSL, which makes the local signing keys (`openssl version`; macOS has it).
-- For the faster voice: an Apple silicon Mac (M1 or later) on macOS 14 or later, and [uv](https://docs.astral.sh/uv/) (`brew install uv`, or without Homebrew `curl -LsSf https://astral.sh/uv/install.sh | sh`).
-
-Start it with one of these:
-
-Any Mac:
-
-```sh
-scripts/run.sh
-```
-
-Apple silicon Mac, faster voice:
-
-```sh
-KOKORO=mlx scripts/run.sh
-```
-
-The first run asks for your Claude API key, which you paste unseen (Enter alone gives free stand-in replies instead), and saves it into `.env`, with `KOKORO=mlx` if you gave it. After that, just `scripts/run.sh` starts the same setup; to switch the voice later, add or remove the `KOKORO=mlx` line in `.env`. The first run takes a few minutes. It's ready when it logs `ready: open http://127.0.0.1:5173`. Stop it with Ctrl-C in the same terminal.
-
-<a id="setup"></a>
-## Choose your setup
-
-Two ways to start:
-- `scripts/up.sh` ([Quickstart](#quickstart)): everything in Docker. Replies from `claude-api` or `fake`; the voice from Kokoro in Docker.
-- `scripts/run.sh` ([Faster voice on an Apple silicon Mac](#faster)): every option below, `claude-subscription` and `mlx` included.
-
-Two settings decide where the replies come from and where the voice is made. Times were measured on an Apple M3 Pro.
-
-Where replies come from, `MODEL_PROVIDER`:
-- `claude-api` (default): Claude through its API, billed to your `ANTHROPIC_API_KEY`, about a fifth of a cent a turn on Sonnet 5.5. The fastest: its first words come in about 0.7 s.
-- `claude-subscription`: Claude Code signed in on this Mac, so replies count against your Claude subscription and need no key. About 1.6 s, varying by the hour.
-- `fake`: no Claude; every reply, the greeting included, is the same stand-in line. Free, for trying everything else; Enter at the key prompt picks it.
-
-Where the voice is made, `KOKORO`:
-- `mlx` (recommended on Apple silicon): Kokoro on this Mac's GPU through Apple's MLX. Needs uv; 0.9 GB the first time, in `~/Library/Caches/voice-guide/`, and about 0.7 GB of memory. First audio in about 0.5 s.
-- unset (any Mac): Kokoro in Docker, on the CPU. Needs nothing more; 4.5 GB the first time. First audio in about 1.2 s.
-
-The model is the one the agent file names with `model:` (the mock interviewer names `claude-sonnet-5-5`), else `VOICE_MODEL`.
-
-End to end, a reply starts about 1.6 s after you stop talking with the API and `mlx` on Sonnet 5.5 (1.4 s on Haiku 5.5), and about 2.6 s with the subscription and Docker.
-
-The first run of `scripts/up.sh` or `scripts/run.sh` saves `ANTHROPIC_API_KEY`, `KOKORO` and `MODEL_PROVIDER` given or exported in your shell into `.env`. To change a setting later, edit `.env` and restart the script. A key exported in your shell wins over the one in `.env`, and the scripts say so when they differ.
-
-<a id="embedded"></a>
-## Try it embedded
-
-`examples/job-board/` is a test embedding: a small job site with its own server that puts the mock interviewer on its page through the drop-in element, the way a real product would. Unlike the test page, it also checks the webhook a product receives when a session ends.
-
-### Run it
-
-1. Start voice with `scripts/run.sh` and leave it running.
-2. In another terminal, set the webhook, the address where voice tells the site that a session has ended. It prints the webhook's signing secret, only once:
-
-   ```sh
-   scripts/webhook.sh set http://127.0.0.1:5190/webhook
-   ```
-
-3. Open `.env` in an editor and add the line `JOB_BOARD_WEBHOOK_SECRET=whsec_...` with that secret.
-4. Serve the site and open http://127.0.0.1:5190:
-
-   ```sh
-   scripts/demo.sh
-   ```
-
-### Use your own data
-
-The site uses the same resume and user as the test page: see [Use your own interviewer and resume](#your-own-data). Restart `scripts/demo.sh` after changing them.
-
-### What it tests
-
-The test embedding exercises the contract between a product and voice-guide, end to end:
-
-1. **The key stays on the product's server.** The site's server holds the product key and starts the session. The page receives only the session's ID and its ticket.
-2. **The product sends what it already knows.** The server names the user by its own ID and sends their resume. voice checks the resume against what the agent's file asks for, and the interviewer asks about it.
-3. **A ticket works for one session.** It stops when the session ends, or after four hours.
-4. **The embedding is a few lines.** The page loads the drop-in element from voice and hands it the session and ticket.
-5. **The agent opens the conversation.** The microphone stays muted until the greeting starts, so a "hello" into the silence can't cut it off. From then on, the user can interrupt.
-6. **The conversation is spoken.** You speak, pause, and the interviewer answers out loud; the transcript follows the newest line.
-7. **The product hears the end.** When the session ends, voice posts the transcript and the summary to the site's webhook, signed, and the site shows the interview feedback.
-8. **The agent remembers.** Start another interview: the interviewer opens with what you covered last time.
-
-It doesn't test accounts, since every visitor is the same user; a real product names its logged-in user. Nor does it test a hosted deployment.
 
 <a id="embedding"></a>
 ## Put an agent on a product
 
-A product's server starts each session with its product key (`POST /v1/sessions`, as `examples/job-board/server.mjs` does) and hands its page the session's `id` and `ticket`, never the key. The page loads the drop-in element from voice and hands it the two:
+A product's server starts each session with its product key (`POST /v1/sessions`, as `examples/job-board/server.mjs` does) and hands its page the session's `id` and `ticket`, never the key. The page loads the drop-in element from voice-guide and hands it the two:
 
 ```html
 <button id="start">Practice</button>
@@ -196,12 +134,105 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 
 | | |
 |---|---|
-| Methods | `join({ session, ticket })` joins the session, letting any session before go without ending it, as removing the element does. `end()` ends it, as End does: it resolves once voice has ended it, and rejects when End didn't reach voice, which leaves it live |
-| Attribute and property | the `api` attribute, voice's base URL, when the script came from somewhere else; the `session` property, the session it holds |
-| Events | `voice-guide-ended`, once the session is over for the element: `detail.reason` is `ended`, `expired` (past the ticket's four hours) or `unusable`, with `detail.session`. `voice-guide-error` comes just before an `unusable` end, with `detail.message`, and voice's `status` and problem `type` when it answered |
+| Methods | `join({ session, ticket })` joins the session, letting any session before go without ending it, as removing the element does. `end()` ends it, as End does: it resolves once voice-guide has ended it, and rejects when End didn't reach voice-guide, which leaves it live |
+| Attribute and property | the `api` attribute, voice-guide's base URL, when the script came from somewhere else; the `session` property, the session it holds |
+| Events | `voice-guide-ended`, once the session is over for the element: `detail.reason` is `ended`, `expired` (past the ticket's four hours) or `unusable`, with `detail.session`. `voice-guide-error` comes just before an `unusable` end, with `detail.message`, and voice-guide's `status` and problem `type` when it answered |
 | Styling | custom properties `--voice-guide-font`, `-color`, `-background`, `-border`, `-radius`, `-accent`, `-accent-text`, `-quiet-color`, `-height`; parts `frame`, `status`, `hear`, `transcript`, `message` (with `you` or `agent`), `who`, `notes`, `note`, `form`, `input`, `send`, `mute`, `end`, styled with `voice-guide-session::part(send)` |
 
 </details>
+
+<a id="embedded"></a>
+## Try it embedded
+
+`examples/job-board/` is the test embedding: a small job board with its own server that puts the mock interviewer on its page through the drop-in element, the way a real product would. Unlike the web page, it also checks the webhook a product receives when a session ends.
+
+### Run it
+
+The test embedding runs beside `scripts/run.sh`, not `scripts/up.sh`. So it needs what [Faster voice on an Apple silicon Mac](#faster) lists: Docker, Go, Node and OpenSSL. `scripts/webhook.sh` runs with Go, and `scripts/demo.sh` runs the job board's server with Node. You also add one line to `.env` by hand.
+
+1. Start voice-guide with `scripts/run.sh` and leave it running.
+2. In another terminal, set the webhook, the address where voice-guide tells the test embedding that a session has ended. It prints the webhook's signing secret, only once:
+
+   ```sh
+   scripts/webhook.sh set http://127.0.0.1:5190/webhook
+   ```
+
+3. Open `.env` in an editor and add the line `JOB_BOARD_WEBHOOK_SECRET=whsec_...` with that secret.
+4. Serve the test embedding and open http://127.0.0.1:5190:
+
+   ```sh
+   scripts/demo.sh
+   ```
+
+### Use your own data
+
+The test embedding uses the same resume and user as the web page: see [Use your own interviewer and resume](#your-own-data). Restart `scripts/demo.sh` after changing them.
+
+### What it tests
+
+The test embedding exercises the contract between a product and voice-guide, end to end:
+
+1. **The key stays on the product's server.** The test embedding's server holds the product key and starts the session. The page receives only the session's ID and its ticket.
+2. **The product sends what it already knows.** The server names the user by its own ID and sends their resume. voice-guide checks the resume against what the agent's file asks for, and the interviewer asks about it.
+3. **A ticket works for one session.** It stops when the session ends, or after four hours.
+4. **The embedding is a few lines.** The page loads the drop-in element from voice-guide and hands it the session and ticket.
+5. **The agent opens the conversation.** The microphone stays muted until the greeting starts, so a "hello" into the silence can't cut it off. From then on, the user can interrupt.
+6. **The conversation is spoken.** You speak, pause, and the interviewer answers out loud; the transcript follows the newest line.
+7. **The product hears the end.** When the session ends, voice-guide posts the transcript and the summary to the test embedding's webhook, signed, and the page shows the interview feedback.
+8. **The agent remembers.** Start another interview: the interviewer opens with what you covered last time.
+
+It doesn't test accounts, since every visitor is the same user; a real product names its logged-in user. Nor does it test a hosted deployment.
+
+<a id="faster"></a>
+## Faster voice on an Apple silicon Mac
+
+`scripts/run.sh` runs the Go service, the model service and the web page on the Mac itself, with the database and speech-to-text in Docker. It's the path for developing voice-guide, and the way to the faster voice: Kokoro on the Mac's GPU through Apple's MLX. It keeps a database of its own, apart from `scripts/up.sh`'s, and uses the same ports, so stop `scripts/up.sh` first.
+
+What you need installed, besides Docker:
+- [Go](https://go.dev/dl/), the version in `go.mod`, which builds the Go service (`go version`).
+- Node 26, the version in `.node-version`, for the model service and the web page (`node --version`).
+- OpenSSL, which makes the local signing keys (`openssl version`; macOS has it).
+- For the faster voice: an Apple silicon Mac (M1 or later) on macOS 14 or later, and [uv](https://docs.astral.sh/uv/) (`brew install uv`, or without Homebrew `curl -LsSf https://astral.sh/uv/install.sh | sh`).
+
+Start it with one of these:
+
+Any Mac:
+
+```sh
+scripts/run.sh
+```
+
+Apple silicon Mac, faster voice:
+
+```sh
+KOKORO=mlx scripts/run.sh
+```
+
+The first run asks for the Claude API key as `scripts/up.sh` does, unless `.env` has one already. It takes a few minutes. It's ready when it logs `ready: open http://127.0.0.1:5173`. After that, just `scripts/run.sh` starts the same setup, as [Choose your setup](#setup) explains. Stop it with Ctrl-C in the same terminal.
+
+<a id="setup"></a>
+## Choose your setup
+
+Two ways to start:
+- `scripts/up.sh` ([Quickstart](#quickstart)): everything in Docker. Replies from `claude-api` or `fake`; the voice from Kokoro in Docker.
+- `scripts/run.sh` ([Faster voice on an Apple silicon Mac](#faster)): every option below, `claude-subscription` and `mlx` included.
+
+Two settings decide where the replies come from and where the voice is made. Times were measured on an Apple M3 Pro.
+
+Where replies come from, `MODEL_PROVIDER`:
+- `claude-api` (default): Claude through its API, billed to your `ANTHROPIC_API_KEY`, about a fifth of a cent a turn on Sonnet 5.5. The fastest: its first words come in about 0.7 s.
+- `claude-subscription`: Claude Code signed in on this Mac, so replies count against your Claude subscription and need no key. About 1.6 s, varying by the hour.
+- `fake`: no Claude; every reply, the greeting included, is the same stand-in line. Free, for trying everything else; Enter at the key prompt picks it.
+
+Where the voice is made, `KOKORO`:
+- `mlx` (recommended on Apple silicon): Kokoro on this Mac's GPU through Apple's MLX. Needs uv; 0.9 GB the first time, in `~/Library/Caches/voice-guide/`, and about 0.7 GB of memory. First audio in about 0.5 s.
+- unset (any Mac): Kokoro in Docker, on the CPU. Needs nothing more; 4.5 GB the first time. First audio in about 1.2 s.
+
+The model is the one the agent file names with `model:` (the mock interviewer names `claude-sonnet-5-5`), else `VOICE_MODEL`.
+
+End to end, a reply starts about 1.6 s after you stop talking with the API and `mlx` on Sonnet 5.5 (1.4 s on Haiku 5.5), and about 2.6 s with the subscription and Docker.
+
+The first run of `scripts/up.sh` or `scripts/run.sh` saves `ANTHROPIC_API_KEY`, `KOKORO` and `MODEL_PROVIDER` given or exported in your shell into `.env`. To change a setting later, edit `.env` and restart the script. A key exported in your shell wins over the one in `.env`, and the scripts say so when they differ.
 
 <a id="tune"></a>
 ## Tune it
@@ -215,8 +246,8 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 | `KOKORO` | unset | Where the voice is made: unset (Docker) or `mlx`; see [Choose your setup](#setup) |
 | `VOICE_TTS_VOICE` | `af_heart` | Kokoro's voice |
 | `STT_MODEL` | `small` | Speech-to-text's model size: `tiny`, `small` or `medium` |
-| `VOICE_PAUSE` | 0.2 s | How long a pause in your speech before voice checks whether you've finished |
-| `VOICE_MAX_WAIT` | 3 s | How long voice waits for more when that check says you haven't finished |
+| `VOICE_PAUSE` | 0.2 s | How long a pause in your speech before voice-guide checks whether you've finished |
+| `VOICE_MAX_WAIT` | 3 s | How long voice-guide waits for more when that check says you haven't finished |
 | `VOICE_INTERRUPT_SPEECH` | 0.2 s | How long you must speak over the agent before it stops |
 | `VOICE_SPEECH_THRESHOLD` | 0.5 | How sure speech detection must be that a sound is speech |
 | `VOICE_MAX_SPEECH` | 1 min | The longest one turn of speech |
@@ -230,34 +261,7 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `summary`: how the agent sums up a session for next time;
 - `model`: the model that answers its turns and writes its summary, the server's `VOICE_MODEL` unless set.
 
-The persona follows it, in plain prose. `scripts/run.sh` publishes a changed file as a new version when it starts; sessions already running keep the version they started with.
-
-<a id="how-it-works"></a>
-## How it works
-
-```mermaid
-%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
-flowchart LR
-    P[Product's server] -- product key: start, end --> G
-    B[Browser: drop-in element] -- ticket: turns --> G[voice: conversation, speech,<br/>user context, agents]
-    B <-- WebRTC audio --> G
-    G -- signed webhook --> P
-    G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
-    G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
-    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
-    G <--> DB[(PostgreSQL)]
-```
-
-A box's last lines name the settings that switch it, in `.env` or the agent file.
-
-voice is one Go service, scaled by running more copies.
-- **Conversation** keeps sessions and their turns, in text.
-- **Speech** runs the audio connection, hearing the user and speaking the agent.
-- **User context** loads what an agent may know about the user, and saves what a session learned.
-- **Agents** holds the published versions of each agent file.
-
-<a id="schematic"></a>
-**The schematic** is a clickable map of all of it, from the services down to the types in the code, with what flows over every connection and the design decisions behind each part. Each level has walk-throughs to play, such as "You say something" or "A session ends", that light up the parts involved one step at a time. Run `scripts/schematic.sh` (nothing else needs to be running), open http://127.0.0.1:5180, and double-click a card to go down a level.
+The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
 
 <a id="development"></a>
 ## Contributing
