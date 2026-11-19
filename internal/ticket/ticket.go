@@ -54,11 +54,11 @@ func (Key) String() string { return "ticket.Key(redacted)" }
 func (k Key) LogValue() slog.Value { return slog.StringValue(k.String()) }
 
 // NewKey returns a key for the secret, refusing one too short to be safe.
-func NewKey(secret []byte) (Key, error) {
-	if len(secret) < minSecret {
-		return Key{}, fmt.Errorf("signing key: %d bytes, need at least %d", len(secret), minSecret)
+func NewKey(raw []byte) (Key, error) {
+	if len(raw) < minSecret {
+		return Key{}, fmt.Errorf("signing key: %d bytes, need at least %d", len(raw), minSecret)
 	}
-	return Key{secret: secret}, nil
+	return Key{secret: raw}, nil
 }
 
 // Ticket is a ticket itself, as the product's server hands it to the user's

@@ -51,12 +51,12 @@ type Webhooks interface {
 	// Webhook returns the workspace's webhook, if it has one.
 	Webhook(ctx context.Context, workspace uuid.UUID) (Webhook, bool, error)
 	// SetURL saves url as the workspace's webhook URL, starting deliveries
-	// again if they were stopped, with secret as its secret unless it has one
+	// again if they were stopped, with fresh as its secret unless it has one
 	// already, and returns the secret kept.
-	SetURL(ctx context.Context, workspace uuid.UUID, url string, secret WebhookSecret) (WebhookSecret, error)
-	// Rotate replaces the workspace's webhook secret with secret, and says
+	SetURL(ctx context.Context, workspace uuid.UUID, url string, fresh WebhookSecret) (WebhookSecret, error)
+	// Rotate replaces the workspace's webhook secret with fresh, and says
 	// whether the workspace has a webhook.
-	Rotate(ctx context.Context, workspace uuid.UUID, secret WebhookSecret) (bool, error)
+	Rotate(ctx context.Context, workspace uuid.UUID, fresh WebhookSecret) (bool, error)
 	// Stop stops deliveries to the workspace's webhook while its URL is still
 	// url, so a URL set meanwhile isn't stopped for the old one's answer.
 	Stop(ctx context.Context, workspace uuid.UUID, url string) error
@@ -86,8 +86,8 @@ type Delivery struct {
 // can drop a repeat; the time in seconds, so it can refuse an old delivery sent
 // again; and v1, then the HMAC-SHA256 (RFC 2104) of the two and the body,
 // joined by full stops, keyed with the secret's bytes, in base64.
-func signed(secret WebhookSecret, id string, at time.Time, body []byte) (map[string]string, error) {
-	encoded, ok := strings.CutPrefix(secret.Reveal(), webhookSecretPrefix)
+func signed(s WebhookSecret, id string, at time.Time, body []byte) (map[string]string, error) {
+	encoded, ok := strings.CutPrefix(s.Reveal(), webhookSecretPrefix)
 	key, err := base64.StdEncoding.DecodeString(encoded)
 	if !ok || err != nil {
 		return nil, errors.New("the webhook's secret isn't in the form voice-guide makes")
