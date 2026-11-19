@@ -40,7 +40,7 @@ The plan, item specs and decision register are working notes, never committed; `
 
 ## Steps
 
-0. Run `python3 .claude/skills/doc-audit/check_docs.py`; it must pass before and after the sync.
+0. Run `python3 scripts/lib/check_docs.py`; it must pass before and after the sync.
 1. List what changed since the last sync: new or edited decisions, and anything agreed in the conversation that isn't written down yet.
 2. For each change, look up its row and check the home and every "also update" target. Report a table: change, doc, status (in sync, missing, contradicts).
 3. Check the mirrors for drift: each doc for people against its twin, and the `CLAUDE.md` extract against the standards.

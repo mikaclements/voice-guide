@@ -69,7 +69,7 @@ jobs:
         run: .githooks/pre-commit
 
       - name: Docs check (links, labels, decision index)
-        run: python3 .claude/skills/doc-audit/check_docs.py
+        run: python3 scripts/lib/check_docs.py
 
       - name: Lint (static checks, module boundaries)
         run: golangci-lint run ./...

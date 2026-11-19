@@ -6,7 +6,7 @@
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
-python3 .claude/skills/doc-audit/check_docs.py
+python3 scripts/lib/check_docs.py
 golangci-lint run ./...
 scripts/lib/deadcode.sh
 go test ./...

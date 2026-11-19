@@ -247,7 +247,7 @@ The choices behind the rules above, in a shorter form than the design's decision
 
 <a id="e11"></a>
 #### E11. A docs check on every push
-- Decision: `.claude/skills/doc-audit/check_docs.py` checks links, labels, decision boxes, the decision index, coverage, the doc pairs and plain ASCII, on push and in CI. Labels are never renumbered; `--fix-index` rebuilds the index in reading order.
+- Decision: `scripts/lib/check_docs.py` checks links, labels, decision boxes, the decision index, coverage, the doc pairs and plain ASCII, on push and in CI. Labels are never renumbered; `--fix-index` rebuilds the index in reading order.
 - Needed by: [section 13](#workflow).
 - Why: docs that drift mislead every agent that reads them; stable labels keep links and history intact.
 - Rejected: renumbering labels in reading order, which broke links and lost the history of reversed decisions.
