@@ -11,7 +11,7 @@ export default defineConfig({
     emptyOutDir: true,
     modulePreload: false,
     rolldownOptions: {
-      input: resolve(import.meta.dirname, "src/client.ts"),
+      input: resolve(import.meta.dirname, "src/client/client.ts"),
       output: { format: "es", entryFileNames: "voice-guide.js" },
     },
   },

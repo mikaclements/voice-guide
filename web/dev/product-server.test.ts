@@ -3,8 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { contextBlock, defaultTimeoutMs, productRoutes, readBody } from "./product-server.ts";
 import { seedFile } from "./seed.ts";
-import { contextBlock, defaultTimeoutMs, productRoutes, readBody } from "./vite.config.ts";
 
 async function userFolder(t: { after(fn: () => unknown): void }) {
   const dir = await mkdtemp(join(tmpdir(), "context-route-"));

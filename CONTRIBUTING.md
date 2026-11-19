@@ -70,7 +70,7 @@ Every piece of work is one of four kinds:
 | `internal/pgtest/` | Gives each database test its own freshly migrated database |
 | `agents/` | The agents, one Markdown file each: a settings block, then the persona |
 | `migrations/` | Database migrations (goose), numbered across modules |
-| `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code |
+| `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |
 | `examples/job-board/` | The test embedding: a small site that puts an agent on its page, as a product would |
 | `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
 | `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |

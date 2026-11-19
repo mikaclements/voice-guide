@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type Agent, ProblemError, type Started } from "./api.ts";
+import { type Agent, ProblemError, type Started } from "../client/api.ts";
 import { Starter } from "./starting.ts";
 
 const agent: Agent = { id: "a1", name: "Keeper", description: "", session_context: ["log"] };

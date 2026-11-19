@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { runnerImport } from "vite";
-import type { Shown } from "./joined.ts";
+import type { Shown } from "../client/joined.ts";
 
 // Node runs TypeScript but not JSX, so the page is loaded through Vite, as its dev server does.
 const { module: app } = await runnerImport<typeof import("./App.tsx")>(

@@ -587,7 +587,7 @@
           "path": "web/",
           "tech": "React · TypeScript",
           "summary": "Where the user talks or types to an agent: microphone in, agent audio out, transcript and timings.",
-          "description": "The page a user talks to an agent on. It lists the agents and starts a session through the product's server, which hands it the session and its ticket, then holds it with the same code as the drop-in client (web/src/joined.ts), drawn in React. The session's audio connection opens with one request: the microphone goes in with the browser's echo cancellation on, the agent's audio comes back, and a data channel carries typed turns and every message about a turn. Without a microphone, the user types. It times what the user feels: from send to the reply's first text and first sound, and how soon an interrupted reply went quiet.",
+          "description": "The page a user talks to an agent on. It lists the agents and starts a session through the product's server, which hands it the session and its ticket, then holds it with the same code as the drop-in client (web/src/client/joined.ts), drawn in React. The session's audio connection opens with one request: the microphone goes in with the browser's echo cancellation on, the agent's audio comes back, and a data channel carries typed turns and every message about a turn. Without a microphone, the user types. It times what the user feels: from send to the reply's first text and first sound, and how soon an interrupted reply went quiet.",
           "why": "It calls the same API any product would, so the API never drifts toward one screen.",
           "considerations": ["react", "api-for-products", "http-and-webrtc", "timed-by-stage"]
         },
@@ -600,7 +600,7 @@
           "description": "Where a product puts an agent in front of its users: a page on the product's own site, which loads the drop-in client from voice at /client/voice-guide.js and puts a <voice-guide-session> element on it. The element holds the session with the same code as the web page, without React (npm run build:client writes web/dist-client/). The page hands it the session ID and ticket its server's start answered with by join({ session, ticket }), never an attribute, which session-replay scripts copy; it never holds a product key or starts a session. It opens the session's audio connection at once, adds the microphone once allowed, asks for the agent's opening once the browser plays the agent (over HTTP if the audio connection fails), streams the transcript, offers typing, Mute and End, reconnects with the same ticket, and fires voice-guide-ended and voice-guide-error. Its requests to voice are cross-origin, which a session's routes answer for any site; a closed shadow root keeps the product's styles and scripts out.",
           "why": "The drop-in client runs in the product's own page, not a frame, so the microphone prompt names the product's site and the ticket goes through join(), never an attribute.",
           "considerations": ["any-origin", "product-keys", "api-for-products", "http-and-webrtc"],
-          "path": "web/src/client.ts · element.ts · joined.ts"
+          "path": "web/src/client/client.ts · element.ts · joined.ts"
         },
         {
           "id": "voice",

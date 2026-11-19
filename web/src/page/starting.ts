@@ -9,7 +9,7 @@ import {
   requestIdFor,
   type Started,
   ticketExpiredType,
-} from "./api.ts";
+} from "../client/api.ts";
 
 export class Starter {
   private readonly startSession: (agentId: string, requestId: string) => Promise<Started>;
