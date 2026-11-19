@@ -85,7 +85,7 @@ flowchart LR
     P[Product's server] -- product key: start, end --> G
     B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
     B <-- WebRTC audio --> G
-    G -- signed webhook --> P
+    P <-- signed webhook --- G
     G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
     G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
     G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
