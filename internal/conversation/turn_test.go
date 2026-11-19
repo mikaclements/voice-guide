@@ -77,7 +77,7 @@ func TestATurnStreamsTheReplyAndSavesItExactlyForTheNextTurn(t *testing.T) {
 	asked, _ := h.model.Requests()
 	wantFirst := conversation.ModelRequest{Model: "claude-test", Session: s.ID, Prompt: conversation.Prompt{
 		StableLayers: []string{"You read every log.", "Learned about the user in earlier conversations:\n\n<session_summary>\nDeckhand, two seasons.\n</session_summary>"},
-		Conversation: []conversation.Message{}, NewWords: firstMessage, NewWordsSaved: firstSaved,
+		Conversation: []conversation.Message{}, NewWords: firstMessage, NewWordsSaved: firstSaved, NewWordsOwn: firstMessage,
 	}}
 	wantConversation := []conversation.Message{{Role: conversation.RoleUser, Text: firstSaved}, {Role: conversation.RoleAgent, Text: reply}}
 	if len(asked) != 2 || !reflect.DeepEqual(asked[0], wantFirst) || !reflect.DeepEqual(asked[1].Conversation, wantConversation) {

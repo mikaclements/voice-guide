@@ -120,7 +120,8 @@ export function claudeSubscriptionProvider(
       let answered = false;
       try {
         if (process?.continues(request)) {
-          answered = yield* process.turn(request, request.newWords, signal);
+          // Only what changed: the process holds every earlier screen input block already.
+          answered = yield* process.turn(request, request.newWordsOwn ?? request.newWords, signal);
           if (answered || signal.aborted) return;
           if (process.spoke) throw ended(process.crash);
           // The process died between turns. Nothing has reached the caller yet, so a fresh one

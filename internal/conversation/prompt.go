@@ -57,6 +57,11 @@ type Prompt struct {
 	// its screen input blocks as markers. A provider that keeps the
 	// conversation between turns records this, so it matches the next request.
 	NewWordsSaved string
+	// NewWordsOwn is the new message with only the screen input this turn
+	// carried, which is what changed since the turn before. A provider that
+	// keeps the conversation between turns sends this to what it kept, which
+	// already holds every earlier block whole, rather than repeating them.
+	NewWordsOwn string
 }
 
 // Role says who a message in the conversation is from.
@@ -96,6 +101,7 @@ func buildPrompt(persona string, sessionContext []SessionContextBlock, userConte
 	}
 	p.NewWords = userMessage(next, note, whole(newest(screen, next.ScreenInput)))
 	p.NewWordsSaved = userMessage(next, note, markers(next.ScreenInput))
+	p.NewWordsOwn = userMessage(next, note, whole(next.ScreenInput))
 	return p
 }
 

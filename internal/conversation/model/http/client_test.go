@@ -112,7 +112,7 @@ func TestAnAskOutsideAnySessionSendsNoSessionID(t *testing.T) {
 	}
 }
 
-func TestNewWordsSavedOtherwiseThanSentAreSentToo(t *testing.T) {
+func TestNewWordsReadingOtherwiseOnceSavedOrToAKeptProcessAreSentToo(t *testing.T) {
 	var asked []map[string]any
 	m := serving(t, func(w http.ResponseWriter, r *http.Request) {
 		var one map[string]any
@@ -123,17 +123,21 @@ func TestNewWordsSavedOtherwiseThanSentAreSentToo(t *testing.T) {
 		}
 	})
 	withBoard := request
-	withBoard.NewWords = "<board>\nTwo boxes.\n</board>\n\nLike this?"
-	withBoard.NewWordsSaved = "(The user's board changed here.)\n\nLike this?"
+	// The board came with an earlier turn, the notes with this one.
+	withBoard.NewWords = "<board>\nTwo boxes.\n</board>\n\n<notes>\nTidy.\n</notes>\n\nLike this?"
+	withBoard.NewWordsSaved = "(The user's notes changed here.)\n\nLike this?"
+	withBoard.NewWordsOwn = "<notes>\nTidy.\n</notes>\n\nLike this?"
 	plain := request
-	plain.NewWordsSaved = plain.NewWords
+	plain.NewWordsSaved, plain.NewWordsOwn = plain.NewWords, plain.NewWords
 	collect(m.Reply(context.Background(), withBoard))
 	collect(m.Reply(context.Background(), plain))
-	if len(asked) != 2 || asked[0]["new_words_saved"] != withBoard.NewWordsSaved {
-		t.Errorf("asked %v, want new_words_saved sent with a board", asked)
+	if len(asked) != 2 || asked[0]["new_words_saved"] != withBoard.NewWordsSaved || asked[0]["new_words_own"] != withBoard.NewWordsOwn {
+		t.Errorf("asked %v, want new_words_saved and new_words_own sent with a board", asked)
 	}
-	if _, sent := asked[1]["new_words_saved"]; sent {
-		t.Errorf("asked %v, want no new_words_saved for words saved as sent", asked[1])
+	for _, field := range []string{"new_words_saved", "new_words_own"} {
+		if _, sent := asked[1][field]; sent {
+			t.Errorf("asked %v, want no %s for words that read the same", asked[1], field)
+		}
 	}
 }
 

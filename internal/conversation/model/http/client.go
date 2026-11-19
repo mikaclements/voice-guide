@@ -175,6 +175,8 @@ type requestJSON struct {
 	NewWords     string        `json:"new_words"`
 	// Left out when the new words will be saved as sent, as for a turn with no screen input.
 	NewWordsSaved string `json:"new_words_saved,omitempty"`
+	// Left out when the new words hold only this turn's own screen input.
+	NewWordsOwn string `json:"new_words_own,omitempty"`
 }
 
 type messageJSON struct {
@@ -192,6 +194,9 @@ func requestOf(r conversation.ModelRequest) requestJSON {
 	}
 	if r.NewWordsSaved != r.NewWords {
 		out.NewWordsSaved = r.NewWordsSaved
+	}
+	if r.NewWordsOwn != r.NewWords {
+		out.NewWordsOwn = r.NewWordsOwn
 	}
 	for _, m := range r.Conversation {
 		out.Conversation = append(out.Conversation, messageJSON{Role: string(m.Role), Text: m.Text})

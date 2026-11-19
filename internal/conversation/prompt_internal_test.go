@@ -59,6 +59,7 @@ func TestThePersonaComesFirstThenTheUserThenTheConversationThenTheNewWords(t *te
 		NewWords:     "<tide_table>\nHigh water at six.\n</tide_table>\n\nWhen is high water?",
 	}
 	want.NewWordsSaved = "(The user's tide_table changed here.)\n\nWhen is high water?"
+	want.NewWordsOwn = want.NewWords
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt =\n%#v\nwant\n%#v", got, want)
 	}
@@ -153,6 +154,18 @@ func TestTheNewTurnsOwnBlockWinsOverASavedOne(t *testing.T) {
 	}
 }
 
+func TestTheNewWordsOwnHoldOnlyTheScreenInputTheNewTurnCarried(t *testing.T) {
+	saved := []Turn{{ScreenInput: []ScreenInputBlock{{Name: "chart", Content: "Rocks to the north."}}, Words: "Which way?", Reply: "South."}}
+	next := Turn{ScreenInput: []ScreenInputBlock{{Name: "logbook", Content: "Fog at dawn."}}, Words: "Noted?"}
+	got := buildPrompt(agentPersona, nil, nil, saved, next)
+	if want := "<logbook>\nFog at dawn.\n</logbook>\n\nNoted?"; got.NewWordsOwn != want {
+		t.Errorf("new words own = %q, want only the logbook this turn carried: %q", got.NewWordsOwn, want)
+	}
+	if !strings.Contains(got.NewWords, "<chart>") {
+		t.Errorf("new words = %q, want the newest chart still in them", got.NewWords)
+	}
+}
+
 func TestTwoNamesChangingAtDifferentTurnsEachGoNewestInTheirFirstOrder(t *testing.T) {
 	saved := []Turn{
 		{ScreenInput: []ScreenInputBlock{{Name: "chart", Content: "Rocks to the north."}}, Words: "Which way?", Reply: "South."},
@@ -214,6 +227,7 @@ func TestASessionWithoutScreenInputHasNoMarkersAndNothingBeforeTheWords(t *testi
 		Conversation:  []Message{{Role: RoleUser, Text: "Is the lamp lit?"}, {Role: RoleAgent, Text: "It is."}},
 		NewWords:      "Thanks.",
 		NewWordsSaved: "Thanks.",
+		NewWordsOwn:   "Thanks.",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("prompt =\n%#v\nwant\n%#v", got, want)

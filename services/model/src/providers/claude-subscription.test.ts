@@ -277,6 +277,26 @@ test("a turn with a board continues its process when the next conversation holds
   assert.doesNotMatch(transcript, /Two boxes\.\n<\/board>/);
 });
 
+test("a kept process is sent only the screen input the new turn carried, never the earlier boards again", async () => {
+  const { query, calls } = fakeQuery([delta("Two boxes."), success], [delta("Why?"), successAgain]);
+  const provider = newProvider(query);
+  const withBoard = {
+    ...request,
+    newWords: "<board>\nTwo boxes.\n</board>\n\nLike this?",
+    newWordsSaved: "(The user's board changed here.)\n\nLike this?",
+  };
+  await collect(provider.reply(withBoard, never));
+  const second = {
+    ...nextTurn({ ...withBoard, newWords: withBoard.newWordsSaved }, "Two boxes.", ""),
+    newWords: "<board>\nTwo boxes.\n</board>\n\n<notes>\nTidy.\n</notes>\n\nAnd these?",
+    newWordsSaved: "(The user's notes changed here.)\n\nAnd these?",
+    newWordsOwn: "<notes>\nTidy.\n</notes>\n\nAnd these?",
+  };
+  await collect(provider.reply(second, never));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.prompts[1], "<notes>\nTidy.\n</notes>\n\nAnd these?");
+});
+
 test("a conversation the process hasn't seen exactly gets a fresh process", async () => {
   const changes: [string, (r: ReplyRequest) => ReplyRequest][] = [
     // The user cut the reply short, so voice saved it as far as heard.
