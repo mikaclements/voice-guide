@@ -5,7 +5,6 @@ package fake
 import (
 	"context"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 	"uuid"
@@ -132,12 +131,12 @@ func (f *Sessions) ListForUser(_ context.Context, workspace, user, before uuid.U
 	defer f.mu.Unlock()
 	var list []conversation.Session
 	for _, s := range f.byRequest {
-		if s.Workspace == workspace && s.User == user && (before == uuid.Nil() || s.ID.String() < before.String()) {
+		if s.Workspace == workspace && s.User == user && (before == uuid.Nil() || s.ID.Compare(before) < 0) {
 			list = append(list, s)
 		}
 	}
-	// UUIDv7 text sorts as the time the ID was made.
-	slices.SortFunc(list, func(a, b conversation.Session) int { return strings.Compare(b.ID.String(), a.ID.String()) })
+	// UUIDv7 sorts as the time the ID was made.
+	slices.SortFunc(list, func(a, b conversation.Session) int { return b.ID.Compare(a.ID) })
 	if len(list) > limit {
 		list = list[:limit]
 	}

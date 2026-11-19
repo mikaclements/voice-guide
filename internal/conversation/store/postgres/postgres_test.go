@@ -433,10 +433,10 @@ func TestAnotherWorkspacesProductCannotReadASessionOrListItsUser(t *testing.T) {
 	if _, _, err := svc.PastSession(ctx, access.Caller{Workspace: elsewhere, Product: true}, got.ID); !errors.Is(err, conversation.ErrNoSuchSession) {
 		t.Errorf("PastSession in another workspace = %v, want ErrNoSuchSession", err)
 	}
-	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: elsewhere, Product: true}, "aiko-42", uuid.Nil(), 0); err != nil || len(list) != 0 {
+	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: elsewhere, Product: true}, "aiko-42", uuid.Nil(), conversation.PastDefaultLimit); err != nil || len(list) != 0 {
 		t.Errorf("PastSessions for the same reference in another workspace = %v, %v; want none", list, err)
 	}
-	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: workspace, Product: true}, "aiko-42", uuid.Nil(), 0); err != nil || len(list) != 1 {
+	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: workspace, Product: true}, "aiko-42", uuid.Nil(), conversation.PastDefaultLimit); err != nil || len(list) != 1 {
 		t.Errorf("PastSessions in its own workspace = %v, %v; want the one session", list, err)
 	}
 	if _, _, err := svc.PastSession(ctx, access.Caller{Workspace: workspace, User: user, Session: got.ID}, got.ID); !errors.Is(err, conversation.ErrNoSuchSession) {

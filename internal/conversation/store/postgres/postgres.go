@@ -155,15 +155,12 @@ func (st *Sessions) InWorkspace(ctx context.Context, workspace, id uuid.UUID) (c
 	return s, err == nil, err
 }
 
-// afterEveryID is greater than any session ID: where a list from the newest starts.
-var afterEveryID = uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
-
 // ListForUser returns up to limit of the user's sessions in the workspace,
 // newest first, those started before the session before, or from the newest
 // for the nil UUID.
 func (st *Sessions) ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]conversation.Session, error) {
 	if before == uuid.Nil() {
-		before = afterEveryID
+		before = uuid.Max()
 	}
 	rows, err := db.New(st.pool).SessionsOfUser(ctx, db.SessionsOfUserParams{WorkspaceID: workspace, UserID: user, Before: before, PageSize: int32(limit)})
 	if err != nil {

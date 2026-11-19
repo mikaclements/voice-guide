@@ -66,16 +66,20 @@ func (s *server) listPastSessions(w http.ResponseWriter, r *http.Request, c acce
 			return
 		}
 	}
-	var limit int
+	limit := conversation.PastDefaultLimit
 	if v := r.URL.Query().Get("limit"); v != "" {
 		var err error
-		if limit, err = strconv.Atoi(v); err != nil || limit == 0 {
+		if limit, err = strconv.Atoi(v); err != nil {
 			s.api.Problem(w, r, http.StatusBadRequest, "limit must be a number from 1 to "+strconv.Itoa(conversation.PastMaxLimit))
 			return
 		}
 	}
 	list, err := s.svc.PastSessions(r.Context(), c, reference, before, limit)
 	switch {
+	case errors.Is(err, conversation.ErrUserReference):
+		// The same rule a start applies, so a reference no start could have made is a bad request, not a miss.
+		s.api.Problem(w, r, http.StatusBadRequest, err.Error())
+		return
 	case errors.Is(err, conversation.ErrPastLimit):
 		s.api.Problem(w, r, http.StatusBadRequest, "limit must be a number from 1 to "+strconv.Itoa(conversation.PastMaxLimit))
 		return

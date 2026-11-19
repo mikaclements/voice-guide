@@ -9,14 +9,15 @@ import (
 	"github.com/mikaclements/voice-guide/internal/access"
 )
 
-// PastDefaultLimit is how many sessions a list returns when the product
-// names no limit: a screen's worth of a user's history. A round guess, to be
-// set from what products ask for once they list sessions.
+// PastDefaultLimit is how many sessions the API's list returns when the
+// product names no limit: a screen's worth of a user's history. A round guess,
+// to be set from what products ask for once they list sessions.
 const PastDefaultLimit = 20
 
-// PastMaxLimit is the most sessions a list returns: each costs the summary
-// read of an ended one, so a page stays a few dozen small reads. A round guess,
-// to be measured against a user with a long history.
+// PastMaxLimit is the most sessions a list returns: each ended one costs a
+// small read of its summary, so a full page is 100 of them, one tenth of a
+// second or so at a millisecond each. A round guess, to be measured against a
+// user with a long history.
 const PastMaxLimit = 100
 
 // ErrPastLimit reports a list asked for fewer than one session or more than
@@ -34,7 +35,7 @@ type PastSession struct {
 
 // PastSessions lists the sessions of the user the product names by its own
 // reference, newest first, those started before the session before, or the
-// newest for the nil UUID; a limit of 0 is PastDefaultLimit. A user the
+// newest for the nil UUID, at most limit, which is 1 to PastMaxLimit. A user the
 // product never started a session for has none, which looks the same as a
 // user with no sessions yet. Only a product's server may ask, and only for
 // its own workspace.
@@ -42,8 +43,8 @@ func (s *Service) PastSessions(ctx context.Context, c access.Caller, reference s
 	if !c.Product {
 		return nil, ErrNoSuchSession
 	}
-	if limit == 0 {
-		limit = PastDefaultLimit
+	if err := checkUserReference(reference); err != nil {
+		return nil, err
 	}
 	if limit < 1 || limit > PastMaxLimit {
 		return nil, fmt.Errorf("%w: from 1 to %d", ErrPastLimit, PastMaxLimit)

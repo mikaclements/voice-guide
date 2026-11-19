@@ -245,7 +245,7 @@ The reply lists the user's sessions, newest first, without their turns:
 }
 ```
 
-- The user is in the path: percent-encode the ID if it holds a `/` or a space. A user the product never started a session for has an empty list.
+- The user is in the path: percent-encode the ID as one path segment (`encodeURIComponent` in JavaScript), since a raw `/`, `#`, `?` or `%` names something else. An ID a start would refuse is `400` here too. A user the product never started a session for has an empty list.
 - `limit` is 1 to 100 (20 without it). For the next page, send `before=<the last session's ID>`; a page shorter than `limit` is the last.
 - `GET /v1/sessions/<session ID>` reads one session of the product's workspace with every turn, as a delivery's `data` holds it: the same fields, plus `turns` as the user heard them, and no `turns_left_out`, since the whole session comes back. A long session makes a long reply, about 220 KiB for two hours of talk. Another workspace's session is `404`.
 - A live session has `ended_at` and `summary` null, and holds the turns finished so far.
@@ -253,7 +253,7 @@ The reply lists the user's sessions, newest first, without their turns:
 <a id="new-workspace"></a>
 ### One workspace for each product
 
-Each product gets its own workspace, so its agents, product keys and webhook are its own. `scripts/workspace.sh create <name>` adds one and prints its ID and its first product key, the only time the key is shown. The other scripts act on the workspace in `VOICE_WORKSPACE_ID`, so give them its ID: `VOICE_WORKSPACE_ID=<ID> scripts/publish.sh` publishes the agent files to it, and `scripts/product-key.sh` and `scripts/webhook.sh` take the same variable. Start `scripts/run.sh` first, as for the scripts above.
+Each product gets its own workspace, so its agents, product keys and webhook are its own. `scripts/workspace.sh create <name>` adds one and prints its ID and its first product key, the only time the key is shown. The other scripts act on the workspace in `VOICE_WORKSPACE_ID`, so give them its ID. The product's agent files live in a folder of their own, outside `agents/`, each with its own ID, since an agent's ID is unique across workspaces: `VOICE_AGENTS_DIR=<the product's agents folder> VOICE_WORKSPACE_ID=<ID> scripts/publish.sh` publishes them to it. And `scripts/product-key.sh` and `scripts/webhook.sh` take the same variable. Start `scripts/run.sh` first, as for the scripts above.
 
 <a id="embedded"></a>
 ## Try it embedded
