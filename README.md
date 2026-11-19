@@ -382,7 +382,7 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `session_context`: what the product must send at the start, such as the resume;
 - `summary`: how the agent sums up a session for next time;
 - `model`: the model that answers its turns and writes its summary, the server's `VOICE_MODEL` unless set;
-- `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set.
+- `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
 
 The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
 

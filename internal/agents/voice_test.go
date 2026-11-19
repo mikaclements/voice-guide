@@ -3,6 +3,7 @@ package agents_test
 import (
 	"context"
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
@@ -39,5 +40,20 @@ func TestPublishAcceptsAVoiceAndASpeedAtEitherEndOfTheRange(t *testing.T) {
 		if _, err := agents.Publish(context.Background(), fake.New(), workspace, []agents.Agent{a}); err != nil {
 			t.Errorf("Publish with speed %v = %v, want it accepted", speed, err)
 		}
+	}
+}
+
+func TestCheckVoicesRefusesAVoiceTheServiceLacksAndNamesTheAgent(t *testing.T) {
+	a := lighthouseKeeper()
+	a.Voice = "bf_emma"
+	if err := agents.CheckVoices([]agents.Agent{a}, []string{"af_heart", "bf_emma"}); err != nil {
+		t.Errorf("CheckVoices with the voice offered = %v, want nil", err)
+	}
+	err := agents.CheckVoices([]agents.Agent{a}, []string{"af_heart"})
+	if err == nil || !strings.Contains(err.Error(), a.Name) || !strings.Contains(err.Error(), "bf_emma") {
+		t.Errorf("CheckVoices = %v, want an error naming the agent and the voice", err)
+	}
+	if err := agents.CheckVoices([]agents.Agent{lighthouseKeeper()}, nil); err != nil {
+		t.Errorf("CheckVoices for an agent naming no voice = %v, want nil: it uses the service's", err)
 	}
 }

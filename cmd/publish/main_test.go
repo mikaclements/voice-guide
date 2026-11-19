@@ -11,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mikaclements/voice-guide/internal/agents"
+	voicefake "github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake"
 )
 
 func env(overrides map[string]string) func(string) string {
@@ -107,5 +110,47 @@ func TestPublishRefusesAnAgentReadingAKindUserContextDoesntHold(t *testing.T) {
 	getenv := env(map[string]string{"DATABASE_URL": "postgres://keeper@127.0.0.1:1/harbour?sslmode=disable", "VOICE_AGENTS_DIR": agentsFolder(t, "profile, diary")})
 	if err := run(context.Background(), getenv, slog.New(slog.DiscardHandler), publishTimeout); err == nil || !strings.Contains(err.Error(), `reads "diary"`) {
 		t.Errorf("run = %v, want a refusal naming the unknown kind", err)
+	}
+}
+
+func namingVoice(voice string) []agents.Agent {
+	return []agents.Agent{{Name: "Lighthouse keeper", Voice: voice}}
+}
+
+func TestPublishRefusesAnAgentNamingAVoiceTheTextToSpeechServiceLacks(t *testing.T) {
+	list := voicefake.New("af_heart")
+	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.DiscardHandler)); err == nil {
+		t.Error("checkVoices accepted a voice the service doesn't have")
+	}
+	if err := checkVoices(t.Context(), namingVoice("af_heart"), list, slog.New(slog.DiscardHandler)); err != nil {
+		t.Errorf("checkVoices with a voice it has = %v, want nil", err)
+	}
+}
+
+func TestPublishGoesAheadAndWarnsWhenTheTextToSpeechServiceCantBeAsked(t *testing.T) {
+	list := voicefake.New()
+	list.Fail(errors.New("connection refused"))
+	var out strings.Builder
+	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.NewTextHandler(&out, nil))); err != nil {
+		t.Errorf("checkVoices = %v, want nil: the agents publish unchecked", err)
+	}
+	if !strings.Contains(out.String(), "not checked") {
+		t.Errorf("log %q, want a warning that the voices were not checked", out.String())
+	}
+}
+
+func TestPublishAsksForVoicesOnlyWhenAnAgentNamesOneAndAServiceIsConfigured(t *testing.T) {
+	list := voicefake.New("af_heart")
+	log := slog.New(slog.DiscardHandler)
+	_ = checkVoices(t.Context(), namingVoice(""), list, log)
+	_ = checkVoices(t.Context(), namingVoice("af_heart"), nil, log)
+	if list.Asked() != 0 {
+		t.Errorf("the list was asked %d times, want none for an agent naming no voice", list.Asked())
+	}
+	if cfg, _ := loadConfig(env(map[string]string{"VOICE_TTS": "fake"})); cfg.ttsURL != "" {
+		t.Errorf("ttsURL = %q with the fake text-to-speech, want none to ask", cfg.ttsURL)
+	}
+	if cfg, _ := loadConfig(env(nil)); cfg.ttsURL != defaultTTSURL {
+		t.Errorf("ttsURL = %q, want %q where compose publishes Kokoro", cfg.ttsURL, defaultTTSURL)
 	}
 }
