@@ -15,7 +15,7 @@ import { claudeSubscriptionProvider, type QueryFn } from "./claude-subscription.
 const request: ReplyRequest = {
   model: "claude-haiku-5-5",
   sessionId: "s1",
-  stableLayers: ["You are an interviewer.", "<resume>Built a queue.</resume>"],
+  stableLayers: ["You are an interviewer.", "<document>Built a queue.</document>"],
   conversation: [
     { role: "agent", text: "Tell me about the queue." },
     { role: "user", text: "It was fast." },
@@ -153,7 +153,7 @@ test("maps the layered prompt to a tool-less, thinking-off call on the requested
   assert.deepEqual(options?.systemPrompt, [
     "You are an interviewer.",
     SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
-    "<resume>Built a queue.</resume>",
+    "<document>Built a queue.</document>",
   ]);
   // An API key would silently bill the key instead of using the subscription; voice owns retrying,
   // so Claude Code's own retries are off and its API calls time out with the reply.

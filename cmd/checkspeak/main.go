@@ -72,7 +72,8 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 	voice := fs.String("voice", "http://"+cmp.Or(getenv("VOICE_ADDR"), "127.0.0.1:8080"), "voice's address")
 	kokoroURL := fs.String("kokoro", cmp.Or(getenv("VOICE_TTS_URL"), "http://127.0.0.1:8880"), "Kokoro-FastAPI's address, which says the sentences")
 	agent := fs.String("agent", "01a1de84-fbfc-7758-9af4-3ced6d8a90cc", "the agent to talk to (the mock interviewer)")
-	resume := fs.String("resume", "seed/placeholder-user/resume.md", "the resume sent as session context")
+	document := fs.String("document", "seed/placeholder-user/resume.md", "the file sent as the session context's one document")
+	documentName := fs.String("document-name", "resume", "the document's name, as the agent's file declares it (the mock interviewer's)")
 	reference := fs.String("reference", "seed/placeholder-user/reference.txt", "the file holding the product's reference for the user")
 	turns := fs.Int("turns", 3, "how many sentences to say")
 	greetings := fs.Int("greetings", 0, "instead of speaking, start this many sessions and time each greeting")
@@ -84,7 +85,7 @@ func run(ctx context.Context, args []string, getenv func(string) string) error {
 		return errors.New("VOICE_DEV_PRODUCT_KEY is not set")
 	}
 	join := func(note string) (*browser, string, error) {
-		session, ticket, err := start(ctx, *voice, productKey, *agent, *reference, *resume, note)
+		session, ticket, err := start(ctx, *voice, productKey, *agent, *reference, *documentName, *document, note)
 		if err != nil {
 			return nil, "", err
 		}
@@ -219,16 +220,16 @@ func send(ctx context.Context, base, bearer, method, path, contentType string, b
 }
 
 // start starts a session with the agent as a product's server does: with its key, naming the user
-// by the reference in a file and sending the resume as session context. It returns the session's
-// ID and its ticket, which the browser's side of the check then uses. A note, when given, ends the
-// resume.
-func start(ctx context.Context, base, productKey, agent, referenceFile, resumeFile, note string) (id, ticket string, err error) {
-	resume, err := os.ReadFile(resumeFile)
+// by the reference in a file and sending a file as the session context's one document, under
+// name. It returns the session's ID and its ticket, which the browser's side of the check then
+// uses. A note, when given, ends the document.
+func start(ctx context.Context, base, productKey, agent, referenceFile, name, documentFile, note string) (id, ticket string, err error) {
+	document, err := os.ReadFile(documentFile)
 	if err != nil {
 		return "", "", err
 	}
 	if note != "" {
-		resume = fmt.Appendf(resume, "\n\n%s\n", note)
+		document = fmt.Appendf(document, "\n\n%s\n", note)
 	}
 	reference, err := os.ReadFile(referenceFile)
 	if err != nil {
@@ -236,7 +237,7 @@ func start(ctx context.Context, base, productKey, agent, referenceFile, resumeFi
 	}
 	body, _ := json.Marshal(map[string]any{"agent_id": agent, "request_id": uuid.NewV7().String(),
 		"user":            strings.TrimSpace(string(reference)),
-		"session_context": []map[string]string{{"name": "resume", "content": string(resume)}}})
+		"session_context": []map[string]string{{"name": name, "content": string(document)}}})
 	res, err := send(ctx, base, productKey, http.MethodPost, "/v1/sessions", "application/json", body)
 	if err != nil {
 		return "", "", fmt.Errorf("start a session: %w", err)
