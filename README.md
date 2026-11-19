@@ -185,7 +185,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 <a id="webhook"></a>
 ### Hear when a session ends
 
-`scripts/webhook.sh set <URL>` sets the product's webhook. It prints the signing secret, the only time it's shown. The URL must be https, except on this machine, where http works too. Once a session ends and its summary is written, or has failed, voice-guide posts it there as JSON. Three headers come with it: `webhook-id`, `webhook-timestamp` and `webhook-signature`.
+`scripts/webhook.sh set <URL>` sets the product's webhook. The first `set` prints the signing secret, the only time it's shown. A later `set` changes the URL and keeps the secret. `scripts/webhook.sh rotate` prints a new secret. The URL must be https, except on localhost or a loopback address, where http works too. Once a session ends and its summary is written, or has failed, voice-guide posts it there as JSON. Three headers come with it: `webhook-id`, `webhook-timestamp` (Unix seconds) and `webhook-signature`.
 
 ```json
 {
@@ -211,8 +211,9 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 
 - The opening, the first turn when the agent speaks first, has empty `words`. `cut` says the user interrupted the reply.
 - A body holds at most 256 KiB. A longer session leaves out its earliest turns, counted in `turns_left_out`.
-- **Check the signature:** the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the secret's bytes (the base64 after `whsec_`), is the base64 after `v1,` in `webhook-signature`. This is the Standard Webhooks specification's scheme, so its libraries verify it; `verifyWebhook` in `examples/job-board/server.mjs` does it in Node, and also refuses a timestamp more than five minutes off.
-- Answer with any 2xx. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled. `410 Gone` stops deliveries until the URL is set again.
+- **Check the signature:** the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the bytes the base64 after `whsec_` decodes to, is the base64 after `v1,` in `webhook-signature`. This is the Standard Webhooks specification's scheme, so its libraries verify it; `verifyWebhook` in `examples/job-board/server.mjs` does it in Node, and also refuses a timestamp more than five minutes off.
+- Answer with any 2xx within 15 s. A slower answer counts as none. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled.
+- `410 Gone` stops deliveries until the URL is set again. That session, and any that end while deliveries are stopped, are never sent.
 
 <a id="embedded"></a>
 ## Try it embedded
@@ -224,7 +225,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 The test embedding runs beside `scripts/run.sh`, not `scripts/up.sh`. So it needs what [Faster text-to-speech on an Apple silicon Mac](#faster) lists: Docker, Go, Node and OpenSSL. `scripts/webhook.sh` runs with Go, and `scripts/demo.sh` runs the job board's server with Node. You also add one line to `.env` by hand.
 
 1. Start voice-guide with `scripts/run.sh` and leave it running.
-2. In another terminal, set the [webhook](#webhook), the address where voice-guide tells the test embedding that a session has ended. It prints the webhook's signing secret, only once:
+2. In another terminal, set the [webhook](#webhook), the address where voice-guide tells the test embedding that a session has ended. The first `set` prints the webhook's signing secret, only once. If the workspace has a webhook already, `set` keeps its secret, and `scripts/webhook.sh rotate` prints a new one:
 
    ```sh
    scripts/webhook.sh set http://127.0.0.1:5190/webhook
