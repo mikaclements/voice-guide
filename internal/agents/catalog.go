@@ -33,11 +33,12 @@ type Agent struct {
 	// summaries; empty, the server's own model answers.
 	Model string
 	// Voice names the voice that speaks this agent's replies, as the
-	// text-to-speech service names its voices; empty, the session's own
-	// start or the server's voice speaks.
+	// text-to-speech service names its voices; empty, the server's voice
+	// speaks. A session's start may name another, which then wins.
 	Voice string
 	// Speed is how fast the voice speaks, 1 the voice's own pace; 0 is not
-	// set, and the session's own start or the server's speed applies.
+	// set, and the server's speed applies. A session's start may name
+	// another, which then wins.
 	Speed float64
 }
 
@@ -131,6 +132,9 @@ var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 // and not on every turn.
 func IsModelName(name string) bool { return modelName.MatchString(name) }
 
+// A style is at most 32 characters: Kokoro's styles are about ten (gongitsune is the longest
+// seen), so 32 leaves room for new voices while refusing a name that is really text. A round
+// guess, to be checked when a voice with a longer style appears.
 var voiceName = regexp.MustCompile(`^[a-z]{2}_[a-z0-9]{1,32}$`)
 
 // IsVoiceName reports whether name can name a voice: a language and a style

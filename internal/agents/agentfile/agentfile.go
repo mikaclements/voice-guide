@@ -32,8 +32,8 @@ type settings struct {
 	// The model that answers this agent's turns, the server's unless set.
 	Model string `yaml:"model"`
 	// The voice that speaks this agent's replies, and how fast, 1 the voice's own pace; the
-	// session's own or the server's unless set. A pointer, so a speed of 0 written out is refused
-	// instead of read as unset.
+	// server's unless set, and a session's start may name others. A pointer, so a speed of 0
+	// written out is refused instead of read as unset.
 	Voice string   `yaml:"voice"`
 	Speed *float64 `yaml:"speed"`
 }

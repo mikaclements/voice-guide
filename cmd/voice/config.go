@@ -37,7 +37,7 @@ type config struct {
 	// maxAudio bounds the audio connections this server holds at once.
 	maxAudio int
 	// tts names what speaks replies, kokoro or fake; ttsURL is where Kokoro-FastAPI listens; voice
-	// is the voice replies are spoken in; firstAudio bounds the wait for a phrase's first audio.
+	// is the service's own voice, for sessions whose start and agent name none; firstAudio bounds the wait for a phrase's first audio.
 	tts        string
 	ttsURL     string
 	voice      string

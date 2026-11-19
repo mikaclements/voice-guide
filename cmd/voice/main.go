@@ -152,8 +152,8 @@ const (
 // defaultSpeed is a voice's own pace, which Kokoro's speed field names 1.
 const defaultSpeed = 1.0
 
-// defaultVoice speaks replies until agents choose their own: af_heart, the voice Kokoro's
-// timings were measured in.
+// defaultVoice speaks replies of sessions whose start and agent name no voice: af_heart, the
+// voice Kokoro's timings were measured in.
 const defaultVoice = "af_heart"
 
 // defaultSpeechThreshold is the probability from which a frame counts as speech: 0.5, the model's

@@ -125,7 +125,7 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, c access.C
 		return
 	}
 	if err != nil || in.AgentID == uuid.Nil() || in.RequestID == uuid.Nil() {
-		s.api.Problem(w, r, http.StatusBadRequest, "the body must be a JSON object with agent_id and request_id, each a UUID, and an optional session_context list of name and content")
+		s.api.Problem(w, r, http.StatusBadRequest, "the body must be a JSON object with agent_id and request_id, each a UUID, and optional session_context, a list of name and content, voice, a string, and speed, a number")
 		return
 	}
 	req := conversation.StartRequest{Agent: in.AgentID, RequestID: in.RequestID, User: in.User, Voice: in.Voice, Speed: in.Speed}

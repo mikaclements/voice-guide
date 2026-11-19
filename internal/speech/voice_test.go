@@ -3,6 +3,7 @@ package speech_test
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -22,24 +23,30 @@ import (
 	itemsfake "github.com/mikaclements/voice-guide/internal/usercontext/store/fake"
 )
 
+// asked is what one reply was asked to be spoken in.
+type asked struct {
+	voice string
+	speed float64
+}
+
 // spokenAs is the text-to-speech fake, noting the voice and speed each reply is asked in.
 type spokenAs struct {
 	ttsfake.TextToSpeech
-	mu    sync.Mutex
-	asked [][2]any
+	mu   sync.Mutex
+	made []asked
 }
 
 func (s *spokenAs) Speak(ctx context.Context, voice string, speed float64, text <-chan string) <-chan speech.Packet {
 	s.mu.Lock()
-	s.asked = append(s.asked, [2]any{voice, speed})
+	s.made = append(s.made, asked{voice, speed})
 	s.mu.Unlock()
 	return s.TextToSpeech.Speak(ctx, voice, speed, text)
 }
 
-func (s *spokenAs) all() [][2]any {
+func (s *spokenAs) all() []asked {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return append([][2]any(nil), s.asked...)
+	return slices.Clone(s.made)
 }
 
 // speakingSession starts a session with the keeper, who has agent's voice and speed, over a
@@ -68,28 +75,17 @@ func speakingSession(t *testing.T, agent agents.Agent, start conversation.StartR
 	return h, h.connect(t), tts
 }
 
+// The choice among the start's, the agent's and the service's is conversation's, tested there; here
+// only that what the session holds reaches text-to-speech with every reply.
 func TestEveryReplyIsSpokenInTheSessionsVoiceAndSpeed(t *testing.T) {
-	two := 1.5
-	for name, tt := range map[string]struct {
-		agent agents.Agent
-		start conversation.StartRequest
-		voice string
-		speed float64
-	}{
-		"the service's, when the agent and the start name none": {agents.Agent{}, conversation.StartRequest{}, "af_heart", 1},
-		"the agent's":                  {agents.Agent{Voice: "bf_emma", Speed: 0.8}, conversation.StartRequest{}, "bf_emma", 0.8},
-		"the start's over the agent's": {agents.Agent{Voice: "zf_xiaobei", Speed: 0.8}, conversation.StartRequest{Voice: "bf_emma", Speed: &two}, "bf_emma", 1.5},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, c, tts := speakingSession(t, tt.agent, tt.start)
-			for range 2 {
-				c.Say(turnMessage(uuid.NewV7(), "Where should we start?"))
-				until(t, c, "spoken")
-			}
-			want := [][2]any{{tt.voice, tt.speed}, {tt.voice, tt.speed}}
-			if got := tts.all(); len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
-				t.Errorf("replies asked for in %v, want both in %q at %v", got, tt.voice, tt.speed)
-			}
-		})
+	speed := 1.5
+	_, c, tts := speakingSession(t, agents.Agent{Voice: "zf_xiaobei", Speed: 0.8}, conversation.StartRequest{Voice: "bf_emma", Speed: &speed})
+	for range 2 {
+		c.Say(turnMessage(uuid.NewV7(), "Where should we start?"))
+		until(t, c, "spoken")
+	}
+	want := asked{"bf_emma", 1.5}
+	if got := tts.all(); !slices.Equal(got, []asked{want, want}) {
+		t.Errorf("replies asked for in %+v, want both in %q at %v", got, want.voice, want.speed)
 	}
 }
