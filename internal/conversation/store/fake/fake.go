@@ -4,6 +4,8 @@ package fake
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 	"uuid"
@@ -121,6 +123,25 @@ func (f *Sessions) InWorkspace(_ context.Context, workspace, id uuid.UUID) (conv
 		return conversation.Session{}, false, nil
 	}
 	return f.byRequest[key], true, nil
+}
+
+// ListForUser returns up to limit of the user's sessions in the workspace, newest first, those
+// started before the session before, or from the newest for the nil UUID.
+func (f *Sessions) ListForUser(_ context.Context, workspace, user, before uuid.UUID, limit int) ([]conversation.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var list []conversation.Session
+	for _, s := range f.byRequest {
+		if s.Workspace == workspace && s.User == user && (before == uuid.Nil() || s.ID.String() < before.String()) {
+			list = append(list, s)
+		}
+	}
+	// UUIDv7 text sorts as the time the ID was made.
+	slices.SortFunc(list, func(a, b conversation.Session) int { return strings.Compare(b.ID.String(), a.ID.String()) })
+	if len(list) > limit {
+		list = list[:limit]
+	}
+	return list, nil
 }
 
 // End marks the user's session with id ended, unless it already is,

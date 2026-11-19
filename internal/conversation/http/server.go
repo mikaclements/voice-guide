@@ -27,6 +27,8 @@ func Register(rt *api.Router, svc *conversation.Service) {
 	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, s.listAgents)
 	rt.HandleProduct("POST /v1/sessions", api.RequestTimeout, s.startSession)
 	rt.HandleTicket("POST /v1/sessions/{id}/turns", svc.TurnDeadline(), s.takeTurn)
+	rt.HandleProduct("GET /v1/users/{user}/sessions", api.RequestTimeout, s.listPastSessions)
+	rt.HandleProduct("GET /v1/sessions/{id}", api.RequestTimeout, s.readPastSession)
 	rt.HandleSessionEnd("POST /v1/sessions/{id}/end", api.RequestTimeout, s.endSession)
 }
 

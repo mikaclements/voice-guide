@@ -41,6 +41,7 @@ How voice-guide is built, in plain words. Setting up, the commands and where thi
 | `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
 | `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
 | `scripts/webhook.sh set URL\|rotate\|show` | The workspace's webhook. `set` prints the signing secret the first time, the only time it's shown; `rotate` replaces it |
+| `scripts/workspace.sh create NAME` | A new workspace besides the seeded one, so each product has its own agents, keys and webhook. Prints its ID and its first product key, the only time the key is shown; the other scripts take the workspace in `VOICE_WORKSPACE_ID` |
 
 The hooks check and never rewrite. A commit checks the formatting of what is staged and refuses files git ignores. A push runs the docs check, lint, the dead-code check and the tests. CI runs the same on every pull request, with the race detector and the database. The speed numbers in the docs come from the scripts in `.claude/skills/measure/`.
 

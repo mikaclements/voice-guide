@@ -108,7 +108,7 @@ Conversation and speech together are voice: the part of voice-guide that gives a
 
 A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in client. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
 
-`scripts/product-key.sh` and `scripts/webhook.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s. So start `scripts/run.sh` before using them: under `scripts/up.sh`, a key `scripts/product-key.sh` made is refused with `401`.
+`scripts/product-key.sh`, `scripts/webhook.sh` and `scripts/workspace.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s. So start `scripts/run.sh` before using them: under `scripts/up.sh`, a key `scripts/product-key.sh` made is refused with `401`.
 
 ### Start a session from the product's server
 
@@ -216,6 +216,44 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 - **Check the signature:** the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the bytes the base64 after `whsec_` decodes to, is the base64 after `v1,` in `webhook-signature`. This is the Standard Webhooks specification's scheme, so its libraries verify it; `verifyWebhook` in `examples/job-board/server.mjs` does it in Node, and also refuses a timestamp more than five minutes off.
 - Answer with any 2xx within 15 s. A slower answer counts as none. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled.
 - `410 Gone` stops deliveries until the URL is set again. That session, and any that end while deliveries are stopped, are never sent.
+
+<a id="past-sessions"></a>
+### Read past sessions
+
+The server reads its users' sessions back with its key, whenever it wants them: for a history page, or to catch up on a session whose delivery it missed. Neither route takes a ticket, so a page can't read them.
+
+```sh
+curl "https://voice.example.com/v1/users/<your own ID for this user>/sessions?limit=20" \
+  -H "Authorization: Bearer <product key>"
+```
+
+The reply lists the user's sessions, newest first, without their turns:
+
+```json
+{
+  "sessions": [
+    {
+      "id": "<session ID>",
+      "user": "<your own ID for this user>",
+      "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
+      "agent_version": 1,
+      "started_at": "<RFC 3339 time>",
+      "ended_at": "<RFC 3339 time, or null while the session is live>",
+      "summary": "<the agent's summary, or null while live or when none was written>"
+    }
+  ]
+}
+```
+
+- The user is in the path: percent-encode the ID if it holds a `/` or a space. A user the product never started a session for has an empty list.
+- `limit` is 1 to 100 (20 without it). For the next page, send `before=<the last session's ID>`; a page shorter than `limit` is the last.
+- `GET /v1/sessions/<session ID>` reads one session of the product's workspace with every turn, as a delivery's `data` holds it: the same fields, plus `turns` as the user heard them, and no `turns_left_out`, since the whole session comes back. A long session makes a long reply, about 220 KiB for two hours of talk. Another workspace's session is `404`.
+- A live session has `ended_at` and `summary` null, and holds the turns finished so far.
+
+<a id="new-workspace"></a>
+### One workspace for each product
+
+Each product gets its own workspace, so its agents, product keys and webhook are its own. `scripts/workspace.sh create <name>` adds one and prints its ID and its first product key, the only time the key is shown. The other scripts act on the workspace in `VOICE_WORKSPACE_ID`, so give them its ID: `VOICE_WORKSPACE_ID=<ID> scripts/publish.sh` publishes the agent files to it, and `scripts/product-key.sh` and `scripts/webhook.sh` take the same variable. Start `scripts/run.sh` first, as for the scripts above.
 
 <a id="embedded"></a>
 ## Try it embedded

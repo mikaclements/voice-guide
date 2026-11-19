@@ -711,9 +711,9 @@
           "from": "product",
           "to": "voice",
           "protocol": "HTTP",
-          "send": "product key · user's ID · agent · context · end",
-          "back": "agents · the session and its ticket",
-          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; the start names its user by the product's own stable ID ('user'), added with their first session. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries.",
+          "send": "product key · user's ID · agent · context · end · read sessions",
+          "back": "agents · the session and its ticket · past sessions",
+          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read a user's past sessions, by the product's own reference for the user, a session with all its turns as the user heard them, filtered by the workspace; the start names its user by the product's own stable ID ('user'), added with their first session. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries.",
           "considerations": ["product-keys", "product-context", "api-for-products"]
         },
         {
@@ -1178,9 +1178,9 @@
           "from": "x-product",
           "to": "api",
           "protocol": "HTTP",
-          "send": "agents · start, end a session, with the product key",
+          "send": "agents · start, end, read past sessions, with the product key",
           "back": "agents · the session and its ticket · problem details",
-          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct; the start names the user by the product's own stable ID.",
+          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
           "considerations": ["product-keys"]
         },
         {
@@ -1235,8 +1235,8 @@
           "from": "api",
           "to": "conversation",
           "protocol": "route",
-          "send": "agents · sessions · typed turns · end",
-          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key).",
+          "send": "agents · sessions · typed turns · end · past sessions",
+          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key), and GET /v1/users/{user}/sessions and GET /v1/sessions/{id} through HandleProduct.",
           "considerations": ["http-and-webrtc"]
         },
         {
@@ -1662,13 +1662,14 @@
             "Start",
             "ByID",
             "InWorkspace",
+            "ListForUser",
             "End",
             "Touch",
             "UserByReference",
             "Reference",
             "EndIdle"
           ],
-          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time and queuing its summary job, and its delivery job for a workspace with a webhook, in the same write, mark it active, and end every idle one in a single sweep.",
+          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, list a user's sessions newest first from a cursor, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time and queuing its summary job, and its delivery job for a workspace with a webhook, in the same write, mark it active, and end every idle one in a single sweep.",
           "considerations": ["workspace-every-record", "session-end"],
           "drill": "types-conversation",
           "focus": "internal/conversation"
@@ -1745,7 +1746,7 @@
           "name": "http",
           "path": "internal/conversation/http",
           "summary": "conversation's part of the API: agents, sessions, typed turns with the reply as server-sent events.",
-          "description": "Inbound adapter: registers GET /v1/agents and POST /v1/sessions for a product's server, which calls with its key and names the user by its own stable ID, and gets back the session with a fresh ticket for it, minted by the router, and POST /v1/sessions/{id}/turns and POST /v1/sessions/{id}/end, which the product's server may also call with its key, turns requests into calls on the core, and streams a typed turn's reply as server-sent events: text, then done or lost. Refusals are problem details, with types of their own where a client must tell them apart; a user reference that can't be looked up is a 503.",
+          "description": "Inbound adapter: registers GET /v1/agents and POST /v1/sessions for a product's server, which calls with its key and names the user by its own stable ID, and gets back the session with a fresh ticket for it, minted by the router, and POST /v1/sessions/{id}/turns and POST /v1/sessions/{id}/end, which the product's server may also call with its key, and GET /v1/users/{user}/sessions and GET /v1/sessions/{id}, which read a user's past sessions, newest first a page at a time, and one session with all its turns, for the product's key alone, turns requests into calls on the core, and streams a typed turn's reply as server-sent events: text, then done or lost. Refusals are problem details, with types of their own where a client must tell them apart; a user reference that can't be looked up is a 503.",
           "why": "The API is designed for products outside voice-guide; errors are standard problem details their tools already read.",
           "considerations": ["http-and-webrtc", "problem-details", "api-for-products"],
           "drill": "types-conversation",
