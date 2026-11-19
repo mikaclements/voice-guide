@@ -46,7 +46,7 @@ export const overMessages: Record<Over, string> = {
 // Whether err from a session's route means the session is over, and why. Any 401 there does: the
 // ticket is the only credential the page has. So does a 404: the ticket isn't this session's, as
 // when a product's page hands over one session's ID with another's ticket, and no retry mends it.
-export function overBy(err: unknown): Over | undefined {
+export function whyOver(err: unknown): Over | undefined {
   if (endsSession(err)) return "ended";
   if (ticketExpired(err)) return "expired";
   if (err instanceof ProblemError && (err.status === 401 || err.status === 404)) return "unusable";
@@ -63,20 +63,20 @@ export function endsOnExpiry(why: Over, alreadyOver: boolean): boolean {
 // What the page does when opening the session's audio failed with err and tries are left: for a
 // session that is over, ended, expired or refused its ticket, no audio however often it asks.
 export function afterAudioFailure(err: unknown, tries: number): "over" | "retry" | "text" {
-  if (overBy(err)) return "over";
+  if (whyOver(err)) return "over";
   return tries > 0 ? "retry" : "text";
 }
 
-// The page learns its session is over, why, over saying whether it knew already. Learning its
-// ticket ran out, End goes once with that ticket; learning it again, over is set by then, sends
-// nothing more. Then the page shows it over.
-export function learnOver(
-  over: boolean,
+// The page found out its session is over, for why. alreadyOver says whether it knew before. If the
+// ticket ran out and the page did not know, End goes once with that ticket; a second report finds
+// the session already over and sends nothing more. Then showOver shows the session over.
+export function reactToOver(
+  alreadyOver: boolean,
   why: Over,
   end: () => Promise<unknown>,
   showOver: (why: Over) => void,
 ): void {
-  if (endsOnExpiry(why, over)) end().catch(() => {});
+  if (endsOnExpiry(why, alreadyOver)) end().catch(() => {});
   showOver(why);
 }
 
@@ -86,9 +86,9 @@ export function learnOver(
 export async function endSession(
   closeAudio: () => Promise<void>,
   end: () => Promise<Session>,
-  over: () => void,
+  markOver: () => void,
 ): Promise<void> {
   await closeAudio();
   await end();
-  over();
+  markOver();
 }

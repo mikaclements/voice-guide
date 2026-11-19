@@ -2,7 +2,7 @@
 // timing it, keeping its request ID when it may have been taken, and what the page shows.
 
 import type { Playback } from "./audio.ts";
-import { type Over, overBy } from "./ending.ts";
+import { type Over, whyOver } from "./ending.ts";
 import type { ReplySoundClock } from "./replysound.ts";
 import { failure, keepRequestId, requestIdFor } from "./retry.ts";
 import { startTimer, type TurnEnd, type Turns } from "./turns.ts";
@@ -148,7 +148,7 @@ export class Sender {
     } catch (err) {
       unsend();
       if (this.lastReply === replyId) this.lastReply = before;
-      const over = overBy(err);
+      const over = whyOver(err);
       if (over) this.page.sessionEnded?.(over, err);
     }
   }
@@ -214,7 +214,7 @@ export class Sender {
       } else {
         this.page.giveBack(youId, replyId, words, err instanceof Error ? err.message : String(err));
       }
-      const over = overBy(err);
+      const over = whyOver(err);
       if (over) this.page.sessionEnded?.(over, err);
     }
   }

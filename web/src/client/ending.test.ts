@@ -6,8 +6,8 @@ import {
   afterClosing,
   endSession,
   endsOnExpiry,
-  learnOver,
-  overBy,
+  reactToOver,
+  whyOver,
 } from "./ending.ts";
 
 const ended = new ProblemError(409, "/v1/problems/session-ended", "Session ended", "");
@@ -64,17 +64,17 @@ const refused = new ProblemError(401, "about:blank", "Unauthorized", "the ticket
 test("an audio offer refused as ticket-expired ends the session view, with no retry", () => {
   // With 15 tries left, which a dropped ticketExpired check would spend.
   assert.equal(afterAudioFailure(expired, 15), "over");
-  assert.equal(overBy(expired), "expired");
+  assert.equal(whyOver(expired), "expired");
 });
 
 test("any other 401 on a session route means it can't continue, and no audio retry", () => {
-  assert.equal(overBy(refused), "unusable");
+  assert.equal(whyOver(refused), "unusable");
   assert.equal(afterAudioFailure(refused, 15), "over");
   const another = new ProblemError(404, "about:blank", "Not Found", "");
-  assert.equal(overBy(another), "unusable", "a ticket for another session: no retry mends it");
-  assert.equal(overBy(new ProblemError(403, "about:blank", "T", "")), undefined);
-  assert.equal(overBy(new ProblemError(409, "/v1/problems/session-ended", "T", "")), "ended");
-  assert.equal(overBy(new TypeError("Failed to fetch")), undefined);
+  assert.equal(whyOver(another), "unusable", "a ticket for another session: no retry mends it");
+  assert.equal(whyOver(new ProblemError(403, "about:blank", "T", "")), undefined);
+  assert.equal(whyOver(new ProblemError(409, "/v1/problems/session-ended", "T", "")), "ended");
+  assert.equal(whyOver(new TypeError("Failed to fetch")), undefined);
 });
 
 test("a page that learns its ticket ran out sends End once; End too late is not sent again", () => {
@@ -84,10 +84,10 @@ test("a page that learns its ticket ran out sends End once; End too late is not 
   assert.equal(endsOnExpiry("unusable", false), false, "a refused ticket can't end it either");
 });
 
-// What learnOver was told, learning why, over saying whether the page knew already.
+// What reactToOver was told, learning why, over saying whether the page knew already.
 function learning(why: "expired" | "ended" | "unusable", over = false) {
   const calls: string[] = [];
-  learnOver(
+  reactToOver(
     over,
     why,
     async () => {
@@ -111,7 +111,7 @@ test("an ended or refused session is shown over with no End", () => {
 
 test("a failing End changes nothing: the session is shown over all the same", async () => {
   const shown: string[] = [];
-  learnOver(
+  reactToOver(
     false,
     "expired",
     () => Promise.reject(new TypeError("Failed to fetch")),

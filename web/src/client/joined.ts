@@ -4,19 +4,19 @@
 // do the work; this wires them with no framework, so the script a product loads carries no React,
 // and the element itself, as voice-guide's own page, only draws what this shows.
 import { endSession as endOnVoice, ProblemError } from "./api.ts";
-import { type Audio, openAudio, type Playback, playAgent } from "./audio.ts";
+import { type Audio, type Closing, openAudio, type Playback, playAgent } from "./audio.ts";
 import {
   afterAudioFailure,
   afterClosing,
   closings,
   endSession,
-  learnOver,
   microphoneRefused,
   type Over,
-  overBy,
   overMessages,
+  reactToOver,
   reconnectEveryMs,
   reconnectTries,
+  whyOver,
 } from "./ending.ts";
 import { ReplySoundClock, shownReply } from "./replysound.ts";
 import { type Message, type Page, type Reply, Sender, transcriptPage } from "./sending.ts";
@@ -137,10 +137,14 @@ export type Joining = {
   refused(refusal: { message: string; status?: number; type?: string }): void;
 };
 
+// One audio connection the session holds, with its playback once the agent's stream arrives; asked
+// is set once the agent's opening was asked for on it.
+type Opened = { connection: Audio; playback?: Playback; asked?: boolean };
+
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export class JoinedSession {
-  private readonly j: Joining;
+  private readonly deps: Joining;
   private readonly open: typeof openAudio;
   private readonly play: typeof playAgent;
   private state: State = {
@@ -156,7 +160,7 @@ export class JoinedSession {
   // answered over HTTP is called off.
   private left = false;
   private readonly stop = new AbortController();
-  private audio: { connection: Audio; playback?: Playback } | undefined;
+  private audio: Opened | undefined;
   private turns: Turns;
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   // The cap on the greeting's hold of the microphone, while it lasts.
@@ -170,8 +174,12 @@ export class JoinedSession {
   // the audio connection fails; each connection that opens asks on its data channel.
   private openedInText = false;
 
-  constructor(j: Joining, open: typeof openAudio = openAudio, play: typeof playAgent = playAgent) {
-    this.j = j;
+  constructor(
+    deps: Joining,
+    open: typeof openAudio = openAudio,
+    play: typeof playAgent = playAgent,
+  ) {
+    this.deps = deps;
     this.open = open;
     this.play = play;
     this.turns = this.httpTurns();
@@ -180,11 +188,11 @@ export class JoinedSession {
         (change) => this.set({ messages: change(this.state.messages) }),
         (words, why) => {
           if (this.left) return;
-          this.j.giveBack(words);
+          this.deps.giveBack(words);
           this.note({ error: why });
         },
       ),
-      sessionEnded: (why, err) => this.learnedOver(why, err),
+      sessionEnded: (why, err) => this.sessionTurnedOver(why, err),
     };
     this.sender = new Sender(this.clock, page);
     this.spoken = new SpokenTurns(page, (words, id) => this.sender.keep(words, id), this.clock);
@@ -198,14 +206,14 @@ export class JoinedSession {
       void this.connect(reconnectTries);
     } else {
       this.note({ error: insecureMessage });
-      this.over("unusable", insecureMessage);
+      this.markOver("unusable", insecureMessage);
     }
   }
 
   // Sends the user's words, unless a send can't go now; resolves once the turn and its audio end.
   send(words: string): Promise<void> | undefined {
     const said = words.trim();
-    if (!said || view(this.state, this.turns.interrupts, this.j.agent).locked) return undefined;
+    if (!said || view(this.state, this.turns.interrupts, this.deps.agent).locked) return undefined;
     this.note({ error: "" });
     return this.sender.send(said, this.turns, this.audio?.playback);
   }
@@ -251,24 +259,24 @@ export class JoinedSession {
   // rejects; an End already under way is the one answered.
   end(): Promise<void> {
     if (this.left || this.state.over) return Promise.resolve();
-    this.ending ??= this.ended().finally(() => {
+    this.ending ??= this.runEnd().finally(() => {
       this.ending = undefined;
     });
     return this.ending;
   }
 
-  private async ended(): Promise<void> {
+  private async runEnd(): Promise<void> {
     this.set({ busy: true });
     try {
       await endSession(
         () => this.closeAudio(),
-        () => endOnVoice(this.j.ticket, this.j.session, this.j.fetcher),
-        () => this.over("ended"),
+        () => endOnVoice(this.deps.ticket, this.deps.session, this.deps.fetcher),
+        () => this.markOver("ended"),
       );
     } catch (e) {
-      const why = overBy(e);
+      const why = whyOver(e);
       if (why) {
-        this.over(why, e);
+        this.markOver(why, e);
         return;
       }
       this.turns = this.httpTurns();
@@ -292,15 +300,15 @@ export class JoinedSession {
 
   private httpTurns(): Turns {
     const signal = this.stop.signal;
-    return httpTurns(this.j.session, this.j.ticket, (path, init) =>
-      this.j.fetcher(path, { ...init, signal }),
+    return httpTurns(this.deps.session, this.deps.ticket, (path, init) =>
+      this.deps.fetcher(path, { ...init, signal }),
     );
   }
 
   private set(change: Partial<State>): void {
     if (this.left) return;
     this.state = { ...this.state, ...change };
-    this.j.show(view(this.state, this.turns.interrupts, this.j.agent));
+    this.deps.show(view(this.state, this.turns.interrupts, this.deps.agent));
   }
 
   private note(change: Partial<State["notes"]>): void {
@@ -320,29 +328,29 @@ export class JoinedSession {
 
   // The session turned out over, from a refusal or the audio closing. Learning its ticket ran out,
   // it sends End once with that ticket, so the session ends now and its summary runs.
-  private learnedOver(why: Over, err?: unknown): void {
+  private sessionTurnedOver(why: Over, err?: unknown): void {
     if (this.left) return;
-    learnOver(
+    reactToOver(
       !!this.state.over,
       why,
-      () => endOnVoice(this.j.ticket, this.j.session, this.j.fetcher),
-      (w) => this.over(w, err),
+      () => endOnVoice(this.deps.ticket, this.deps.session, this.deps.fetcher),
+      (w) => this.markOver(w, err),
     );
   }
 
-  private over(why: Over, err?: unknown): void {
+  private markOver(why: Over, err?: unknown): void {
     if (this.left || this.state.over) return;
     this.closeAudio();
     this.set({ over: why, notes: { ...this.state.notes, audio: "" } });
     if (why === "unusable") {
       // Only voice's own refusal is told in its words; anything else, by its status alone.
       const problem = err instanceof ProblemError ? err : undefined;
-      this.j.refused({
+      this.deps.refused({
         message: problem && !problem.fromVoice ? `Refused (${problem.status})` : message(err),
         ...(problem && { status: problem.status, type: problem.type }),
       });
     }
-    this.j.ended(why);
+    this.deps.ended(why);
   }
 
   // Opens the session's audio, so typed turns go on its data channel and replies are heard; the
@@ -352,19 +360,13 @@ export class JoinedSession {
     let mine: Audio | undefined;
     try {
       const connection = await this.open(
-        this.j.session,
-        this.j.ticket,
+        this.deps.session,
+        this.deps.ticket,
         (why) => {
-          if (!mine || this.audio?.connection !== mine) return; // one already let go
-          const next = afterClosing(why);
-          if (next === "over") return this.learnedOver(why === "expired" ? "expired" : "ended");
-          this.closeAudio();
-          this.turns = this.httpTurns();
-          this.note({ audio: closings[why] ?? closings.dropped });
-          if (next === "reconnect") void this.connect(reconnectTries);
+          if (mine && this.audio?.connection === mine) this.afterAudioClosed(why); // else let go
         },
         {
-          fetcher: this.j.fetcher,
+          fetcher: this.deps.fetcher,
           onRefused: () => this.note({ microphone: microphoneRefused }),
           onUserSpeech: (id, words, follow, lost) =>
             this.spoken.userSpeech(id, words, follow, lost),
@@ -375,27 +377,8 @@ export class JoinedSession {
         connection.close(); // let go, or over, while it opened
         return;
       }
-      const opened: { connection: Audio; playback?: Playback; asked?: boolean } = { connection };
-      connection.stream.then((stream) => {
-        if (this.audio !== opened) return;
-        opened.playback = this.play(
-          stream,
-          (loud, now) => this.clock.sample(loud, now),
-          (blocked) => {
-            if (this.audio !== opened) return;
-            this.set({ blocked });
-            // The agent's opening, once the browser plays it, at once or from the user's press: a
-            // greeting sent while it refused would be lost to the user, yet saved as heard. Again
-            // on each connection, as after a drop: voice takes only the first, and refuses the rest.
-            if (!blocked && !opened.asked) {
-              opened.asked = true;
-              const cap = this.greetingCap;
-              const release = () => this.release(cap);
-              void this.sender.open(connection.turns, release).finally(release);
-            }
-          },
-        );
-      });
+      const opened: Opened = { connection };
+      connection.stream.then((stream) => this.startPlayback(opened, stream));
       // The session's first connection, before its opening: a reconnect once it has turns holds nothing.
       if (!this.openedInText && !this.state.messages.length) this.hold();
       connection.microphone.mute(this.state.muted || this.state.greeting);
@@ -406,18 +389,61 @@ export class JoinedSession {
       this.turns = connection.turns;
       this.note({ audio: "" });
     } catch (e) {
-      if (this.left) return;
-      const next = afterAudioFailure(e, tries);
-      if ((next === "retry" || next === "text") && !this.openedInText) {
-        this.openedInText = true;
-        void this.sender.open(this.turns); // shown, not heard, rather than waiting on the tries
-      }
-      if (next === "over") this.learnedOver(overBy(e) ?? "ended", e);
-      else if (next === "retry") {
-        this.reconnect = setTimeout(() => this.connect(tries - 1), reconnectEveryMs);
-      } else if (next === "text") {
-        this.note({ audio: `No audio (${message(e)}); replies come as text.` });
-      }
+      this.afterConnectFailure(e, tries);
+    }
+  }
+
+  // What the session does once voice closes the audio connection it holds, saying why.
+  private afterAudioClosed(why: Closing): void {
+    const next = afterClosing(why);
+    if (next === "over") {
+      this.sessionTurnedOver(why === "expired" ? "expired" : "ended");
+      return;
+    }
+    this.closeAudio();
+    this.turns = this.httpTurns();
+    this.note({ audio: closings[why] ?? closings.dropped });
+    if (next === "reconnect") void this.connect(reconnectTries);
+  }
+
+  // Plays the agent's stream of a connection that is still the session's, and asks for the agent's
+  // opening once the browser plays it.
+  private startPlayback(opened: Opened, stream: MediaStream): void {
+    if (this.audio !== opened) return;
+    opened.playback = this.play(
+      stream,
+      (loud, now) => this.clock.sample(loud, now),
+      (blocked) => this.onPlaybackBlocked(opened, blocked),
+    );
+  }
+
+  // The browser refuses to play the agent until a press, or plays it again after one.
+  private onPlaybackBlocked(opened: Opened, blocked: boolean): void {
+    if (this.audio !== opened) return;
+    this.set({ blocked });
+    // The agent's opening, once the browser plays it, at once or from the user's press: a greeting
+    // sent while it refused would be lost to the user, yet saved as heard. Again on each
+    // connection, as after a drop: voice takes only the first, and refuses the rest.
+    if (blocked || opened.asked) return;
+    opened.asked = true;
+    const cap = this.greetingCap;
+    const release = () => this.release(cap);
+    void this.sender.open(opened.connection.turns, release).finally(release);
+  }
+
+  // Opening the audio failed with err and tries are left: try again, or go on in text.
+  private afterConnectFailure(err: unknown, tries: number): void {
+    if (this.left) return;
+    const next = afterAudioFailure(err, tries);
+    if ((next === "retry" || next === "text") && !this.openedInText) {
+      this.openedInText = true;
+      void this.sender.open(this.turns); // shown, not heard, rather than waiting on the tries
+    }
+    if (next === "over") this.sessionTurnedOver(whyOver(err) ?? "ended", err);
+    else if (next === "retry") {
+      this.reconnect = setTimeout(() => this.connect(tries - 1), reconnectEveryMs);
+    } else if (next === "text") {
+      this.note({ audio: `No audio (${message(err)}); replies come as text.` });
     }
   }
 }
