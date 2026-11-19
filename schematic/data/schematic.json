@@ -763,7 +763,7 @@
           "protocol": "HTTP · JSON lines",
           "send": "model, session, stable layers, conversation, new words",
           "back": "text …, then done (usage, timing) or error",
-          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it. When screen input makes the new words read differently once saved, the request carries that form too, for a provider that keeps the conversation.",
+          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it. When screen input makes them differ, the request also carries the new words as they will read once saved and with only the screen input the turn carried, for a provider that keeps the conversation.",
           "considerations": ["model-access", "layered-prompt"]
         },
         {
@@ -812,7 +812,7 @@
           "protocol": "Messages API · Agent SDK",
           "send": "stable layers, conversation, new words",
           "back": "streamed text · usage",
-          "detail": "On the API route, one streamed request per reply carries everything, with the agent's layer, the session's layers and the conversation up to its last saved message marked for the provider's cache, so the newest screen input and the words come after it; the SDK's retries are off and its timeout is the reply's deadline. On the subscription route, the Claude Agent SDK runs a Claude Code process per session, kept between turns, on the developer's login; Claude Code's own retries and compaction are off, and it gets only the environment variables it needs, so the service's secrets never reach it.",
+          "detail": "On the API route, one streamed request per reply carries everything, with the agent's layer, the session's layers and the conversation with cache points, the conversation's on its last saved message, so the newest screen input and the words come after it; the SDK's retries are off and its timeout is the reply's deadline. On the subscription route, the Claude Agent SDK runs a Claude Code process per session, kept between turns, on the developer's login, and sent only the words and the screen input the turn carried; Claude Code's own retries and compaction are off, and it gets only the environment variables it needs, so the service's secrets never reach it.",
           "considerations": ["model-access", "stateless"]
         }
       ]
