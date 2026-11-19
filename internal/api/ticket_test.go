@@ -191,6 +191,6 @@ func TestRotatingTheSigningKeyRefusesEveryTicket(t *testing.T) {
 // A route whose path names no session can't be a ticket's: it refuses every one.
 func TestATicketOnARouteNamingNoSessionIsRefused(t *testing.T) {
 	f := newFixture(t)
-	f.rt.Handle("GET /v1/probe", api.RequestTimeout, func(http.ResponseWriter, *http.Request, access.Caller) { t.Error("the handler ran") })
+	f.rt.HandleTicket("GET /v1/probe", api.RequestTimeout, func(http.ResponseWriter, *http.Request, access.Caller) { t.Error("the handler ran") })
 	assertProblem(t, f.send("GET", "/v1/probe", "Bearer "+f.ticket(t, ticketCaller)), http.StatusNotFound)
 }

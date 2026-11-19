@@ -134,16 +134,16 @@ type takes struct {
 	pastLifetime bool
 }
 
-// Handle registers h for the pattern behind the credential check and a
+// HandleTicket registers h for the pattern behind the credential check and a
 // deadline of its own, so no route can be added without them. It is for the
 // routes in one session, which the user's browser calls: the pattern names
 // the session as {id}, and a ticket works only on its own session's routes.
 // They never take a product key.
-func (rt *Router) Handle(pattern string, timeout time.Duration, h Handler) {
+func (rt *Router) HandleTicket(pattern string, timeout time.Duration, h Handler) {
 	rt.handle(pattern, timeout, takes{tickets: true}, h)
 }
 
-// HandleSessionEnd registers h for the route that ends a session, as Handle
+// HandleSessionEnd registers h for the route that ends a session, as HandleTicket
 // does, with two differences. The session's ticket works there for a while
 // past its lifetime, so a page learning its ticket ran out, or a user who
 // stayed on, ends the session at once and its summary runs, rather than when

@@ -29,7 +29,7 @@ func TestEveryRouteGivesItsHandlerADeadline(t *testing.T) {
 	now := time.Date(2026, 11, 15, 10, 0, 0, 0, time.UTC)
 	rt := api.NewRouter(key, nil, func() time.Time { return now }, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	var hasDeadline bool
-	rt.Handle("GET /v1/sessions/{id}/probe", api.RequestTimeout, func(_ http.ResponseWriter, r *http.Request, _ access.Caller) {
+	rt.HandleTicket("GET /v1/sessions/{id}/probe", api.RequestTimeout, func(_ http.ResponseWriter, r *http.Request, _ access.Caller) {
 		_, hasDeadline = r.Context().Deadline()
 	})
 	sid := uuid.NewV7()
@@ -104,7 +104,7 @@ func newFixtureWithKey(t *testing.T, secret string) *fixture {
 		case r.keys:
 			f.rt.HandleProduct(r.pattern, api.RequestTimeout, record)
 		default:
-			f.rt.Handle(r.pattern, api.RequestTimeout, record)
+			f.rt.HandleTicket(r.pattern, api.RequestTimeout, record)
 		}
 	}
 	return f
