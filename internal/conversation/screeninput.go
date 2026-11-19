@@ -19,15 +19,20 @@ type ScreenInputBlock struct {
 // ScreenInputError reports screen input that can't be used, naming each
 // problem, so the product can fix its request.
 type ScreenInputError struct {
-	BadNames, Repeated, Empty, Unstorable []string
+	BadNames, Reserved, Repeated, Empty, Unstorable []string
 }
+
+// reservedNames are the tags that frame what the summary's model reads: a
+// screen input block named for one would read as part of the frame, its
+// instructions say, rather than as what the user showed.
+var reservedNames = map[string]bool{"instructions": true, "transcript": true, "screen": true}
 
 func (e *ScreenInputError) Error() string {
 	var parts []string
 	for _, p := range []struct {
 		what  string
 		names []string
-	}{{"names that aren't lower-case letters, digits and _, at most 32", e.BadNames}, {"sent twice", e.Repeated}, {"empty", e.Empty}, {"holding a NUL character, which can't be stored", e.Unstorable}} {
+	}{{"names that aren't lower-case letters, digits and _, at most 32", e.BadNames}, {"names kept for voice-guide's own use", e.Reserved}, {"sent twice", e.Repeated}, {"empty", e.Empty}, {"holding a NUL character, which can't be stored", e.Unstorable}} {
 		if len(p.names) > 0 {
 			parts = append(parts, p.what+": "+quoted(p.names))
 		}
@@ -54,6 +59,8 @@ func checkScreenInput(blocks []ScreenInputBlock, limit int) error {
 		switch {
 		case !agents.IsBlockName(b.Name):
 			e.BadNames = append(e.BadNames, b.Name)
+		case reservedNames[b.Name]:
+			e.Reserved = append(e.Reserved, b.Name)
 		case sent[b.Name]:
 			e.Repeated = append(e.Repeated, b.Name)
 		case b.Content == "":
@@ -64,7 +71,7 @@ func checkScreenInput(blocks []ScreenInputBlock, limit int) error {
 		sent[b.Name] = true
 		chars += utf8.RuneCountInString(b.Content)
 	}
-	if len(e.BadNames)+len(e.Repeated)+len(e.Empty)+len(e.Unstorable) > 0 {
+	if len(e.BadNames)+len(e.Reserved)+len(e.Repeated)+len(e.Empty)+len(e.Unstorable) > 0 {
 		return &e
 	}
 	if chars > limit {

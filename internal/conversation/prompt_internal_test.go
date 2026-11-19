@@ -271,7 +271,7 @@ func TestASummaryMarksEachScreenChangeAndHoldsTheNewestBlockOfEachNameOnce(t *te
 		"User: (The user's logbook changed here.)\n\nNoted?\n\nAgent: Noted.\n\n" +
 		"User: (The user's chart changed here.)\n\nMoved?\n\nAgent: Yes.\n\n" +
 		"</transcript>\n\n" +
-		screenAtEnd + "\n\n<chart>\nRocks to the east.\n</chart>\n\n<logbook>\nFog at dawn.\n</logbook>\n\n" +
+		"<screen>\n<chart>\nRocks to the east.\n</chart>\n\n<logbook>\nFog at dawn.\n</logbook>\n</screen>\n\n" +
 		"<instructions>\nNote the course.\n</instructions>"
 	if got != want {
 		t.Errorf("summary's ask =\n%s\nwant\n%s", got, want)
