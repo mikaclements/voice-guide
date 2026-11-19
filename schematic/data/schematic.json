@@ -189,7 +189,7 @@
       "title": "Agents stored as versions that never change, published from one file per agent",
       "section": "Agents",
       "status": "accepted",
-      "decision": "An agent's versions are database rows that are never changed; a change is saved as the next number. New sessions get the newest version and a running session keeps its own, and publishing from agents/<name>.md is a step of its own, never part of a start. Its file's summary section may name the summary's model and the criteria and scale its sessions are graded on, checked at publish.",
+      "decision": "An agent's versions are database rows that are never changed; a change is saved as the next number. New sessions get the newest version and a running session keeps its own, and publishing from agents/<name>.md is a step of its own, never part of a start. Its file's summary section may name the summary's model and a JSON Schema for a structured part of the summary, checked at publish.",
       "why": "Any instance may serve a session's next turn, so every instance must find the exact version the session started on, even mid-deploy.",
       "tradeoff": "The file shows only the text it will publish next; earlier versions live in the database."
     },
@@ -279,7 +279,7 @@
       "title": "A layered, cached prompt",
       "section": "Turns · The model",
       "status": "accepted",
-      "decision": "The prompt is built in layers, stable ones first: the agent's persona with any criteria its sessions are graded on, the session's context, the append-only conversation, then the screen input and the new words. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
+      "decision": "The prompt is built in layers, stable ones first: the agent's persona, the session's context, the append-only conversation, then the screen input and the new words. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
       "why": "Every uncached input token adds to the time to the model's first word, and caching cuts it sharply.",
       "tradeoff": "Changes mid-session must arrive as messages, never as edits to the layers above."
     },

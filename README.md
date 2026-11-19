@@ -380,25 +380,29 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `opens`: who speaks first, `agent` or `user`;
 - `reads`: what the agent may know about the user from earlier sessions;
 - `session_context`: what the product must send at the start, such as the resume;
-- `summary`: how the agent sums up a session for next time, as a string, or as a mapping that adds what the session is graded on (below);
+- `summary`: how the agent sums up a session for next time, as a string, or as a mapping that adds its own model and a schema (below);
 - `model`: the model that answers its turns, and writes its summary unless the summary names its own, the server's `VOICE_MODEL` unless set;
 - `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
 
-The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary, a `scale` of two whole numbers, lowest first, with `levels` saying what some scores mean, and the `criteria`, each a `name` (lower-case letters, digits and `_`, at most 32 characters) and what it `looks_for`. A scale and criteria come together or not at all, and the criteria and scale reach the agent too, so it can steer toward them:
+The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary and a `schema`: a JSON Schema of your own, written as YAML, whose top level is `type: object`, for a structured part of the summary. An agent that should steer toward what the schema asks says so in its persona. For example, a score from 1 to 100 for each area, with a reason:
 
 ```yaml
 summary:
-  instruction: In under 150 words, tell the user what went well and what to practise.
+  instruction: In under 150 words, tell the user what went well and what to practise; score each area you covered.
   model: claude-opus-5-5
-  scale: [1, 5]
-  levels:
-    1: No evidence of it.
-    5: Clear, specific and their own.
-  criteria:
-    - name: ownership
-      looks_for: Says what they did themselves, not what the team did.
-    - name: impact
-      looks_for: Gives a number for the result and says how it was measured.
+  schema:
+    type: object
+    required: [scores]
+    properties:
+      scores:
+        type: array
+        items:
+          type: object
+          required: [area, score, reason]
+          properties:
+            area: {type: string}
+            score: {type: integer, minimum: 1, maximum: 100}
+            reason: {type: string}
 ```
 
 The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
