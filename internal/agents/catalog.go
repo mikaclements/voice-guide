@@ -180,6 +180,10 @@ const (
 	MaxLevelChars    = 500
 	// A scale wider than 0 to 100 adds nothing a grader can tell apart.
 	MaxScaleSpan = 100
+	// Each end of a scale lies within this of 0, so the span is worked out
+	// without overflow and every score stays exact as a JavaScript number in
+	// a product's server. Far wider than any scale an author would choose.
+	MaxScaleEnd = 1_000_000
 )
 
 var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
@@ -265,8 +269,8 @@ func validateGrading(g Grading) error {
 		}
 		return nil
 	}
-	if g.Lowest >= g.Highest || g.Highest-g.Lowest > MaxScaleSpan {
-		return fmt.Errorf("grading scale %d to %d must have its lowest below its highest, at most %d apart", g.Lowest, g.Highest, MaxScaleSpan)
+	if g.Lowest < -MaxScaleEnd || g.Highest > MaxScaleEnd || g.Lowest >= g.Highest || g.Highest-g.Lowest > MaxScaleSpan {
+		return fmt.Errorf("grading scale %d to %d must have its lowest below its highest, at most %d apart, each within %d of 0", g.Lowest, g.Highest, MaxScaleSpan, MaxScaleEnd)
 	}
 	for i, l := range g.Levels {
 		switch {
@@ -285,6 +289,10 @@ func validateGrading(g Grading) error {
 		switch {
 		case !IsBlockName(c.Name):
 			return fmt.Errorf("grading criterion %q must be lower-case letters, digits and _, at most 32", c.Name)
+		case c.Name == "criteria" || c.Name == "scale":
+			// The agent layer renders the criteria inside <criteria> beside <scale>, so a criterion of
+			// either name would read as the wrong part.
+			return fmt.Errorf("grading criterion %q is a name the prompt uses for the grading itself", c.Name)
 		case slices.ContainsFunc(g.Criteria[:i], func(o Criterion) bool { return o.Name == c.Name }):
 			return fmt.Errorf("grading criterion %q listed twice", c.Name)
 		case strings.TrimSpace(c.LooksFor) == "" || utf8.RuneCountInString(c.LooksFor) > MaxLooksForChars:

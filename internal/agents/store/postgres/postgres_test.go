@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -134,6 +135,34 @@ func TestAnAgentsVoiceAndSpeedReadBackAndOneWithoutReadsBackEmpty(t *testing.T) 
 	if err != nil || secondErr != nil || newestErr != nil || first.Voice != "" || first.Speed != 0 ||
 		second.Voice != "bf_emma" || second.Speed != 1.1 || len(newest) != 1 || newest[0].Voice != "bf_emma" || newest[0].Speed != 1.1 {
 		t.Errorf("versions %+v, %v and %+v, %v; Newest %+v, %v; want nothing set, then bf_emma at 1.1 exactly", first, err, second, secondErr, newest, newestErr)
+	}
+}
+
+func TestAnAgentsSummaryModelAndGradingReadBackExactlyAndOneWithoutReadsBackEmpty(t *testing.T) {
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	keeper.Summary = "Note the ships you guided."
+	save(t, s, keeper, "first")
+	keeper.SummaryModel = "claude-opus-5-5"
+	// Criteria out of alphabetical order, and a lowest of 0, which the stored JSON leaves out.
+	keeper.Grading = agents.Grading{
+		Lowest: 0, Highest: 10,
+		Levels:   []agents.Level{{Score: 0, Means: "Lost a ship."}, {Score: 10, Means: "Guided every ship home."}},
+		Criteria: []agents.Criterion{{Name: "lamp_care", LooksFor: "Keeps the lamp lit."}, {Name: "fog_calls", LooksFor: "Answers every call in the fog."}},
+	}
+	save(t, s, keeper, "second")
+
+	first, err := s.Version(context.Background(), workspace, keeperID, 1)
+	if err != nil || first.SummaryModel != "" || !reflect.DeepEqual(first.Grading, agents.Grading{}) {
+		t.Errorf("version 1 = %+v, %v; want no summary model and no grading", first, err)
+	}
+	second, err := s.Version(context.Background(), workspace, keeperID, 2)
+	if err != nil || second.SummaryModel != "claude-opus-5-5" || !reflect.DeepEqual(second.Grading, keeper.Grading) {
+		t.Errorf("version 2 = %+v, %v; want the summary model and %+v exactly", second, err, keeper.Grading)
+	}
+	newest, err := s.Newest(context.Background(), workspace)
+	if err != nil || len(newest) != 1 || newest[0].SummaryModel != "claude-opus-5-5" || !reflect.DeepEqual(newest[0].Grading, keeper.Grading) {
+		t.Errorf("Newest = %+v, %v; want the summary model and %+v exactly", newest, err, keeper.Grading)
 	}
 }
 

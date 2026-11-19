@@ -3,6 +3,7 @@ package agents_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -79,6 +80,17 @@ func TestPublishRefusesAGradingOutOfForm(t *testing.T) {
 		"a criterion looking for nothing": func(a *agents.Agent) { a.Grading.Criteria[0].LooksFor = "" },
 		"a criterion too long":            func(a *agents.Agent) { a.Grading.Criteria[0].LooksFor = strings.Repeat("a", agents.MaxLooksForChars+1) },
 		"too many criteria":               func(a *agents.Agent) { a.Grading.Criteria = many },
+		"the widest scale overflowing": func(a *agents.Agent) {
+			a.Grading.Lowest, a.Grading.Highest, a.Grading.Levels = math.MinInt, math.MaxInt, nil
+		},
+		"a lowest end too low": func(a *agents.Agent) {
+			a.Grading.Lowest, a.Grading.Highest, a.Grading.Levels = -agents.MaxScaleEnd-1, -agents.MaxScaleEnd+5, nil
+		},
+		"a highest end too high": func(a *agents.Agent) {
+			a.Grading.Lowest, a.Grading.Highest, a.Grading.Levels = agents.MaxScaleEnd-5, agents.MaxScaleEnd+1, nil
+		},
+		"a criterion named criteria": func(a *agents.Agent) { a.Grading.Criteria[0].Name = "criteria" },
+		"a criterion named scale":    func(a *agents.Agent) { a.Grading.Criteria[0].Name = "scale" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			a := gradedKeeper()
@@ -100,6 +112,16 @@ func TestPublishAcceptsAGradingAtItsLimits(t *testing.T) {
 	}
 	if _, err := agents.Publish(context.Background(), fake.New(), workspace, []agents.Agent{a}); err != nil {
 		t.Errorf("Publish = %v, want a grading at every limit accepted", err)
+	}
+}
+
+func TestPublishAcceptsAScaleAtEitherEndsLimit(t *testing.T) {
+	for _, ends := range [][2]int{{-agents.MaxScaleEnd, -agents.MaxScaleEnd + 4}, {agents.MaxScaleEnd - 4, agents.MaxScaleEnd}} {
+		a := gradedKeeper()
+		a.Grading.Lowest, a.Grading.Highest, a.Grading.Levels = ends[0], ends[1], nil
+		if _, err := agents.Publish(context.Background(), fake.New(), workspace, []agents.Agent{a}); err != nil {
+			t.Errorf("Publish with the scale %v = %v, want it accepted", ends, err)
+		}
 	}
 }
 
