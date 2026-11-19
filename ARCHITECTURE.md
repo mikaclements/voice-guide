@@ -31,21 +31,22 @@ What it isn't:
 
 ## 3. How it works
 
-The browser talks to one Go service. Speech-to-text, text-to-speech and the model each run as their own service behind it (speech-to-text and text-to-speech in containers by default; text-to-speech can run natively on a Mac instead), and PostgreSQL holds everything that must survive.
+The product's server and the user's browser talk to one Go service. The server starts and ends sessions with its product key, and hears each session's end through a signed webhook. The browser takes turns with a ticket for one session. Speech-to-text, text-to-speech and the model each run as their own service behind it (speech-to-text and text-to-speech in containers by default; text-to-speech can run natively on a Mac instead), and PostgreSQL holds everything that must survive.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart LR
-    B[Browser] -- HTTP --> G[Go service<br/>conversation, speech,<br/>user context, agents]
+    P[Product's server] -- product key: start, end --> G
+    B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
     B <-- WebRTC audio --> G
-    G <--> STT["Speech-to-text<br/>Moonshine<br/>STT_MODEL: tiny, small or medium"]
+    P <-- signed webhook --- G
+    G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
     G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
-    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake"]
-    M <--> P["Model provider<br/>model: in the agent file, else VOICE_MODEL"]
+    G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
     G <--> DB[(PostgreSQL)]
 ```
 
-A box's last line names the setting that switches it, in `.env` or the agent file.
+A box's last lines name the settings that switch it, in `.env` or the agent file.
 
 The Go service has four modules with walls between them, checked on every push. Conversation runs sessions and their turns in text: the prompt, the model's reply, what was said. Speech handles the audio: it turns what the user says into words for conversation and the reply into sound, and tells conversation how much of the reply the user heard. Together they are voice. User context owns what's known about users, and agents holds the agent definitions. Speech calls conversation and never the other way round, so a product without audio can use conversation as it is. Conversation calls user context like any other code, but only user context touches its own tables, and user context never reaches into the others. The API's router, which checks every request's ticket or product key, sits outside the modules and depends on none of them, so each module's HTTP part plugs into it.
 
