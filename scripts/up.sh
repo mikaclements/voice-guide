@@ -12,8 +12,8 @@
 # for MODEL_PROVIDER=claude-subscription, and for the faster Kokoro on Apple silicon (KOKORO=mlx).
 #
 # Settings this script reads, from the shell or .env (the shell wins; the first run keeps
-# ANTHROPIC_API_KEY and MODEL_PROVIDER given in the shell): MODEL_PROVIDER (claude-api or fake) and
-# ANTHROPIC_API_KEY. Compose reads the rest of .env for the containers, such as VOICE_MODEL and
+# ANTHROPIC_API_KEY, MODEL_PROVIDER and KOKORO given in the shell, though KOKORO only matters to
+# scripts/run.sh): MODEL_PROVIDER (claude-api or fake) and ANTHROPIC_API_KEY. Compose reads the rest of .env for the containers, such as VOICE_MODEL and
 # STT_MODEL; it always starts Kokoro and the speech-to-text service, so KOKORO, VOICE_TTS and
 # VOICE_SPEECH_DETECTION are not read here.
 set -euo pipefail

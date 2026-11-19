@@ -21,7 +21,7 @@
 # fake), ANTHROPIC_API_KEY, MODEL_HOST, MODEL_PORT (8091), VOICE_MODEL_URL, VOICE_TTS (kokoro, the
 # default, starts Kokoro; fake starts none), KOKORO (unset for Docker, or mlx), KOKORO_MLX_PORT
 # (8882), VOICE_SPEECH_DETECTION (silero, the default, starts the speech-to-text service; fake
-# starts none), VOICE_ADDR (127.0.0.1:8080); voice itself reads the rest of .env.
+# starts none), VOICE_ADDR (127.0.0.1:8080); voice and the steps it runs (migrate, seed, publish) read the rest of .env.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 save_given_settings=1
