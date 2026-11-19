@@ -80,7 +80,6 @@ func (f *Versions) Save(_ context.Context, workspace uuid.UUID, a agents.Agent, 
 func clone(v agents.Version) agents.Version {
 	v.Reads = slices.Clone(v.Reads)
 	v.SessionContext = slices.Clone(v.SessionContext)
-	v.Grading.Levels = slices.Clone(v.Grading.Levels)
-	v.Grading.Criteria = slices.Clone(v.Grading.Criteria)
+	v.SummarySchema = slices.Clone(v.SummarySchema)
 	return v
 }

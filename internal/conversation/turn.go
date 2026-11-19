@@ -440,7 +440,7 @@ func (s *Service) prompt(ctx context.Context, session Session, r TurnRequest) (P
 	if len(saved) > 0 {
 		last = saved[len(saved)-1].Seq
 	}
-	return buildPrompt(agentLayer(version.Agent), session.SessionContext, items, saved, Turn{ScreenInput: r.ScreenInput, Words: r.Words, Opening: r.Opening}), last, s.modelOf(version), nil
+	return buildPrompt(version.Persona, session.SessionContext, items, saved, Turn{ScreenInput: r.ScreenInput, Words: r.Words, Opening: r.Opening}), last, s.modelOf(version), nil
 }
 
 // checkWords refuses words a turn can't take: none, unless screen input

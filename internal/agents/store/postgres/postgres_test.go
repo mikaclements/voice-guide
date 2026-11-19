@@ -2,8 +2,8 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -138,31 +138,28 @@ func TestAnAgentsVoiceAndSpeedReadBackAndOneWithoutReadsBackEmpty(t *testing.T) 
 	}
 }
 
-func TestAnAgentsSummaryModelAndGradingReadBackExactlyAndOneWithoutReadsBackEmpty(t *testing.T) {
+func TestAnAgentsSummaryModelAndSchemaReadBackExactlyAndOneWithoutReadsBackEmpty(t *testing.T) {
 	s := storeWithWorkspaces(t)
 	keeper := agentNamed(keeperID, "Lighthouse keeper")
 	keeper.Summary = "Note the ships you guided."
 	save(t, s, keeper, "first")
 	keeper.SummaryModel = "claude-opus-5-5"
-	// Criteria out of alphabetical order, and a lowest of 0, which the stored JSON leaves out.
-	keeper.Grading = agents.Grading{
-		Lowest: 0, Highest: 10,
-		Levels:   []agents.Level{{Score: 0, Means: "Lost a ship."}, {Score: 10, Means: "Guided every ship home."}},
-		Criteria: []agents.Criterion{{Name: "lamp_care", LooksFor: "Keeps the lamp lit."}, {Name: "fog_calls", LooksFor: "Answers every call in the fog."}},
-	}
+	// As the loader encodes it: keys sorted, no spaces. PostgreSQL keeps jsonb in an order and
+	// spacing of its own, and a number past a float's precision must still read back as written.
+	keeper.SummarySchema = json.RawMessage(`{"properties":{"score":{"maximum":12345678901234567890,"minimum":1,"type":"integer"}},"required":["score"],"type":"object"}`)
 	save(t, s, keeper, "second")
 
 	first, err := s.Version(context.Background(), workspace, keeperID, 1)
-	if err != nil || first.SummaryModel != "" || !reflect.DeepEqual(first.Grading, agents.Grading{}) {
-		t.Errorf("version 1 = %+v, %v; want no summary model and no grading", first, err)
+	if err != nil || first.SummaryModel != "" || first.SummarySchema != nil {
+		t.Errorf("version 1 = %+v, %v; want no summary model and no schema", first, err)
 	}
 	second, err := s.Version(context.Background(), workspace, keeperID, 2)
-	if err != nil || second.SummaryModel != "claude-opus-5-5" || !reflect.DeepEqual(second.Grading, keeper.Grading) {
-		t.Errorf("version 2 = %+v, %v; want the summary model and %+v exactly", second, err, keeper.Grading)
+	if err != nil || second.SummaryModel != "claude-opus-5-5" || string(second.SummarySchema) != string(keeper.SummarySchema) {
+		t.Errorf("version 2 = %+v, %s, %v; want the summary model and %s exactly", second, second.SummarySchema, err, keeper.SummarySchema)
 	}
 	newest, err := s.Newest(context.Background(), workspace)
-	if err != nil || len(newest) != 1 || newest[0].SummaryModel != "claude-opus-5-5" || !reflect.DeepEqual(newest[0].Grading, keeper.Grading) {
-		t.Errorf("Newest = %+v, %v; want the summary model and %+v exactly", newest, err, keeper.Grading)
+	if err != nil || len(newest) != 1 || newest[0].SummaryModel != "claude-opus-5-5" || string(newest[0].SummarySchema) != string(keeper.SummarySchema) {
+		t.Errorf("Newest = %+v, %v; want the summary model and %s exactly", newest, err, keeper.SummarySchema)
 	}
 }
 

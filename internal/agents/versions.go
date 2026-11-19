@@ -88,48 +88,14 @@ func contentHash(a Agent) string {
 		// Left out when empty or 0, for the same reason.
 		Voice string  `json:"voice,omitempty"`
 		Speed float64 `json:"speed,omitempty"`
-		// Left out when empty or grading nothing, for the same reason.
-		SummaryModel string       `json:"summary_model,omitempty"`
-		Grading      *gradingHash `json:"grading,omitempty"`
-	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed, a.SummaryModel, hashOfGrading(a.Grading)})
+		// Left out when empty, for the same reason; the schema hashes as the
+		// author's own JSON, keys and all.
+		SummaryModel  string          `json:"summary_model,omitempty"`
+		SummarySchema json.RawMessage `json:"summary_schema,omitempty"`
+	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed, a.SummaryModel, a.SummarySchema})
 	if err != nil {
-		panic(err) // strings, slices of strings, a bool, a grading's integers and strings and a speed that Check keeps finite always encode
+		panic(err) // strings, slices of strings, a bool, a schema Check keeps valid JSON and a speed it keeps finite always encode
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
-}
-
-// gradingHash is a grading as the content hash sees it: named by its own JSON
-// keys, so renaming a Go field doesn't give every graded agent a new version.
-type gradingHash struct {
-	Lowest   int             `json:"lowest"`
-	Highest  int             `json:"highest"`
-	Levels   []levelHash     `json:"levels,omitempty"`
-	Criteria []criterionHash `json:"criteria"`
-}
-
-type levelHash struct {
-	Score int    `json:"score"`
-	Means string `json:"means"`
-}
-
-type criterionHash struct {
-	Name     string `json:"name"`
-	LooksFor string `json:"looks_for"`
-}
-
-// hashOfGrading is nil for a grading that grades nothing, so the hash leaves
-// it out; no levels hash alike however they were written.
-func hashOfGrading(g Grading) *gradingHash {
-	if !g.IsSet() {
-		return nil
-	}
-	h := &gradingHash{Lowest: g.Lowest, Highest: g.Highest}
-	for _, l := range g.Levels {
-		h.Levels = append(h.Levels, levelHash(l))
-	}
-	for _, c := range g.Criteria {
-		h.Criteria = append(h.Criteria, criterionHash(c))
-	}
-	return h
 }

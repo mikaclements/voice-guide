@@ -7,11 +7,10 @@ package agentfile
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
-	"slices"
 	"strings"
 	"uuid"
 
@@ -41,27 +40,19 @@ type settings struct {
 }
 
 // summarySettings is the summary section: a plain string is the instruction
-// alone, as agent files written before grading say it; a mapping adds the
-// model that writes the summary and what the session is graded on.
+// alone, as agent files written before the mapping say it; a mapping adds the
+// model that writes the summary and a JSON Schema, written as YAML, for a
+// structured part of it.
 type summarySettings struct {
 	Instruction string
 	Model       string
-	Scale       []int
-	Levels      map[int]string
-	Criteria    []criterionSettings
+	Schema      map[string]any
 }
 
 type summaryMapping struct {
-	Instruction string              `yaml:"instruction"`
-	Model       string              `yaml:"model"`
-	Scale       []int               `yaml:"scale"`
-	Levels      map[int]string      `yaml:"levels"`
-	Criteria    []criterionSettings `yaml:"criteria"`
-}
-
-type criterionSettings struct {
-	Name     string `yaml:"name"`
-	LooksFor string `yaml:"looks_for"`
+	Instruction string         `yaml:"instruction"`
+	Model       string         `yaml:"model"`
+	Schema      map[string]any `yaml:"schema"`
 }
 
 // UnmarshalYAML reads the section as a string, else as a mapping. It takes
@@ -82,28 +73,21 @@ func (s *summarySettings) UnmarshalYAML(decode func(any) error) error {
 	return nil
 }
 
-// grading turns the section's scale, levels and criteria into the agent's
-// grading, checking what only the file's form shows: the scale's two ends,
-// and a scale and criteria given together. Publishing checks the rest.
-func (s summarySettings) grading() (agents.Grading, error) {
-	if (len(s.Scale) > 0 || len(s.Levels) > 0) != (len(s.Criteria) > 0) {
-		return agents.Grading{}, errors.New("summary: scale and criteria come together, or neither")
+// schema encodes the section's schema as JSON, nil when it has none, and
+// checks it as publishing does, so the error names the file.
+func (s summarySettings) schema() (json.RawMessage, error) {
+	if s.Schema == nil {
+		return nil, nil
 	}
-	if len(s.Criteria) == 0 {
-		return agents.Grading{}, nil
+	// Map keys encode sorted, so the same schema gives the same bytes, and the same hash, every publish.
+	b, err := json.Marshal(s.Schema)
+	if err != nil {
+		return nil, fmt.Errorf("summary schema: not expressible as JSON: %w", err)
 	}
-	if len(s.Scale) != 2 {
-		return agents.Grading{}, fmt.Errorf("summary: scale %v: expected [lowest, highest]", s.Scale)
+	if err := agents.CheckSummarySchema(b); err != nil {
+		return nil, err
 	}
-	g := agents.Grading{Lowest: s.Scale[0], Highest: s.Scale[1]}
-	// A map has no order; the levels render in score order, so every publish gives the same bytes.
-	for _, score := range slices.Sorted(maps.Keys(s.Levels)) {
-		g.Levels = append(g.Levels, agents.Level{Score: score, Means: strings.TrimSpace(s.Levels[score])})
-	}
-	for _, c := range s.Criteria {
-		g.Criteria = append(g.Criteria, agents.Criterion{Name: c.Name, LooksFor: strings.TrimSpace(c.LooksFor)})
-	}
-	return g, nil
+	return b, nil
 }
 
 // Load reads every agent in fsys. It refuses anything it doesn't recognise,
@@ -178,7 +162,7 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 	if s.Summary.Model != "" && !agents.IsModelName(s.Summary.Model) {
 		return agents.Agent{}, fmt.Errorf("%s: summary model %q: expected lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", name, s.Summary.Model)
 	}
-	grading, err := s.Summary.grading()
+	schema, err := s.Summary.schema()
 	if err != nil {
 		return agents.Agent{}, fmt.Errorf("%s: %w", name, err)
 	}
@@ -196,13 +180,13 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 		SessionContext: s.SessionContext,
 		Persona:        string(persona),
 		// A block's last line break is the YAML's, not the instruction's.
-		Summary:      strings.TrimSpace(s.Summary.Instruction),
-		SummaryModel: s.Summary.Model,
-		Grading:      grading,
-		Opens:        s.Opens == "agent",
-		Model:        s.Model,
-		Voice:        s.Voice,
-		Speed:        speed,
+		Summary:       strings.TrimSpace(s.Summary.Instruction),
+		SummaryModel:  s.Summary.Model,
+		SummarySchema: schema,
+		Opens:         s.Opens == "agent",
+		Model:         s.Model,
+		Voice:         s.Voice,
+		Speed:         speed,
 	}, nil
 }
 

@@ -1,11 +1,9 @@
 package conversation
 
 import (
-	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
@@ -17,11 +15,6 @@ const (
 	sessionContextIntro = "What the product knows about the user, sent when this session started:"
 	userContextIntro    = "Learned about the user in earlier conversations:"
 )
-
-// gradingIntro introduces the criteria an agent's sessions are graded on, so
-// the agent can steer the conversation toward what will be graded. Fixed,
-// like the lines above, so the agent layer is cached whole.
-const gradingIntro = "After this session ends, it is graded on the criteria below, each scored on the scale after them. Steer the conversation so the user has the chance to show each one."
 
 // interruptedNote opens the user's message after a reply they cut short, so
 // the model knows its last words stopped because the user cut in, not because
@@ -44,8 +37,7 @@ const openingCue = "(The user has just joined and hasn't said anything yet. Open
 // Prompt is what the model is sent for one turn.
 type Prompt struct {
 	// StableLayers are the same, byte for byte, on every turn of a session, so
-	// the model can read them from its cache: the agent version's persona, with
-	// what its sessions are graded on, then
+	// the model can read them from its cache: the agent version's persona, then
 	// what the session was given about the user, if it was given anything.
 	StableLayers []string
 	// Conversation is the session's earlier turns, oldest first.
@@ -70,11 +62,11 @@ type Message struct {
 }
 
 // buildPrompt renders the prompt for the turn next from the agent version's
-// layer (see agentLayer), what the session was given about the user in the order recorded,
+// persona, what the session was given about the user in the order recorded,
 // and the turns saved before it. It depends on nothing but its arguments, so
 // every instance builds the same bytes for the same session.
-func buildPrompt(agent string, sessionContext []SessionContextBlock, userContext []usercontext.Item, saved []Turn, next Turn) Prompt {
-	p := Prompt{StableLayers: []string{agent}, Conversation: make([]Message, 0, 2*len(saved))}
+func buildPrompt(persona string, sessionContext []SessionContextBlock, userContext []usercontext.Item, saved []Turn, next Turn) Prompt {
+	p := Prompt{StableLayers: []string{persona}, Conversation: make([]Message, 0, 2*len(saved))}
 	if about := aboutTheUser(sessionContext, userContext); about != "" {
 		p.StableLayers = append(p.StableLayers, about)
 	}
@@ -89,31 +81,6 @@ func buildPrompt(agent string, sessionContext []SessionContextBlock, userContext
 	}
 	p.NewWords = userMessage(next, note)
 	return p
-}
-
-// agentLayer renders the agent version's layer: its persona as written, then,
-// when its sessions are graded, the criteria and the scale behind a fixed line.
-// It depends only on the version, which never changes, so a session's every
-// turn sends the same bytes.
-func agentLayer(a agents.Agent) string {
-	g := a.Grading
-	if !g.IsSet() {
-		return a.Persona
-	}
-	criteria := make([]string, 0, len(g.Criteria))
-	for _, c := range g.Criteria {
-		criteria = append(criteria, tagged(c.Name, c.LooksFor))
-	}
-	scale := []string{"From " + strconv.Itoa(g.Lowest) + ", the lowest, to " + strconv.Itoa(g.Highest) + ", the highest."}
-	for _, l := range g.Levels {
-		scale = append(scale, strconv.Itoa(l.Score)+": "+l.Means)
-	}
-	return strings.Join([]string{
-		strings.TrimRightFunc(a.Persona, unicode.IsSpace),
-		gradingIntro,
-		tagged("criteria", strings.Join(criteria, "\n")),
-		tagged("scale", strings.Join(scale, "\n")),
-	}, "\n\n")
 }
 
 // noteAfter is the note opening the user's message after turn t, whose reply
