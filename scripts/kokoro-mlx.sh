@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs Kokoro natively on this Mac's GPU through Apple's MLX (scripts/lib/kokoro-mlx/server.py), as
+# Runs Kokoro natively on this Mac's GPU through Apple's MLX (services/kokoro-mlx/server.py), as
 # a stand-in for a dedicated text-to-speech server with a GPU. Unlike PyTorch on the Apple GPU, MLX
 # takes no extra time the first time it meets a phrase of a new length, and its memory stays flat.
 # The same model and voice (af_heart) behind the part of Kokoro-FastAPI's API voice uses, Ogg Opus
@@ -13,7 +13,7 @@
 #   scripts/kokoro-mlx.sh
 # Needs macOS on Apple silicon and uv (https://docs.astral.sh/uv/).
 set -euo pipefail
-cd "$(dirname "$0")/lib/kokoro-mlx"
+cd "$(dirname "$0")/../services/kokoro-mlx"
 
 # The model's commit on Hugging Face, so every install gets the same weights and voices.
 MODEL=mlx-community/Kokoro-82M-bf16

@@ -40,7 +40,7 @@ if [ "${1:-}" = "--check" ]; then
   cd "$(dirname "$0")/.."
   golangci-lint fmt --diff
   biome format .
-  ruff format --diff services/stt scripts/lib/kokoro-mlx
+  ruff format --diff services/stt services/kokoro-mlx
   exit 0
 fi
 
@@ -60,7 +60,7 @@ cd "$(dirname "$0")/.."
 if [ $# -eq 0 ]; then
   golangci-lint fmt
   biome format --write .
-  ruff format services/stt scripts/lib/kokoro-mlx
+  ruff format services/stt services/kokoro-mlx
   exit 0
 fi
 if [ ${#go_files[@]} -gt 0 ]; then
