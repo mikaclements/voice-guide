@@ -1,7 +1,8 @@
 // The session's audio connection: WebRTC with voice, the user's microphone and the agent's speech
 // on its audio track and typed turns on its data channel, set up with one request in the shape of
 // WHIP (RFC 9725).
-import { authorized, problemFrom, TurnFailure } from "./api.ts";
+import { authorized, problemFrom } from "./api.ts";
+import { TurnFailure } from "./retry.ts";
 import { type Spoken, type TurnEnd, type Turns, turnBody } from "./turns.ts";
 
 // Why the connection ended: replaced by another tab (no reconnect), ended, expired (the session's

@@ -1,6 +1,5 @@
-// voice-guide's public API, called the way any product's page would call it. The page's dev
-// server plays the product's server: it starts each session with its product key and the user's
-// session context, and hands the page the session and the ticket for it.
+// The session's requests to voice's public API, sent with its ticket, and how voice's errors are
+// read. The product's own calls, which hold the product key, are in the page's code, not here.
 
 // The problem voice answers a request with once the session's ticket has run out.
 export const ticketExpiredType = "/v1/problems/ticket-expired";
@@ -52,18 +51,6 @@ export async function problemFrom(res: Response): Promise<ProblemError> {
   );
 }
 
-// The product's side, served by the page's dev server: the agents it offers, as the product's
-// server lists them with its key.
-async function product<T>(fetcher: typeof fetch, path: string, body?: unknown): Promise<T> {
-  const res = await fetcher(path, {
-    method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  if (!res.ok) throw await problemFrom(res);
-  return res.json();
-}
-
 // Sends a request with the session's ticket, the same one for every request in it. The body is the
 // same if the caller sends it again, request ID included; it goes as JSON unless another type is
 // named, when it is sent as it is.
@@ -99,7 +86,6 @@ async function call<T>(
   return res.json();
 }
 
-export type Agent = { id: string; name: string; description: string; session_context: string[] };
 export type Session = {
   id: string;
   agent_id: string;
@@ -108,23 +94,6 @@ export type Session = {
   // Left out while the session is live.
   ended_at?: string;
 };
-// A started session with the ticket for it: the product's server starts it and hands both over.
-export type Started = Session & { ticket: string };
-
-export async function listAgents(fetcher: typeof fetch = fetch): Promise<Agent[]> {
-  return (await product<{ agents: Agent[] }>(fetcher, "/product/agents")).agents;
-}
-
-// Asks the product's server to start a session with the agent for the user; it sends voice the
-// user's reference and session context, with its key. A start repeated with the same request ID
-// gets the same session back, with a new ticket.
-export function startSession(
-  agentId: string,
-  requestId: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Started> {
-  return product<Started>(fetcher, "/product/start", { agent_id: agentId, request_id: requestId });
-}
 
 // Ends a session: voice takes no more turns in it. Ending it again answers the same, so a press
 // whose reply was lost can simply be repeated.
@@ -137,7 +106,7 @@ export function endSession(
 }
 
 // The problem voice answers a turn or an audio connection with once the session has ended.
-const sessionEndedType = "/v1/problems/session-ended";
+export const sessionEndedType = "/v1/problems/session-ended";
 
 // Whether err says the session has ended, so the page stops offering it turns.
 export function endsSession(err: unknown): boolean {
@@ -148,48 +117,4 @@ export function endsSession(err: unknown): boolean {
 // user starts again.
 export function ticketExpired(err: unknown): boolean {
   return err instanceof ProblemError && err.type === ticketExpiredType;
-}
-
-// What a failed request means for what it carried:
-// - taken: voice already took a turn with this request ID, and doesn't replay its reply;
-// - refused: voice turned it down, so sending it again is a new request;
-// - busy: voice was answering another turn, so it didn't take this one, unless this send was itself
-//   a retry, whose first try may be the turn in flight;
-// - unsure: voice may have acted on it (a server error or the network), so sending it again repeats
-//   its request ID, and voice acts on it once.
-type Failure = "taken" | "refused" | "busy" | "unsure";
-
-// Whether the next send of the same words repeats this one's request ID: only when voice may have
-// taken it. A fresh send turned away as busy wasn't taken, so the next is a new request; keeping its
-// ID would make a later send of the same words look like a repeat of a turn never taken.
-export function keepRequestId(f: Failure, retry: boolean): boolean {
-  return f === "unsure" || (f === "busy" && retry);
-}
-
-// A turn that failed on the audio connection's data channel, as the failure it means.
-export class TurnFailure extends Error {
-  readonly kind: Failure;
-
-  constructor(kind: Failure, message: string) {
-    super(message);
-    this.kind = kind;
-  }
-}
-
-export function failure(err: unknown): Failure {
-  if (err instanceof TurnFailure) return err.kind;
-  if (!(err instanceof ProblemError)) return "unsure";
-  if (err.type === "/v1/problems/turn-repeated") return "taken";
-  // Never taken, and sending it again can't help: the session is over.
-  if (err.type === sessionEndedType) return "refused";
-  if (err.status === 409) return "busy";
-  return err.status >= 400 && err.status < 500 ? "refused" : "unsure";
-}
-
-// A request kept after an unsure failure, with what it carried: the words, or the agent.
-export type Kept = { key: string; requestId: string };
-
-// The request ID for sending key: the kept one when it is the same again, else a new one.
-export function requestIdFor(key: string, kept: Kept | undefined): string {
-  return kept?.key === key ? kept.requestId : crypto.randomUUID();
 }

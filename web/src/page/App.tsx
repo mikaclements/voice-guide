@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { type Agent, listAgents, type Session, startSession } from "../client/api.ts";
+import type { Session } from "../client/api.ts";
 import { at, JoinedSession, type ReplyMeta, type Shown } from "../client/joined.ts";
+import { type Agent, listAgents, startSession } from "./product.ts";
 import { Starter } from "./starting.ts";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
