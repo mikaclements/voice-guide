@@ -118,3 +118,8 @@ export function endsSession(err: unknown): boolean {
 export function ticketExpired(err: unknown): boolean {
   return err instanceof ProblemError && err.type === ticketExpiredType;
 }
+
+// fetch with voice's paths under its base URL.
+export function at(api: string, fetcher: typeof fetch = fetch): typeof fetch {
+  return (path, init) => fetcher(`${api}${String(path)}`, init);
+}

@@ -3,8 +3,9 @@
 // key and hands the page the session's ID and ticket, which the page passes to join(); the element
 // never holds a product key and never starts a session. A thin shell: what it does and shows comes
 // from JoinedSession, and this draws it and turns calls and presses into its calls.
+import { at } from "./api.ts";
 import type { openAudio, playAgent } from "./audio.ts";
-import { at, JoinedSession, type Shown, wanted } from "./joined.ts";
+import { JoinedSession, type Shown } from "./joined.ts";
 
 // A plain default a product restyles with the custom properties and parts. The box is drawn inside,
 // on the frame, where the product's own rules can't reach: a page rule matching the host, as a
@@ -38,6 +39,22 @@ const bottomSlack = 4;
 // Said once a ticket is set where page recorders copy it from; the element takes it only by a call.
 export const ticketAttributeWarning =
   "voice-guide-session: the ticket goes to join({ session, ticket }), never an attribute, where page recorders copy it; it was removed";
+
+// What the element joins, if anything: the session and ticket handed to it, once it is on the page.
+// Voice is at the api attribute, else where the element's script came from, else the page's origin.
+// The key names the join: the same key keeps the session the element has.
+export function wanted(
+  onPage: boolean,
+  given: { session: string; ticket: string } | undefined,
+  api: string | null,
+  loadedFrom: string,
+): { session: string; ticket: string; api: string; key: string } | undefined {
+  const session = given?.session.trim();
+  const ticket = given?.ticket.trim();
+  if (!onPage || !session || !ticket) return undefined;
+  const base = (api?.trim() || loadedFrom).replace(/\/+$/, "");
+  return { session, ticket, api: base, key: `${base} ${session} ${ticket}` };
+}
 
 // Defines <voice-guide-session>, once, however often the script is loaded; open and play reach
 // the browser's audio unless a test passes its own.
@@ -135,8 +152,8 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
       this.#sync();
     }
 
-    // Settles once the current task's changes are in, so a join and a move on the page, or two
-    // joins, in one go act once, on the last.
+    // Waits for the current task to finish, then joins once. A join and a move on the page, or two
+    // joins, in the same task count as one: the last wins.
     #sync() {
       this.#syncing ??= Promise.resolve().then(() => {
         this.#syncing = undefined;

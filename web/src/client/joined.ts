@@ -156,8 +156,8 @@ export class JoinedSession {
     blocked: false,
     busy: false,
   };
-  // Let go: nothing heard afterwards is shown or told, and a typed turn still being
-  // answered over HTTP is called off.
+  // Set when the session is let go: nothing that arrives afterwards is shown or told, and a typed
+  // turn still being answered over HTTP is called off.
   private left = false;
   private readonly stop = new AbortController();
   private audio: Opened | undefined;
@@ -326,8 +326,8 @@ export class JoinedSession {
     return closing ?? Promise.resolve();
   }
 
-  // The session turned out over, from a refusal or the audio closing. Learning its ticket ran out,
-  // it sends End once with that ticket, so the session ends now and its summary runs.
+  // The session is over, shown by a refusal or by the audio closing. If its ticket ran out, End goes
+  // once with that ticket, so the session ends now and its summary runs.
   private sessionTurnedOver(why: Over, err?: unknown): void {
     if (this.left) return;
     reactToOver(
@@ -446,25 +446,4 @@ export class JoinedSession {
       this.note({ audio: `No audio (${message(err)}); replies come as text.` });
     }
   }
-}
-
-// What the element joins: the session and ticket handed to it, once it is on the page, and voice at
-// the api attribute, else where the element's script came from, else the page's origin. A key that
-// doesn't change keeps the session it has.
-export function wanted(
-  onPage: boolean,
-  given: { session: string; ticket: string } | undefined,
-  api: string | null,
-  loadedFrom: string,
-): { session: string; ticket: string; api: string; key: string } | undefined {
-  const session = given?.session.trim();
-  const ticket = given?.ticket.trim();
-  if (!onPage || !session || !ticket) return undefined;
-  const base = (api?.trim() || loadedFrom).replace(/\/+$/, "");
-  return { session, ticket, api: base, key: `${base} ${session} ${ticket}` };
-}
-
-// fetch with voice's paths under its base URL.
-export function at(api: string, fetcher: typeof fetch = fetch): typeof fetch {
-  return (path, init) => fetcher(`${api}${String(path)}`, init);
 }

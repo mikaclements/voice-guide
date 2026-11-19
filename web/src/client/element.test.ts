@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { ProblemError } from "./api.ts";
-import { css, define, ticketAttributeWarning } from "./element.ts";
+import { css, define, ticketAttributeWarning, wanted } from "./element.ts";
 import { fakeVoice } from "./fakes.ts";
 import { insecureMessage } from "./joined.ts";
 
@@ -451,4 +451,18 @@ test("scrolling back to within a few pixels of the end follows again", async () 
   p.part("form").fire("submit");
   await settle();
   assert.equal(transcript.scrollTop, bottom());
+});
+
+test("the element joins what it was given once it is on the page, voice at api, else its script's origin", () => {
+  const from = "https://voice.example";
+  const given = { session: "s1", ticket: "tk1" };
+  assert.equal(wanted(false, given, null, from), undefined, "off the page");
+  assert.equal(wanted(true, undefined, null, from), undefined, "nothing given yet");
+  assert.equal(wanted(true, { session: " ", ticket: "tk1" }, null, from), undefined);
+  const join = wanted(true, given, null, from);
+  assert.deepEqual(join, { ...given, api: from, key: `${from} s1 tk1` });
+  const other = wanted(true, { session: "s1", ticket: "tk2" }, "https://v.example/", from);
+  assert.equal(other?.api, "https://v.example");
+  assert.notEqual(other?.key, join?.key, "a new ticket joins again");
+  assert.equal(wanted(true, given, null, "")?.api, "", "the page's own origin");
 });
