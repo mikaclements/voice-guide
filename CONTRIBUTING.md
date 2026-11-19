@@ -1,6 +1,75 @@
 # Contributing
 
-How voice-guide is built, in plain words. The complete rules, with the reasoning behind each engineering decision, are in [docs/reference/contributing.md](docs/reference/contributing.md): same sections, more detail, and it wins where the two differ. To set up a working copy, see [Set up for development](#setup).
+How voice-guide is built, in plain words. The complete rules, with the reasoning behind each engineering decision, are in [docs/reference/contributing.md](docs/reference/contributing.md): same sections, more detail, and it wins where the two differ. Setting up, the commands and where things are come first; the rules follow.
+
+<a id="setup"></a>
+### Set up for development
+
+1. Install:
+   - Go (the version in `go.mod`);
+   - [golangci-lint](https://golangci-lint.run) (the version in `.golangci-lint-version`);
+   - Node with npm (the version in `.node-version`);
+   - [sqlc](https://sqlc.dev) (the version in `.sqlc-version`: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v$(cat .sqlc-version)`);
+   - [uv](https://docs.astral.sh/uv/), which installs the Python the speech-to-text service pins;
+   - Docker, Python 3 and OpenSSL.
+2. Clone the repository, turn on the shared git hooks, and run every check CI runs, including the tests against PostgreSQL:
+
+   ```sh
+   git clone https://github.com/mikaclements/voice-guide.git
+   cd voice-guide
+   git config core.hooksPath .githooks
+   npm ci
+   scripts/check.sh
+   ```
+
+<a id="commands"></a>
+### Commands
+
+| Command | What it does |
+|---|---|
+| `scripts/check.sh` | Every check CI runs: formatting, docs, lint with module boundaries, dead code, generated code, Go tests with the race detector and the database, TypeScript, Python |
+| `scripts/format.sh` | Formats every Go, TypeScript, JSON and Python file (`--check` only reports) |
+| `scripts/up.sh` | Starts everything in Docker, needing nothing else installed: the database, speech-to-text, Kokoro, the model service (Claude API or `MODEL_PROVIDER=fake`), voice and the test page at http://127.0.0.1:5173, on a database of its own (`voice_app`). Makes `.env` if missing and asks for a missing key, as `scripts/run.sh` does. Ctrl-C stops it; `scripts/up.sh down` removes the containers and keeps the data |
+| `scripts/run.sh` | Starts everything with the settings in `.env`: the database, speech-to-text, Kokoro (on the Mac's GPU with `KOKORO=mlx`), the model service, the test page at http://127.0.0.1:5173 and voice. The first run saves the key and settings given in the shell into `.env`, and asks for a missing key. Ctrl-C stops it |
+| `scripts/kokoro-mlx.sh` | Runs Kokoro on the Mac's GPU through Apple's MLX at http://127.0.0.1:8882; `scripts/run.sh` starts it with `KOKORO=mlx`. Needs Apple silicon and uv; installs pinned packages and the model (about 0.9 GB) under `~/Library/Caches/voice-guide/`; delete that folder to remove it |
+| `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume |
+| `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
+| `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
+| `scripts/publish.sh` | Publishes changed files in `agents/` as new versions |
+| `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; voice serves the new build from the next load |
+| `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
+| `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
+| `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
+| `scripts/webhook.sh set URL\|rotate\|show` | The workspace's webhook. `set` prints the signing secret the first time, the only time it's shown; `rotate` replaces it |
+
+The hooks check and never rewrite. A commit checks the formatting of what is staged and refuses files git ignores. A push runs the docs check, lint, the dead-code check and the tests. CI runs the same on every pull request, with the race detector and the database. The speed numbers in the docs come from the scripts in `.claude/skills/measure/`.
+
+<a id="where-things-are"></a>
+### Where things are
+
+| Path | What lives there |
+|---|---|
+| `cmd/voice/` | The voice service's entry point; wires the modules together |
+| `cmd/migrate/`, `cmd/publish/`, `cmd/productkey/`, `cmd/webhook/` | The migration step, publishing agents, product keys and the webhook, for the scripts above |
+| `cmd/checkspeak/` | Acts as a browser that talks to an agent, for the speed checks in `.claude/skills/measure/` |
+| `cmd/classgen/` | Writes the schematic's type views; its tests check the schematic against the code |
+| `internal/conversation/` | Sessions and their turns, in text: each turn's prompt, the model's reply, the HTTP API for agents, sessions and typed turns, and the webhook at a session's end |
+| `internal/speech/` | A session's audio connection over WebRTC: the user's turns from their microphone (Silero speech detection, speech-to-text, Smart Turn) and the agent's replies spoken (Kokoro), each with a fake |
+| `internal/usercontext/` | Loads what an agent may know about the user and saves what a session learned; imports none of the other modules |
+| `internal/agents/` | The published versions of each agent file |
+| `internal/api/` | The one router: every route behind its credential check (a product key or a ticket); also serves the drop-in client |
+| `internal/ticket/`, `internal/productkey/`, `internal/access/` | Tickets, product keys, and the caller a credential names |
+| `internal/jobs/` | Background jobs (summaries, webhook deliveries), claimed from PostgreSQL |
+| `internal/pgtest/` | Gives each database test its own freshly migrated database |
+| `agents/` | The agents, one Markdown file each: a settings block, then the persona |
+| `migrations/` | Database migrations (goose), numbered across modules |
+| `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |
+| `examples/job-board/` | The test embedding: a small site that puts an agent on its page, as a product would |
+| `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
+| `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |
+| `schematic/` | The schematic's page and its hand-written levels |
+| `seed/` | The user the test embedding and the web page start sessions for: their reference and resume |
+| `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds voice, its setup, the model service and the test page, built by `Dockerfile` |
 
 ## 1. Principles
 
@@ -50,33 +119,6 @@ Every piece of work is one of four kinds:
 - Only the programs in `cmd/` wire things together: `cmd/voice` the service, `cmd/publish`, `cmd/productkey`, `cmd/webhook` and `cmd/checkspeak` what each needs.
 - A vendor's package is used only by its adapter. A `cmd/` program that plays the browser for a check, `cmd/checkspeak`, may use WebRTC's (Pion) itself: it is the other side of the connection, and ships in no service.
 - The API's router, the ticket check, product keys and who a request comes from sit outside the modules and depend on none of them, so any module's HTTP part plugs into the router.
-
-<a id="where-things-are"></a>
-### Where things are
-
-| Path | What lives there |
-|---|---|
-| `cmd/voice/` | The voice service's entry point; wires the modules together |
-| `cmd/migrate/`, `cmd/publish/`, `cmd/productkey/`, `cmd/webhook/` | The migration step, publishing agents, product keys and the webhook, for the scripts above |
-| `cmd/checkspeak/` | Acts as a browser that talks to an agent, for the speed checks in `.claude/skills/measure/` |
-| `cmd/classgen/` | Writes the schematic's type views; its tests check the schematic against the code |
-| `internal/conversation/` | Sessions and their turns, in text: each turn's prompt, the model's reply, the HTTP API for agents, sessions and typed turns, and the webhook at a session's end |
-| `internal/speech/` | A session's audio connection over WebRTC: the user's turns from their microphone (Silero speech detection, speech-to-text, Smart Turn) and the agent's replies spoken (Kokoro), each with a fake |
-| `internal/usercontext/` | Loads what an agent may know about the user and saves what a session learned; imports none of the other modules |
-| `internal/agents/` | The published versions of each agent file |
-| `internal/api/` | The one router: every route behind its credential check (a product key or a ticket); also serves the drop-in client |
-| `internal/ticket/`, `internal/productkey/`, `internal/access/` | Tickets, product keys, and the caller a credential names |
-| `internal/jobs/` | Background jobs (summaries, webhook deliveries), claimed from PostgreSQL |
-| `internal/pgtest/` | Gives each database test its own freshly migrated database |
-| `agents/` | The agents, one Markdown file each: a settings block, then the persona |
-| `migrations/` | Database migrations (goose), numbered across modules |
-| `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |
-| `examples/job-board/` | The test embedding: a small site that puts an agent on its page, as a product would |
-| `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
-| `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |
-| `schematic/` | The schematic's page and its hand-written levels |
-| `seed/` | The user the test embedding and the web page start sessions for: their reference and resume |
-| `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds voice, its setup, the model service and the test page, built by `Dockerfile` |
 
 ## 6. API
 
@@ -149,45 +191,6 @@ Every piece of work is one of four kinds:
 - A change to a part, a port, a connection between parts or a design decision updates the schematic in the same pull request, its walk-throughs included; the tests fail on a package, an import or a port's method it doesn't show, and on a walk-through step naming a card or connection that isn't there.
 - When review raises a rule, it goes into the standards in the same pull request.
 - The repository carries instructions for AI coding assistants beside the code: `CLAUDE.md` and skills in `.claude/skills/` (such as `verify`, `measure` and `schematic`) that run the project's checks, measurements and upkeep. They follow the same rules as everyone else, and "agent" in these docs always means the AI a user talks to.
-
-<a id="setup"></a>
-### Set up for development
-
-1. Install:
-   - Go (the version in `go.mod`);
-   - [golangci-lint](https://golangci-lint.run) (the version in `.golangci-lint-version`);
-   - Node with npm (the version in `.node-version`);
-   - [sqlc](https://sqlc.dev) (the version in `.sqlc-version`: `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v$(cat .sqlc-version)`);
-   - [uv](https://docs.astral.sh/uv/), which installs the Python the speech-to-text service pins;
-   - Docker, Python 3 and OpenSSL.
-2. Clone the repository, turn on the shared git hooks, and run every check CI runs, including the tests against PostgreSQL:
-
-   ```sh
-   git clone https://github.com/mikaclements/voice-guide.git
-   cd voice-guide
-   git config core.hooksPath .githooks
-   npm ci
-   scripts/check.sh
-   ```
-
-| Command | What it does |
-|---|---|
-| `scripts/check.sh` | Every check CI runs: formatting, docs, lint with module boundaries, dead code, generated code, Go tests with the race detector and the database, TypeScript, Python |
-| `scripts/format.sh` | Formats every Go, TypeScript, JSON and Python file (`--check` only reports) |
-| `scripts/up.sh` | Starts everything in Docker, needing nothing else installed: the database, speech-to-text, Kokoro, the model service (Claude API or `MODEL_PROVIDER=fake`), voice and the test page at http://127.0.0.1:5173, on a database of its own (`voice_app`). Makes `.env` if missing and asks for a missing key, as `scripts/run.sh` does. Ctrl-C stops it; `scripts/up.sh down` removes the containers and keeps the data |
-| `scripts/run.sh` | Starts everything with the settings in `.env`: the database, speech-to-text, Kokoro (on the Mac's GPU with `KOKORO=mlx`), the model service, the test page at http://127.0.0.1:5173 and voice. The first run saves the key and settings given in the shell into `.env`, and asks for a missing key. Ctrl-C stops it |
-| `scripts/kokoro-mlx.sh` | Runs Kokoro on the Mac's GPU through Apple's MLX at http://127.0.0.1:8882; `scripts/run.sh` starts it with `KOKORO=mlx`. Needs Apple silicon and uv; installs pinned packages and the model (about 0.9 GB) under `~/Library/Caches/voice-guide/`; delete that folder to remove it |
-| `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume |
-| `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
-| `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
-| `scripts/publish.sh` | Publishes changed files in `agents/` as new versions |
-| `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; voice serves the new build from the next load |
-| `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
-| `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
-| `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
-| `scripts/webhook.sh set URL\|rotate\|show` | The workspace's webhook. `set` prints the signing secret the first time, the only time it's shown; `rotate` replaces it |
-
-The hooks check and never rewrite. A commit checks the formatting of what is staged and refuses files git ignores. A push runs the docs check, lint, the dead-code check and the tests. CI runs the same on every pull request, with the race detector and the database. The speed numbers in the docs come from the scripts in `.claude/skills/measure/`.
 
 ## 14. Engineering decisions
 
