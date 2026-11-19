@@ -9,8 +9,8 @@ if ! command -v uv >/dev/null; then
   echo "check-py: uv is not installed; it runs the Python checks." >&2
   exit 1
 fi
-# Kokoro on MLX (services/kokoro-mlx) is linted here too, but neither installed nor run: MLX
-# needs Apple silicon, and CI runs on Linux.
+# Kokoro on MLX (services/kokoro-mlx) is linted here too, and its trim tested, which needs only
+# numpy; its server is neither installed nor run: MLX needs Apple silicon, and CI runs on Linux.
 uv run --quiet --locked ruff check . ../kokoro-mlx
 uv run --quiet --locked ruff format --check . ../kokoro-mlx
-uv run --quiet --locked pytest -q
+uv run --quiet --locked pytest -q tests ../kokoro-mlx

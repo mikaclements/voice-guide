@@ -659,7 +659,7 @@
           "tech": "Kokoro · CPU container by default",
           "setting": "KOKORO: unset (Docker) · mlx",
           "summary": "Text-to-speech: speaks each phrase of the reply as streamed Ogg Opus.",
-          "description": "By default Kokoro-FastAPI on the CPU, a pinned third-party image that compose starts in the tts profile (port 8880); KOKORO=mlx runs it natively on a Mac instead: the same model and voice through Apple's MLX, in a small server of ours with the same API. voice asks it for one phrase at a time at POST /v1/audio/speech, with the Opus format and streaming on, and unwraps the Ogg pages into 20 ms Opus packets itself. Its errors reach voice's logs as a status only, since its reasons can quote what the user said.",
+          "description": "By default Kokoro-FastAPI on the CPU, a pinned third-party image that compose starts in the tts profile (port 8880); KOKORO=mlx runs it natively on a Mac instead: the same model and voice through Apple's MLX, in a small server of ours with the same API, which trims the silence around each phrase as Kokoro-FastAPI does, so a reply starts sounding at once. voice asks it for one phrase at a time at POST /v1/audio/speech, with the Opus format and streaming on, and unwraps the Ogg pages into 20 ms Opus packets itself. Its errors reach voice's logs as a status only, since its reasons can quote what the user said.",
           "why": "Free and natural-sounding on a CPU, and its Opus goes straight to the browser, so voice needs no audio encoder.",
           "considerations": ["kokoro", "containers"]
         },
