@@ -40,7 +40,7 @@ type Options struct {
 	// FirstAudio is how long a phrase may take to start arriving before it fails, and then
 	// to finish arriving; DefaultFirstAudio when zero or less.
 	FirstAudio time.Duration
-	// JoiningWords also ends the first phrase before "when", "because" or "if". Off by default:
+	// JoiningWords also ends an early phrase before "when", "because" or "if". Off by default:
 	// grammar comes first, and the speed it buys (first audio 0.76s cut at "when", against about
 	// 1.5s for a 15-word sentence whole) is to be measured on real replies before it is used.
 	JoiningWords bool

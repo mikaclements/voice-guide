@@ -270,7 +270,7 @@
       "title": "Kokoro on the server, short first phrase",
       "section": "Turns · Text-to-speech",
       "status": "accepted",
-      "decision": "Text-to-speech is Kokoro on the server's CPU, asked for one phrase at a time as streamed Opus. The first phrase ends at the first punctuation once it holds four words, and each next one is made while the one before plays.",
+      "decision": "Text-to-speech is Kokoro on the server's CPU, asked for one phrase at a time as streamed Opus. The first phrase ends at the first sentence end, however short, or other punctuation once it holds four words, and each next one is made while the one before plays.",
       "why": "Free and natural-sounding; Opus straight from Kokoro leaves voice with no audio encoder, and a short first phrase starts the sound sooner.",
       "tradeoff": "Server CPU per conversation, and on CPU its first audio comes close to the model's first word."
     },
@@ -2476,7 +2476,7 @@
           "name": "tts/kokoro",
           "path": "internal/speech/tts/kokoro",
           "summary": "Cuts the reply into phrases, asks the service for one at a time, unwraps Ogg into 20 ms packets.",
-          "description": "Outbound adapter implementing TextToSpeech: the first phrase ends at punctuation once it holds four words, later ones are whole sentences; one phrase is asked for at a time and never more than one ahead; each phrase's audio is read whole so every packet carries its count; a phrase with no first audio within 5 s fails.",
+          "description": "Outbound adapter implementing TextToSpeech: the first phrase ends at a sentence end, however short, or other punctuation once it holds four words, as does the one after a short first sentence; later ones are whole sentences; one phrase is asked for at a time and never more than one ahead; each phrase's audio is read whole so every packet carries its count; a phrase with no first audio within 5 s fails.",
           "considerations": ["kokoro"],
           "drill": "types-speech",
           "focus": "internal/speech/tts/kokoro"

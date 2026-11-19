@@ -56,18 +56,22 @@ pids+=($!)
 wait "${pids[${#pids[@]} - 1]}" || { tail -20 "$work/voice.log" "$work/page.log" >&2; exit 1; }
 recorded_models "$since"
 # Each turn's start (the words or the opening reaching voice) and the end of each stage, in ms since
-# the epoch, in the order the turns were taken.
+# the epoch, in the order the turns were taken; then how each reply opens, its first 60 characters,
+# enough for its first sentence.
 psql -d "$db" -At -F ' ' >"$work/stages.txt" <<'SQL'
 SELECT t.seq, round(extract(epoch FROM t.created_at) * 1000), st.stage,
        round(extract(epoch FROM st.started_at) * 1000) + st.duration_ms
 FROM turns t JOIN turn_stages st ON st.turn_id = t.id AND st.workspace_id = t.workspace_id
 ORDER BY t.seq;
 SQL
+psql -d "$db" -At -F '|' -c "SELECT seq, replace(left(agent_text, 60), E'\\n', ' ') FROM turns ORDER BY seq" >"$work/opens.txt"
 python3 -c '
 import json, sys
 lines = [json.loads(l) for l in open(sys.argv[1])]
 replies = [l for l in lines if "reply" in l]
 other = [l for l in lines if "reply" not in l]
+opens = dict(l.rstrip("\n").split("|", 1) for l in open(sys.argv[3]) if "|" in l)
+opens = {int(k): v for k, v in opens.items()}
 turns = {}
 for line in open(sys.argv[2]):
     seq, start, stage, end = line.split()
@@ -81,11 +85,14 @@ for r in replies:
     cells = [at(t.get(k)) for _, k in cols] + [at(r.get("first_packet")), at(r.get("first_sound"))]
     label = "greeting" if r["reply"] == 0 else "turn %d" % r["reply"]
     print(f"  {label}: " + " / ".join(cells) + " | " + (r.get("page") or ""))
+    print("    opens:", opens.get(r["reply"] + 1, ""))
     pauses += r["pauses_ms"]
     print("    pauses inside the reply, ms:", r["pauses_ms"])
+    for piece in r.get("streamed", [])[:6]:  # past six pieces the first phrase has long been cut
+        print("    text at", piece)
 if pauses:
     s = sorted(pauses)
     print(f"  pauses: {len(s)}, median {s[len(s) // 2]} ms, longest {s[-1]} ms")
 for o in other:
     print("  browser jitter buffer: average delay", o["jitter_buffer_ms"], "ms, target", o["jitter_target_ms"], "ms")
-' "$work/page.jsonl" "$work/stages.txt"
+' "$work/page.jsonl" "$work/stages.txt" "$work/opens.txt"

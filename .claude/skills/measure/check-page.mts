@@ -29,6 +29,7 @@ const replyDeadlineMs = 60_000;
 
 type Probe = {
   presses: number[];
+  text: [number, string][];
   loud: [number, boolean][];
   packets: number[];
   jitter?: { delay: number; target: number; emitted: number };
@@ -39,9 +40,20 @@ type Probe = {
 // page's line (sound is above 0.01, -40 dB), recording each change, and the connection's receive
 // statistics every 10 ms, recording when the first packet after 100 ms without one arrived: the
 // last packet's arrival, which the statistics give, less 20 ms for each packet after the first,
-// since Chrome hands out statistics a few tens of ms old. Records each press of Start or Send.
+// since Chrome hands out statistics a few tens of ms old. Records each press of Start or Send, and
+// the last line of the conversation each time it changes, so a reply's text is timed as it streams.
 function probe() {
-  const p: Probe = { presses: [], loud: [], packets: [] };
+  const p: Probe = { presses: [], text: [], loud: [], packets: [] };
+  new MutationObserver(() => {
+    const lines = document.querySelectorAll(".turn");
+    const line = lines[lines.length - 1];
+    if (!line || line.querySelector(".who")?.textContent === "You") return;
+    // The line holds who spoke, the reply's text, then the page's line beneath it; an empty reply
+    // has no text of its own.
+    const node = line.childNodes[1];
+    const shown = node?.nodeType === Node.TEXT_NODE ? (node.textContent ?? "") : "";
+    if (shown !== p.text.at(-1)?.[1]) p.text.push([Date.now(), shown]);
+  }).observe(document, { subtree: true, childList: true, characterData: true });
   (window as unknown as { probe: Probe }).probe = p;
   document.addEventListener(
     "click",
@@ -147,6 +159,11 @@ try {
     const changes = p.loud.filter(([t]) => t > press && t < next);
     const firstSound = changes.find(([, loud]) => loud)?.[0];
     const firstPacket = p.packets.find((t) => t > press && t < next);
+    // The reply's text as it arrived over its first 5 s, longer than any greeting's first text took
+    // (1.8 s): ms from the press, and the first 40 characters, enough for its first phrase.
+    const streamed = p.text
+      .filter(([t]) => t > press && t < Math.min(next, press + 5000))
+      .map(([t, text]) => `${t - press} ms "${text.slice(0, 40)}"`);
     const pauses: number[] = [];
     for (let j = 1; j < changes.length - 1; j++) {
       const [quietAt, loud] = changes[j];
@@ -160,6 +177,7 @@ try {
         first_sound: firstSound,
         page: metas[i],
         pauses_ms: pauses,
+        streamed,
       }),
     );
   });

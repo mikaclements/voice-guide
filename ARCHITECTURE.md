@@ -154,7 +154,7 @@ Audio travels over WebRTC because the browser removes the agent's echo from the 
 - Moonshine turns it into text.
 - A pause plus a small model (Smart Turn) decides when the user has finished: the check is asked after 0.2 s of quiet, and after 3 s the turn is taken anyway; a fifth of a second of speech over the agent cuts in.
 - The model is called once the check says the user has finished, or the wait is up; calling it earlier, while the check runs, was measured and saved almost nothing.
-- Kokoro speaks the reply a phrase at a time: the first ends at a natural break once it holds four words, so speech starts soon, and each next one is made while the one before plays.
+- Kokoro speaks the reply a phrase at a time: the first ends at the first sentence end, however short, or at another natural break once it holds four words, as does the one after a short first sentence, so speech starts soon, and each next one is made while the one before plays.
 
 Speaking on after the turn was taken, before any of its reply is heard, takes the turn back: what the user adds joins their words, and the agent answers them as one. The page shows the user's words as they are heard, then the reply, and how long after the user finished speaking its first sound went out.
 
