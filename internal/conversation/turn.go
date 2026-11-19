@@ -221,7 +221,7 @@ func (s *Service) TakeTurn(ctx context.Context, c access.Caller, r TurnRequest, 
 	}
 
 	reply := s.readReply(events, r.Interrupt, send)
-	if reply.cutIn {
+	if reply.interrupted {
 		stop() // now, not after the save: the model would go on writing meanwhile
 	}
 	replyStage.Took = s.now().Sub(replyStage.Started)

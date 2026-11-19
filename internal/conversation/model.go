@@ -84,9 +84,9 @@ type modelReply struct {
 	report *ModelReport
 	// failed is a *ReplyFailedError naming why the model didn't finish, or nil.
 	failed error
-	// cutIn says the user cut in before the model let go of the reply, which
-	// may still be running.
-	cutIn bool
+	// interrupted says the user cut in before the model let go of the reply,
+	// which may still be running.
+	interrupted bool
 	// unfinished says the user cut in before the model's final event.
 	unfinished bool
 }
@@ -105,20 +105,20 @@ func (s *Service) readReply(events <-chan ModelEvent, interrupt <-chan struct{},
 		case e, open := <-events:
 			// The interrupt is checked again before any text goes out: with an
 			// event and the interrupt both ready, select picks either.
-			cutIn := closed(interrupt)
+			interrupted := closed(interrupt)
 			switch {
 			case !open:
 			case isFinal(e):
 				final = e
-			case !cutIn:
+			case !interrupted:
 				if firstText.IsZero() {
 					firstText = s.now()
 				}
 				text.WriteString(e.Text)
 				send(e.Text)
 			}
-			if cutIn || !open {
-				return replyOf(text.String(), firstText, final, cutIn)
+			if interrupted || !open {
+				return replyOf(text.String(), firstText, final, interrupted)
 			}
 		case <-interrupt:
 			// A final event already waiting when the interrupt won still counts,
@@ -140,15 +140,15 @@ func isFinal(e ModelEvent) bool { return e.Done || e.Error != "" }
 
 // replyOf says how a reply ended: as the model's final event says, if it sent
 // one; otherwise where the user cut in, if they did; otherwise the model let go
-// of it unfinished, which counts as unavailable.
-func replyOf(text string, firstText time.Time, final ModelEvent, cutIn bool) modelReply {
-	r := modelReply{text: text, firstText: firstText, cutIn: cutIn}
+// of it without a final event, which counts as unavailable.
+func replyOf(text string, firstText time.Time, final ModelEvent, interrupted bool) modelReply {
+	r := modelReply{text: text, firstText: firstText, interrupted: interrupted}
 	switch {
 	case final.Done:
 		r.report = final.Report
 	case final.Error != "":
 		r.failed = &ReplyFailedError{Kind: final.Error}
-	case cutIn:
+	case interrupted:
 		r.unfinished = true // the reply ends where the user cut in, not by failing
 	default:
 		r.failed = &ReplyFailedError{Kind: ModelUnavailable}
