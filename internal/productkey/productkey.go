@@ -10,13 +10,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/mikaclements/voice-guide/internal/secret"
 )
 
 // prefix marks a product key, so the router tells it from a ticket at a glance
@@ -37,9 +37,6 @@ var keyLen = len(prefix) + encoding.EncodedLen(randomBytes)
 // guess the rest.
 const displayLen = len(prefix) + 8
 
-// redacted is how a key shows itself everywhere but Reveal.
-const redacted = "productkey.Key(redacted)"
-
 // ErrUnknown reports a key that is malformed, never made or revoked. All look
 // alike, so a caller learns nothing about which keys exist.
 var ErrUnknown = errors.New("unknown product key")
@@ -50,34 +47,15 @@ var ErrUnknown = errors.New("unknown product key")
 // behind a pointer, so even printing a struct that holds a Key where its
 // methods can't be called shows an address, not the key.
 type Key struct {
-	raw *string
+	heldKey
 }
+
+// heldKey is the key a Key holds, embedded under a name no other package can
+// reach, so Key's methods are its only way out.
+type heldKey = secret.Value[Key]
 
 // NewKey holds raw, as sent, as a product key.
-func NewKey(raw string) Key { return Key{raw: &raw} }
-
-// Reveal returns the key itself.
-func (k Key) Reveal() string {
-	if k.raw == nil {
-		return ""
-	}
-	return *k.raw
-}
-
-// String keeps the key out of formatted output.
-func (Key) String() string { return redacted }
-
-// GoString keeps the key out of %#v.
-func (Key) GoString() string { return redacted }
-
-// Format keeps the key out of every formatting verb.
-func (Key) Format(f fmt.State, _ rune) { _, _ = fmt.Fprint(f, redacted) }
-
-// LogValue keeps the key out of logs.
-func (Key) LogValue() slog.Value { return slog.StringValue(redacted) }
-
-// MarshalJSON keeps the key out of anything encoded as JSON.
-func (Key) MarshalJSON() ([]byte, error) { return json.Marshal(redacted) }
+func NewKey(raw string) Key { return Key{secret.New[Key](raw)} }
 
 // Record is what is kept of a product key.
 type Record struct {

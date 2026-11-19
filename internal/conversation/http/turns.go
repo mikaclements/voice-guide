@@ -73,10 +73,10 @@ func (s *server) takeTurn(w http.ResponseWriter, r *http.Request, c access.Calle
 	case errors.Is(err, conversation.ErrTurnInFlight):
 		s.api.Problem(w, r, http.StatusConflict, "the session is answering another turn")
 	case errors.Is(err, conversation.ErrTurnRepeated):
-		s.api.TypedProblem(w, r, turnRepeated, "Turn already taken", http.StatusConflict,
+		s.api.TypedProblem(w, r, http.StatusConflict, turnRepeated, "Turn already taken",
 			"this request_id already took a turn in this session; a new turn needs a new request_id")
 	case errors.Is(err, conversation.ErrOpeningRefused):
-		s.api.TypedProblem(w, r, openingRefused, "Opening refused", http.StatusConflict,
+		s.api.TypedProblem(w, r, http.StatusConflict, openingRefused, "Opening refused",
 			"the session already has a turn, or its agent waits for the user, so the agent doesn't open it")
 	case errors.As(err, &unusable), errors.Is(err, conversation.ErrWordsUnusable):
 		s.api.Problem(w, r, http.StatusBadRequest, err.Error())

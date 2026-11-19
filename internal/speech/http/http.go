@@ -41,8 +41,8 @@ type handler struct {
 // the ticket's session is the path's.
 func Register(rt *api.Router, svc *speech.Service) {
 	h := &handler{svc: svc, api: rt, log: rt.Log()}
-	rt.Handle("POST /v1/sessions/{id}/audio", api.RequestTimeout, h.connect)
-	rt.Handle("DELETE /v1/sessions/{id}/audio/{conn}", api.RequestTimeout, h.hangup)
+	rt.HandleTicket("POST /v1/sessions/{id}/audio", api.RequestTimeout, h.connect)
+	rt.HandleTicket("DELETE /v1/sessions/{id}/audio/{conn}", api.RequestTimeout, h.hangup)
 }
 
 func (h *handler) connect(w http.ResponseWriter, r *http.Request, c access.Caller) {

@@ -29,6 +29,7 @@ linters:
             - "!**/internal/pgtest/**"
             - "!**/internal/jobs/**"
             - "!**/internal/productkey/**"
+            - "!**/internal/secret/**"
           allow:
             - $gostd
         conversation:
@@ -50,6 +51,8 @@ linters:
             - github.com/mikaclements/voice-guide/internal/agents$
             # User context's service only, never its store: its tables are user context's alone.
             - github.com/mikaclements/voice-guide/internal/usercontext$
+            # The webhook's secret is held redacted.
+            - github.com/mikaclements/voice-guide/internal/secret$
         # The core's tests run on the fake stores, agents', user context's and its own, the fake model
         # and the fake products' servers.
         conversation-tests:
@@ -427,6 +430,7 @@ linters:
           allow:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/secret$
         productkey-tests:
           list-mode: strict
           files:
@@ -461,6 +465,7 @@ linters:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/access$
             - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/secret$
             - github.com/golang-jwt/jwt/v5
         # Who a request comes from, which the router, the tickets, conversation and speech name:
         # nothing of voice-guide's but itself.
@@ -471,6 +476,15 @@ linters:
           allow:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/access$
+        # A secret held so it shows itself redacted, which product keys, tickets and conversation's
+        # webhook secret embed: nothing of voice-guide's but itself.
+        secret:
+          list-mode: strict
+          files:
+            - "**/internal/secret/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/secret$
         # pgx appears only in store adapters, the migrations and the test database helper.
         agents-store-postgres:
           list-mode: strict

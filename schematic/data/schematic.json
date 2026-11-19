@@ -821,7 +821,7 @@
       "id": "voice",
       "title": "Inside voice",
       "level": 2,
-      "lead": "Four modules with walls between them, checked on every push. Speech calls conversation and never the other way round; conversation calls user context's service and agents' catalog directly. The router, the ticket check, product keys, the caller and the job runner sit outside the modules and import none of them: each module's HTTP adapter plugs into the one router, and cmd/voice hands the runner each kind of job's handler.",
+      "lead": "Four modules with walls between them, checked on every push. Speech calls conversation and never the other way round; conversation calls user context's service and agents' catalog directly. The router, the ticket check, product keys, the caller, the secret holder and the job runner sit outside the modules and import none of them: each module's HTTP adapter plugs into the one router, and cmd/voice hands the runner each kind of job's handler.",
       "considerations": [
         "one-service-four-modules",
         "hexagonal",
@@ -1012,7 +1012,7 @@
           "name": "Router",
           "path": "internal/api",
           "summary": "The public API's one router: every route behind a key or ticket check, open to any site where tickets go.",
-          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key and refuses a ticket, and Handle for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key as well. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes Handle and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
+          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key and refuses a ticket, and HandleTicket for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key as well. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes HandleTicket and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
           "why": "One router checks every credential in one place, so no module's routes can skip the check.",
           "considerations": ["product-keys", "problem-details", "api-for-products", "any-origin"]
         },
@@ -1037,6 +1037,18 @@
           "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
           "why": "A plain type every part may import, so the caller crosses module walls without a module importing another.",
           "considerations": ["one-service-four-modules", "workspace-every-record"],
+          "importedFreely": true
+        },
+        {
+          "id": "secret",
+          "kind": "shared",
+          "parent": "box",
+          "name": "Secret",
+          "path": "internal/secret",
+          "summary": "Holds a ticket, a product key or a webhook's secret so it prints, logs and encodes redacted.",
+          "description": "Holds a secret behind a pointer in a type that shows itself as its holder's name, then (redacted), however it is formatted, logged or encoded as JSON; only Reveal gives the secret, to send it, show it once or sign with it. A ticket, a product key and conversation's webhook secret each embed one, so how a secret stays out of logs is written once. It imports nothing of voice-guide's.",
+          "why": "A plain type every part may import, so no secret reaches a log or an error, whichever part holds it.",
+          "considerations": ["product-keys"],
           "importedFreely": true
         },
         {
@@ -1236,7 +1248,7 @@
           "to": "conversation",
           "protocol": "route",
           "send": "agents · sessions · typed turns · end",
-          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns and POST /v1/sessions/{id}/end through Handle (a ticket).",
+          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key).",
           "considerations": ["http-and-webrtc"]
         },
         {
