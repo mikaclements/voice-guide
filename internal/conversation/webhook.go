@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"unicode/utf8"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/secret"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
@@ -111,42 +111,22 @@ const webhookSecretPrefix = "whsec_"
 // HMAC-SHA256 key it signs with, so it can't be guessed.
 const webhookSecretBytes = 32
 
-// redactedSecret is how a webhook secret shows itself everywhere but Reveal.
-const redactedSecret = "conversation.WebhookSecret(redacted)"
-
 // WebhookSecret is the secret a workspace's deliveries are signed with. It
 // formats, logs and encodes redacted, so it never reaches a log or an error;
 // Reveal gives it, to show it once or to sign with. It sits behind a pointer,
 // so even printing a struct that holds one shows an address, not the secret.
 type WebhookSecret struct {
-	raw *string
+	heldWebhookSecret
 }
+
+// heldWebhookSecret is the secret a WebhookSecret holds, embedded under a name
+// no other package can reach, so WebhookSecret's methods are its only way out.
+type heldWebhookSecret = secret.Value[WebhookSecret]
 
 // NewWebhookSecret holds raw, as kept, as a webhook secret.
-func NewWebhookSecret(raw string) WebhookSecret { return WebhookSecret{raw: &raw} }
-
-// Reveal returns the secret itself.
-func (s WebhookSecret) Reveal() string {
-	if s.raw == nil {
-		return ""
-	}
-	return *s.raw
+func NewWebhookSecret(raw string) WebhookSecret {
+	return WebhookSecret{secret.New[WebhookSecret](raw)}
 }
-
-// String keeps the secret out of formatted output.
-func (WebhookSecret) String() string { return redactedSecret }
-
-// GoString keeps the secret out of %#v.
-func (WebhookSecret) GoString() string { return redactedSecret }
-
-// Format keeps the secret out of every formatting verb.
-func (WebhookSecret) Format(f fmt.State, _ rune) { _, _ = fmt.Fprint(f, redactedSecret) }
-
-// LogValue keeps the secret out of logs.
-func (WebhookSecret) LogValue() slog.Value { return slog.StringValue(redactedSecret) }
-
-// MarshalJSON keeps the secret out of anything encoded as JSON.
-func (WebhookSecret) MarshalJSON() ([]byte, error) { return json.Marshal(redactedSecret) }
 
 func makeWebhookSecret() WebhookSecret {
 	random := make([]byte, webhookSecretBytes)

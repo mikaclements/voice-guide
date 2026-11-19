@@ -147,7 +147,7 @@ internal/speech/
 > - Trade-off: more small packages, and a wiring step at startup.
 > - Alternatives rejected: layered (handlers, then services, then storage), where the logic depends on storage and vendor code, so a swap reaches into the logic.
 > - Status: accepted.
-> - Enforced by: depguard lists per folder: a module's core allows the standard library, the modules it may use and, for conversation and speech, `internal/access`, which names the caller; each adapter folder with a list of its own allows its own vendor, and a new adapter folder falls under its core's list until it gets one; any other package under `internal/` allows only the standard library until it gets a list of its own.
+> - Enforced by: depguard lists per folder: a module's core allows the standard library, the modules it may use and, for conversation and speech, `internal/access`, which names the caller, and for conversation `internal/secret`, which holds the webhook's secret redacted; each adapter folder with a list of its own allows its own vendor, and a new adapter folder falls under its core's list until it gets one; any other package under `internal/` allows only the standard library until it gets a list of its own.
 
 <a id="domain"></a>
 ### 3.3 Domain model

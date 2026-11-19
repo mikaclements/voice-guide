@@ -4,7 +4,6 @@
 package ticket
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/mikaclements/voice-guide/internal/access"
+	"github.com/mikaclements/voice-guide/internal/secret"
 )
 
 // minSecret matches the size of the HS256 hash; a shorter secret is easier to guess.
@@ -42,9 +42,6 @@ const EndGrace = 15 * time.Minute
 // lifetime: its holder needs a new session, not a fix.
 var ErrExpired = errors.New("the ticket has expired")
 
-// redactedTicket is how a ticket shows itself everywhere but Reveal.
-const redactedTicket = "ticket.Ticket(redacted)"
-
 // Key signs and verifies tickets.
 type Key struct {
 	secret []byte
@@ -70,31 +67,12 @@ func NewKey(secret []byte) (Key, error) {
 // ticket sits behind a pointer, so even printing a struct that holds a Ticket
 // where its methods can't be called shows an address, not the ticket.
 type Ticket struct {
-	raw *string
+	heldTicket
 }
 
-// Reveal returns the ticket itself.
-func (t Ticket) Reveal() string {
-	if t.raw == nil {
-		return ""
-	}
-	return *t.raw
-}
-
-// String keeps the ticket out of formatted output.
-func (Ticket) String() string { return redactedTicket }
-
-// GoString keeps the ticket out of %#v.
-func (Ticket) GoString() string { return redactedTicket }
-
-// Format keeps the ticket out of every formatting verb.
-func (Ticket) Format(f fmt.State, _ rune) { _, _ = fmt.Fprint(f, redactedTicket) }
-
-// LogValue keeps the ticket out of logs.
-func (Ticket) LogValue() slog.Value { return slog.StringValue(redactedTicket) }
-
-// MarshalJSON keeps the ticket out of anything encoded as JSON.
-func (Ticket) MarshalJSON() ([]byte, error) { return json.Marshal(redactedTicket) }
+// heldTicket is the ticket a Ticket holds, embedded under a name no other
+// package can reach, so only MintTicket makes a Ticket that holds one.
+type heldTicket = secret.Value[Ticket]
 
 // claims are what a ticket names. A claim not named here is ignored, so a
 // ticket minted by a version that wrote one more still works on one that no
@@ -133,7 +111,7 @@ func (k Key) MintTicket(c access.Caller, started, now time.Time) (Ticket, error)
 	if err != nil {
 		return Ticket{}, fmt.Errorf("mint ticket: %w", err)
 	}
-	return Ticket{raw: &raw}, nil
+	return Ticket{secret.New[Ticket](raw)}, nil
 }
 
 func earlier(a, b time.Time) time.Time {
