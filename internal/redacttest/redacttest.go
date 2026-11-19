@@ -7,7 +7,6 @@ import (
 	"encoding"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 // encode it, or if any of those shows secret.
 func Check(t *testing.T, v any, secret, shown string) {
 	t.Helper()
+	asJSON, asText := logged(v)
 	cases := []struct{ name, got, want string }{
 		{"%v", fmt.Sprintf("%v", v), shown},
 		{"%+v", fmt.Sprintf("%+v", v), shown},
@@ -29,8 +29,8 @@ func Check(t *testing.T, v any, secret, shown string) {
 		{"Sprint", fmt.Sprint(v), shown},
 		{"%+v of an exported field", fmt.Sprintf("%+v", struct{ T any }{v}), "{T:" + shown + "}"},
 		{"%#v in a slice", fmt.Sprintf("%#v", []any{v}), "[]interface {}{" + shown + "}"},
-		{"slog's JSON handler", logged(slog.NewJSONHandler, v), `{"level":"INFO","msg":"m","secret":"` + shown + `"}` + "\n"},
-		{"slog's text handler", logged(slog.NewTextHandler, v), "level=INFO msg=m secret=" + shown + "\n"},
+		{"slog's JSON handler", asJSON, `{"level":"INFO","msg":"m","secret":"` + shown + `"}` + "\n"},
+		{"slog's text handler", asText, "level=INFO msg=m secret=" + shown + "\n"},
 		{"JSON", encoded(t, v), `"` + shown + `"`},
 		{"JSON of an exported field", encoded(t, struct{ T any }{v}), `{"T":"` + shown + `"}`},
 	}
@@ -42,6 +42,17 @@ func Check(t *testing.T, v any, secret, shown string) {
 			t.Errorf("%s shows the secret", c.name)
 		}
 	}
+	// fmt calls Format before String or GoString, so the cases above never
+	// reach them; code that calls them directly would.
+	if s, ok := v.(fmt.Stringer); !ok || s.String() != shown {
+		t.Errorf("String: want %q from a fmt.Stringer", shown)
+	}
+	if g, ok := v.(fmt.GoStringer); !ok || g.GoString() != shown {
+		t.Errorf("GoString: want %q from a fmt.GoStringer", shown)
+	}
+	if l, ok := v.(slog.LogValuer); !ok || l.LogValue().String() != shown {
+		t.Errorf("LogValue: want %q from a slog.LogValuer", shown)
+	}
 	// encoding/json uses a text marshaler for a map key, which would skip the
 	// redacted JSON.
 	if _, ok := v.(encoding.TextMarshaler); ok {
@@ -49,17 +60,21 @@ func Check(t *testing.T, v any, secret, shown string) {
 	}
 }
 
-// logged returns the line a handler writes for a message with v, without its time.
-func logged[H slog.Handler](handler func(io.Writer, *slog.HandlerOptions) H, v any) string {
-	var b bytes.Buffer
-	noTime := func(groups []string, a slog.Attr) slog.Attr {
-		if a.Key == slog.TimeKey && len(groups) == 0 {
-			return slog.Attr{}
-		}
-		return a
+// logged returns the lines slog's JSON and text handlers write for a message
+// with v, without the time.
+func logged(v any) (asJSON, asText string) {
+	var j, x bytes.Buffer
+	opts := &slog.HandlerOptions{ReplaceAttr: noTime}
+	slog.New(slog.NewJSONHandler(&j, opts)).Info("m", "secret", v)
+	slog.New(slog.NewTextHandler(&x, opts)).Info("m", "secret", v)
+	return j.String(), x.String()
+}
+
+func noTime(groups []string, a slog.Attr) slog.Attr {
+	if a.Key == slog.TimeKey && len(groups) == 0 {
+		return slog.Attr{}
 	}
-	slog.New(handler(&b, &slog.HandlerOptions{ReplaceAttr: noTime})).Info("m", "secret", v)
-	return b.String()
+	return a
 }
 
 func encoded(t *testing.T, v any) string {

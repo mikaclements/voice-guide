@@ -284,7 +284,7 @@ The choices behind the rules above, in a shorter form than the design's decision
 
 <a id="e15"></a>
 #### E15. No dead Go code
-- Decision: `scripts/lib/deadcode.sh` runs Go's `deadcode` twice and fails on what it finds: with the tests as roots, any function nothing calls; with only the programs in `cmd/` as roots, any function outside the fakes and `internal/pgtest` that only tests reach, since production code kept alive by its own tests is dead too. Its version is the `tool` line in `go.mod`.
+- Decision: `scripts/lib/deadcode.sh` runs Go's `deadcode` twice and fails on what it finds: with the tests as roots, any function nothing calls; with only the programs in `cmd/` as roots, any function outside the fakes and the test helpers (`internal/pgtest`, `internal/redacttest`) that only tests reach, since production code kept alive by its own tests is dead too. Its version is the `tool` line in `go.mod`.
 - Needed by: [section 3](#go).
 - Why: golangci-lint's `unused` sees only names a package doesn't export, so an exported function nobody calls, or one only a test calls, passes it; `deadcode` follows calls from the programs across packages.
 - Rejected: staticcheck's unused check (the same per-package limit); a review-only rule (dead code slips in one function at a time).

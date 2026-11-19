@@ -459,6 +459,16 @@ linters:
           list-mode: strict
           files:
             - "**/internal/ticket/**"
+            - "!**/internal/ticket/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/golang-jwt/jwt/v5
+        ticket-tests:
+          list-mode: strict
+          files:
+            - "**/internal/ticket/*_test.go"
           allow:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/access$
