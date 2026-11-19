@@ -1495,7 +1495,7 @@
             {
               "nodes": ["service", "p-sessions", "storepg", "x-postgres"],
               "edges": ["service-sessions", "pg-sessions", "pg-db"],
-              "caption": "It finds the user the reference names, or makes a new user ID; the same request sent again gets back the session it started"
+              "caption": "It finds the user the reference names, or makes a new user ID; the same request sent again gets back the session it started, in its first voice"
             },
             {
               "nodes": ["service", "x-usercontext"],
@@ -1505,7 +1505,7 @@
             {
               "nodes": ["service", "p-sessions", "storepg", "x-postgres"],
               "edges": ["service-sessions", "pg-sessions", "pg-db"],
-              "caption": "The session is saved with its agent version, the context item IDs and the session context, a new user added in the same write"
+              "caption": "The session is saved with its agent version, the context item IDs, the session context and its voice and speed, a new user added in the same write"
             },
             {
               "nodes": ["x-api", "http", "service"],
@@ -2397,8 +2397,8 @@
           "path": "texttospeech.go",
           "setting": "VOICE_TTS: kokoro · fake",
           "summary": "Reply text in, 20 ms Opus packets out.",
-          "members": ["Speak(voice, <-chan string) → <-chan Packet"],
-          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out.",
+          "members": ["Speak(voice, speed, <-chan string) → <-chan Packet"],
+          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it, in the session's voice and at its speed, and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out.",
           "why": "Each phrase's packets mark where it ends in the reply, so after an interrupt voice knows how much was heard.",
           "considerations": ["kokoro", "heard"],
           "drill": "types-speech",
@@ -2654,7 +2654,7 @@
           "from": "kokoro",
           "to": "x-kokoro",
           "protocol": "HTTP",
-          "send": "POST /v1/audio/speech",
+          "send": "POST /v1/audio/speech, with voice and speed",
           "back": "Ogg Opus"
         }
       ]

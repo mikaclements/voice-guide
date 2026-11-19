@@ -14,10 +14,10 @@ import (
 )
 
 const addSession = `-- name: AddSession :one
-INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at
 `
 
 type AddSessionParams struct {
@@ -29,6 +29,8 @@ type AddSessionParams struct {
 	RequestID      uuid.UUID
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 }
 
 type AddSessionRow struct {
@@ -39,6 +41,8 @@ type AddSessionRow struct {
 	AgentVersion   int32
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 }
@@ -54,6 +58,8 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		arg.RequestID,
 		arg.ContextItemIds,
 		arg.SessionContext,
+		arg.Voice,
+		arg.Speed,
 	)
 	var i AddSessionRow
 	err := row.Scan(
@@ -64,6 +70,8 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		&i.AgentVersion,
 		&i.ContextItemIds,
 		&i.SessionContext,
+		&i.Voice,
+		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
 	)
@@ -356,7 +364,7 @@ func (q *Queries) RotateWebhookSecret(ctx context.Context, arg RotateWebhookSecr
 }
 
 const sessionByID = `-- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id = $3
 `
 
@@ -374,6 +382,8 @@ type SessionByIDRow struct {
 	AgentVersion   int32
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 }
@@ -389,6 +399,8 @@ func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (Sessi
 		&i.AgentVersion,
 		&i.ContextItemIds,
 		&i.SessionContext,
+		&i.Voice,
+		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
 	)
@@ -412,7 +424,7 @@ func (q *Queries) SessionEnded(ctx context.Context, arg SessionEndedParams) (boo
 }
 
 const sessionForRequest = `-- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND request_id = $3
 `
 
@@ -430,6 +442,8 @@ type SessionForRequestRow struct {
 	AgentVersion   int32
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 }
@@ -445,6 +459,8 @@ func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestPa
 		&i.AgentVersion,
 		&i.ContextItemIds,
 		&i.SessionContext,
+		&i.Voice,
+		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
 	)
@@ -452,7 +468,7 @@ func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestPa
 }
 
 const sessionInWorkspace = `-- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -469,6 +485,8 @@ type SessionInWorkspaceRow struct {
 	AgentVersion   int32
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 }
@@ -485,6 +503,8 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 		&i.AgentVersion,
 		&i.ContextItemIds,
 		&i.SessionContext,
+		&i.Voice,
+		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
 	)
@@ -492,7 +512,7 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 }
 
 const sessionsOfUser = `-- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id < $3
 ORDER BY id DESC
 LIMIT $4
@@ -513,6 +533,8 @@ type SessionsOfUserRow struct {
 	AgentVersion   int32
 	ContextItemIds []uuid.UUID
 	SessionContext []byte
+	Voice          string
+	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 }
@@ -541,6 +563,8 @@ func (q *Queries) SessionsOfUser(ctx context.Context, arg SessionsOfUserParams) 
 			&i.AgentVersion,
 			&i.ContextItemIds,
 			&i.SessionContext,
+			&i.Voice,
+			&i.Speed,
 			&i.StartedAt,
 			&i.EndedAt,
 		); err != nil {

@@ -36,7 +36,7 @@ func (s *Versions) Newest(ctx context.Context, workspace uuid.UUID) ([]agents.Ve
 	}
 	out := make([]agents.Version, len(rows))
 	for i, r := range rows {
-		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model)
+		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
 	}
 	return out, nil
 }
@@ -53,7 +53,7 @@ func (s *Versions) Version(ctx context.Context, workspace, agent uuid.UUID, numb
 	if err != nil {
 		return agents.Version{}, fmt.Errorf("read agent version: %w", err)
 	}
-	return version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model), nil
+	return version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed), nil
 }
 
 // Save stores a as its next version unless the newest version has the same
@@ -94,7 +94,7 @@ func (s *Versions) Save(ctx context.Context, workspace uuid.UUID, a agents.Agent
 	next := newest.Version + 1
 	if err := q.AddVersion(ctx, db.AddVersionParams{
 		WorkspaceID: workspace, AgentID: a.ID, Version: next,
-		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, Opens: a.Opens, Model: a.Model, ContentHash: hash,
+		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
 	}); err != nil {
 		return 0, false, fmt.Errorf("save the agent version: %w", err)
 	}
@@ -104,10 +104,10 @@ func (s *Versions) Save(ctx context.Context, workspace uuid.UUID, a agents.Agent
 	return int(next), true, nil
 }
 
-func version(id uuid.UUID, number int32, name, description string, reads, sessionContext []string, persona, summary string, opens bool, model string) agents.Version {
+func version(id uuid.UUID, number int32, name, description string, reads, sessionContext []string, persona, summary string, opens bool, model, voice string, speed float64) agents.Version {
 	return agents.Version{
 		Agent: agents.Agent{
-			ID: id, Name: name, Description: description, Reads: reads, SessionContext: sessionContext, Persona: persona, Summary: summary, Opens: opens, Model: model,
+			ID: id, Name: name, Description: description, Reads: reads, SessionContext: sessionContext, Persona: persona, Summary: summary, Opens: opens, Model: model, Voice: voice, Speed: speed,
 		},
 		Number: int(number),
 	}

@@ -60,7 +60,7 @@ func TestCuttingBeforeJoiningWordsIsAnOptionOffByDefault(t *testing.T) {
 			asked = append(asked, input(t, r)) // one phrase at a time, so never two at once
 			_, _ = w.Write(rec)
 		})
-		collect(t, tts.Speak(t.Context(), "af_heart", streamed("Tell me about a time when you disagreed with your manager.")))
+		collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Tell me about a time when you disagreed with your manager.")))
 		if !reflect.DeepEqual(asked, c.want) {
 			t.Errorf("with %+v asked for %q, want %q", c.options, asked, c.want)
 		}
@@ -113,7 +113,7 @@ func TestEachPhraseIsAskedForAndItsPacketsArriveInOrder(t *testing.T) {
 		input(t, r)
 		_, _ = w.Write(rec)
 	})
-	got := collect(t, tts.Speak(t.Context(), "af_heart", streamed("Walk me through your work. What did", " you build?")))
+	got := collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Walk me through your work. What did", " you build?")))
 
 	phrases := []speech.Phrase{{Index: 0, Text: "Walk me through your work.", End: 26}, {Index: 1, Text: "What did you build?", End: 46}}
 	if len(got) != 2*recordedPackets {
@@ -133,7 +133,7 @@ func TestEachPacketSaysHowManyPacketsItsPhraseHas(t *testing.T) {
 		input(t, r)
 		_, _ = w.Write(rec)
 	})
-	for i, s := range collect(t, tts.Speak(t.Context(), "af_heart", streamed("Walk me through your work. What did you build?"))) {
+	for i, s := range collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Walk me through your work. What did you build?"))) {
 		if s.Phrase.Packets != recordedPackets {
 			t.Fatalf("packet %d says its phrase has %d packets, want %d, known by the first", i, s.Phrase.Packets, recordedPackets)
 		}
@@ -185,7 +185,7 @@ func TestEachPhraseIsAskedForOnceTheOneBeforeIsMadeAndWhileItPlays(t *testing.T)
 			t.Fatalf("%q wasn't asked for %s", want, when)
 		}
 	}
-	out := tts.Speak(t.Context(), "af_heart", streamed("Thanks for sharing that, now tell me more. What did you build, and why? Take your time with it."))
+	out := tts.Speak(t.Context(), "af_heart", 1, streamed("Thanks for sharing that, now tell me more. What did you build, and why? Take your time with it."))
 
 	expect("Thanks for sharing that,", "first")
 	time.Sleep(window) // the first phrase is being made
@@ -217,7 +217,7 @@ func TestTheTextIsReadWhileNobodyTakesTheSpeech(t *testing.T) {
 	rec := recorded(t)
 	tts := serving(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(rec) })
 	text := make(chan string)
-	tts.Speak(t.Context(), "af_heart", text)
+	tts.Speak(t.Context(), "af_heart", 1, text)
 	for range 10 {
 		select {
 		case text <- "Tell me more about the rebuild. ":
@@ -241,7 +241,7 @@ func TestCancellingStopsTheSpeechAndItsRequest(t *testing.T) {
 		}
 	})
 	ctx, cancel := context.WithCancel(t.Context())
-	out := tts.Speak(ctx, "af_heart", streamed("Tell me about the rebuild."))
+	out := tts.Speak(ctx, "af_heart", 1, streamed("Tell me about the rebuild."))
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -268,7 +268,7 @@ func TestKokoroRefusingAPhraseEndsTheSpeechWithItsError(t *testing.T) {
 		}
 		_, _ = w.Write(rec)
 	})
-	got := collect(t, tts.Speak(t.Context(), "af_heart", streamed("Walk me through your work. What did you build? Take your time with it.")))
+	got := collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Walk me through your work. What did you build? Take your time with it.")))
 
 	if len(got) != recordedPackets+1 {
 		t.Fatalf("%d pieces of speech, want the first phrase's %d packets, then the error", len(got), recordedPackets)
@@ -287,7 +287,7 @@ func TestAFailureKeepsTheRepliesTextFlowing(t *testing.T) {
 		http.Error(w, "busy", http.StatusServiceUnavailable)
 	})
 	text := make(chan string)
-	out := tts.Speak(t.Context(), "af_heart", text)
+	out := tts.Speak(t.Context(), "af_heart", 1, text)
 	text <- "Walk me through your work. "
 	if got := collect(t, out); len(got) != 1 || got[0].Err == nil {
 		t.Fatalf("speech %+v, want one error", got)
@@ -313,7 +313,7 @@ func TestAPhraseWithNoAudioInTimeFails(t *testing.T) {
 		case <-time.After(2 * time.Second):
 		}
 	})
-	got := collect(t, tts.Speak(t.Context(), "af_heart", streamed("Walk me through your work.")))
+	got := collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Walk me through your work.")))
 
 	if len(got) != 1 || got[0].Err == nil || !strings.Contains(got[0].Err.Error(), "no audio within 50ms") {
 		t.Fatalf("speech %+v, want one error saying no audio came within 50ms", got)
@@ -332,7 +332,7 @@ func TestADeadlineOfNoTimeIsTheDefault(t *testing.T) {
 			input(t, r)
 			_, _ = w.Write(rec)
 		})
-		got := collect(t, tts.Speak(t.Context(), "af_heart", streamed("Walk me through your work.")))
+		got := collect(t, tts.Speak(t.Context(), "af_heart", 1, streamed("Walk me through your work.")))
 		if len(got) != recordedPackets || got[0].Err != nil {
 			t.Errorf("with a deadline of %s, %d packets, the first %+v; want %d and no error", firstAudio, len(got), got[0], recordedPackets)
 		}
@@ -376,7 +376,7 @@ func speakLive(t *testing.T, tts *kokoro.TextToSpeech, reply string) {
 	var first, waited time.Duration
 	var due time.Time
 	var phrases []string
-	for s := range tts.Speak(t.Context(), "af_heart", text) {
+	for s := range tts.Speak(t.Context(), "af_heart", 1, text) {
 		if s.Err != nil {
 			t.Fatal(s.Err)
 		}
@@ -399,5 +399,20 @@ func speakLive(t *testing.T, tts *kokoro.TextToSpeech, reply string) {
 	t.Logf("first audio %v after the first word; playback waited %v for later phrases; phrases %q", first, waited, phrases)
 	if first == 0 {
 		t.Error("no speech")
+	}
+}
+
+func TestEachPhraseIsAskedForInTheSessionsVoiceAtItsSpeed(t *testing.T) {
+	for speed, want := range map[float64]any{0.5: 0.5, 1.25: 1.25, 2: 2.0, 0: nil} {
+		var body map[string]any
+		rec := recorded(t)
+		tts := serving(t, func(w http.ResponseWriter, r *http.Request) {
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write(rec)
+		})
+		collect(t, tts.Speak(t.Context(), "bf_emma", speed, streamed("Walk me through your work.")))
+		if got, sent := body["speed"]; got != want || (want == nil && sent) || body["voice"] != "bf_emma" {
+			t.Errorf("asked in %v at speed %v, want bf_emma at %v (nothing for 0, Kokoro's own pace)", body["voice"], body["speed"], want)
+		}
 	}
 }

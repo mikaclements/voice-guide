@@ -1,14 +1,14 @@
 """Kokoro on Apple's MLX behind the part of Kokoro-FastAPI's API voice uses.
 
-POST /v1/audio/speech answers a phrase as Ogg Opus, and GET /health answers once the model is
-loaded and has spoken once. scripts/kokoro-mlx.sh installs the packages and the model and runs it:
+POST /v1/audio/speech answers a phrase as Ogg Opus, in the voice and at the speed it names, and GET
+/health answers once the model is loaded and has spoken once. scripts/kokoro-mlx.sh installs the
+packages and the model and runs it:
     python server.py MODEL_DIR PORT
 """
 
 import io
 import json
 import logging
-import re
 import select
 import socket
 import sys
@@ -22,6 +22,7 @@ import numpy as np
 from mlx_audio.tts.utils import load_model
 
 from trim import RATE, trim
+from voices import has_voice, speed_of
 
 # voice sends one phrase, a sentence or two, so 64 KiB is far over any real request; the bound
 # keeps a wrong caller from filling memory. A round guess.
@@ -32,7 +33,6 @@ REQUEST_DEADLINE_S = 10
 # What the container's Kokoro answers for a phrase with nothing to say, such as a reply's last
 # phrase being only an emoji: a short silence, so the phrase isn't counted as failed.
 SILENCE = np.zeros(int(RATE * 0.3), dtype=np.int16)
-VOICE_NAME = re.compile(r"[a-z]{2}_[a-z]+")
 
 # The libraries' warnings can quote a phrase or its phonemes, which hold what the user said; this
 # server logs a failure by its type instead. Their prints go to standard output, which the script
@@ -48,10 +48,10 @@ class Gone(Exception):
     """The caller hung up, as voice does when the user cuts in."""
 
 
-def speak(text: str, voice: str, gone=lambda: False) -> np.ndarray:
+def speak(text: str, voice: str, speed: float = 1.0, gone=lambda: False) -> np.ndarray:
     parts = []
     # A voice's first letter is its language, as the model names them.
-    for result in model.generate(text=text, voice=voice, lang_code=voice[0]):
+    for result in model.generate(text=text, voice=voice, speed=speed, lang_code=voice[0]):
         mx.eval(result.audio)
         parts.append(np.array(result.audio))
         if gone():  # a long phrase comes in parts; the rest isn't made for no one
@@ -144,18 +144,17 @@ class Handler(BaseHTTPRequestHandler):
         if req.get("response_format") != "opus":
             return self.reply(400, b"only response_format opus")
         # Never a path: the name picks one of the model's own voices.
-        if not (
-            isinstance(voice, str)
-            and VOICE_NAME.fullmatch(voice)
-            and (model_dir / "voices" / f"{voice}.safetensors").is_file()
-        ):
+        if not has_voice(model_dir, voice):
             return self.reply(400, b"unknown voice")
+        speed = speed_of(req)
+        if speed is None:
+            return self.reply(400, b"speed must be a number from 0.5 to 2")
         if not isinstance(text, str):
             return self.reply(400, b"no input")
         start = time.monotonic()
         try:
             speakable = any(c.isalnum() for c in text)
-            body = ogg_opus(speak(text, voice, self.gone) if speakable else SILENCE)
+            body = ogg_opus(speak(text, voice, speed, self.gone) if speakable else SILENCE)
         except Gone:
             print(f"{len(text.split())} words cancelled", file=sys.stderr)
             return

@@ -72,6 +72,7 @@ func (st *Sessions) Start(ctx context.Context, s conversation.Session, requestID
 		// pgx sends a nil slice as NULL; a session that loaded nothing holds an empty list.
 		ContextItemIds: append([]uuid.UUID{}, s.ContextItems...),
 		SessionContext: sessionContext,
+		Voice:          s.Voice, Speed: s.Speed,
 	})
 	isNew := err == nil
 	got := db.SessionForRequestRow(added)
@@ -252,7 +253,7 @@ func sessionFrom(r db.SessionForRequestRow) (conversation.Session, error) {
 	}
 	return conversation.Session{
 		ID: r.ID, Workspace: r.WorkspaceID, User: r.UserID, Agent: r.AgentID, AgentVersion: int(r.AgentVersion),
-		ContextItems: r.ContextItemIds, SessionContext: blocks, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
+		ContextItems: r.ContextItemIds, SessionContext: blocks, Voice: r.Voice, Speed: r.Speed, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
 	}, nil
 }
 

@@ -37,7 +37,7 @@ func untimed(t *testing.T, out <-chan speech.Packet) []speech.Packet {
 
 func TestEachPieceOfTextIsSpokenAsSilenceAtTheSetPacketsPerWord(t *testing.T) {
 	tts := fake.TextToSpeech{PacketsPerWord: 2}
-	got := untimed(t, tts.Speak(t.Context(), "any voice", streamed("Tell me more ", " ", "about it.")))
+	got := untimed(t, tts.Speak(t.Context(), "any voice", 1, streamed("Tell me more ", " ", "about it.")))
 
 	first := speech.Phrase{Index: 0, Text: "Tell me more", End: 12, Packets: 6}
 	second := speech.Phrase{Index: 1, Text: "about it.", End: 23, Packets: 4}
@@ -56,7 +56,7 @@ func TestEachPieceOfTextIsSpokenAsSilenceAtTheSetPacketsPerWord(t *testing.T) {
 func TestTheFakeFailsWhereItIsToldTo(t *testing.T) {
 	broke := errors.New("speech broke")
 	tts := fake.TextToSpeech{PacketsPerWord: 1, Fail: broke, FailAfter: 2}
-	got := untimed(t, tts.Speak(t.Context(), "any voice", streamed("Tell me more.", "About it.")))
+	got := untimed(t, tts.Speak(t.Context(), "any voice", 1, streamed("Tell me more.", "About it.")))
 
 	if len(got) != 3 || got[0].Err != nil || got[1].Err != nil || got[2].Err != broke || got[2].Phrase.Index != 0 {
 		t.Errorf("speech %+v, want two packets, then the failure", got)
@@ -65,7 +65,7 @@ func TestTheFakeFailsWhereItIsToldTo(t *testing.T) {
 
 func TestTheTextIsReadWhileNobodyTakesTheSpeech(t *testing.T) {
 	text := make(chan string)
-	fake.TextToSpeech{}.Speak(t.Context(), "any voice", text)
+	fake.TextToSpeech{}.Speak(t.Context(), "any voice", 1, text)
 	for range 10 {
 		select {
 		case text <- "Tell me more about the rebuild.":
@@ -78,7 +78,7 @@ func TestTheTextIsReadWhileNobodyTakesTheSpeech(t *testing.T) {
 
 func TestAFailureKeepsTheRepliesTextFlowing(t *testing.T) {
 	text := make(chan string)
-	out := fake.TextToSpeech{Fail: errors.New("speech broke")}.Speak(t.Context(), "any voice", text)
+	out := fake.TextToSpeech{Fail: errors.New("speech broke")}.Speak(t.Context(), "any voice", 1, text)
 	text <- "Tell me more."
 	if s := <-out; s.Err == nil {
 		t.Fatalf("speech %+v, want the failure", s)
@@ -95,7 +95,7 @@ func TestAFailureKeepsTheRepliesTextFlowing(t *testing.T) {
 
 func TestCancellingStopsTheSpeech(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
-	out := fake.TextToSpeech{}.Speak(ctx, "any voice", streamed("Tell me more about the rebuild."))
+	out := fake.TextToSpeech{}.Speak(ctx, "any voice", 1, streamed("Tell me more about the rebuild."))
 	<-out
 	cancel()
 	after := 0

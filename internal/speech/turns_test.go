@@ -91,7 +91,7 @@ func newStoredTurnHarness(t *testing.T, sessions conversation.Sessions, store co
 		t.Fatalf("StartSession: %v", err)
 	}
 	transport := fake.New()
-	svc := speech.NewService(conv, transport, tts, d, stt, eot, speech.Settings{MaxConnections: 10, Voice: "af_heart", TextToSpeech: "fake", Listening: startingListening}, log)
+	svc := speech.NewService(conv, transport, tts, d, stt, eot, speech.Settings{MaxConnections: 10, TextToSpeech: "fake", Listening: startingListening}, log)
 	t.Cleanup(func() { closeService(t, svc) })
 	return turnHarness{svc: svc, conv: conv, transport: transport, model: model, session: s.ID, caller: access.Caller{Workspace: workspace, User: s.User, Expires: expires}}
 }

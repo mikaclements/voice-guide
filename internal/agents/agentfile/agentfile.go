@@ -31,6 +31,11 @@ type settings struct {
 	Opens string `yaml:"opens"`
 	// The model that answers this agent's turns, the server's unless set.
 	Model string `yaml:"model"`
+	// The voice that speaks this agent's replies, and how fast, 1 the voice's own pace; the
+	// session's own or the server's unless set. A pointer, so a speed of 0 written out is refused
+	// instead of read as unset.
+	Voice string   `yaml:"voice"`
+	Speed *float64 `yaml:"speed"`
 }
 
 // Load reads every agent in fsys. It refuses anything it doesn't recognise,
@@ -99,6 +104,15 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 	if s.Model != "" && !agents.IsModelName(s.Model) {
 		return agents.Agent{}, fmt.Errorf("%s: model %q: expected lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", name, s.Model)
 	}
+	if s.Voice != "" && !agents.IsVoiceName(s.Voice) {
+		return agents.Agent{}, fmt.Errorf("%s: voice %q: expected a language and a style, such as af_heart: two lower-case letters, an underscore, then lower-case letters and digits", name, s.Voice)
+	}
+	var speed float64
+	if s.Speed != nil {
+		if speed = *s.Speed; !agents.IsSpeed(speed) {
+			return agents.Agent{}, fmt.Errorf("%s: speed %v: expected from %v to %v", name, speed, agents.MinSpeed, agents.MaxSpeed)
+		}
+	}
 	return agents.Agent{
 		ID:             id,
 		Name:           s.Name,
@@ -110,6 +124,8 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 		Summary: strings.TrimSpace(s.Summary),
 		Opens:   s.Opens == "agent",
 		Model:   s.Model,
+		Voice:   s.Voice,
+		Speed:   speed,
 	}, nil
 }
 

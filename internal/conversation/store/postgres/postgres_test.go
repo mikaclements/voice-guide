@@ -246,6 +246,22 @@ func TestASessionStartedWithoutSessionContextHoldsAnEmptyList(t *testing.T) {
 	}
 }
 
+func TestASessionsVoiceAndSpeedAreSavedExactlyAndARepeatReturnsThem(t *testing.T) {
+	s, _ := storeWithTwoWorkspaces(t)
+	request := uuid.NewV7()
+	sess := sessionOn(workspace, user)
+	sess.Voice, sess.Speed = "bf_emma", 1.1
+	first, _ := start(t, s, sess, request)
+
+	again, _ := start(t, s, sessionOn(workspace, user), request)
+	byID, _, err := s.ByID(context.Background(), workspace, user, first.ID)
+	for _, got := range []conversation.Session{first, again, byID} {
+		if err != nil || got.Voice != "bf_emma" || got.Speed != 1.1 {
+			t.Errorf("session speaks in %q at %v (%v), want bf_emma at 1.1 exactly, as the first start chose", got.Voice, got.Speed, err)
+		}
+	}
+}
+
 // count returns how many rows the table holds.
 func count(t *testing.T, pool *pgxpool.Pool, table string) int {
 	t.Helper()

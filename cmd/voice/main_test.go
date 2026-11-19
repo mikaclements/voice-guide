@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -129,6 +130,20 @@ func TestRepliesAreSpokenByKokoroOnThisMachineInAfHeartUnlessSet(t *testing.T) {
 	set, err := loadConfig(env(map[string]string{"VOICE_TTS": "fake", "VOICE_TTS_URL": "http://kokoro:8880", "VOICE_TTS_VOICE": "bf_emma", "VOICE_TTS_FIRST_AUDIO": "2s"}))
 	if err != nil || set.tts != "fake" || set.ttsURL != "http://kokoro:8880" || set.voice != "bf_emma" || set.firstAudio != 2*time.Second {
 		t.Errorf("text-to-speech = %q at %q in %q within %s set (%v); want each as set", set.tts, set.ttsURL, set.voice, set.firstAudio, err)
+	}
+}
+
+func TestSessionsSpeakInTheServicesVoiceAtItsOwnPaceUnlessTheirStartOrAgentSaysOtherwise(t *testing.T) {
+	unset, _ := loadConfig(env(nil))
+	set, _ := loadConfig(env(map[string]string{"VOICE_TTS_VOICE": "bf_emma"}))
+	if unset.settings.Voice != "af_heart" || unset.settings.Speed != 1 || set.settings.Voice != "bf_emma" {
+		t.Errorf("settings speak in %q at %v unset and %q set; want af_heart at 1, then bf_emma", unset.settings.Voice, unset.settings.Speed, set.settings.Voice)
+	}
+}
+
+func TestAServiceVoiceThatIsNotAVoiceNameStopsTheStart(t *testing.T) {
+	if _, err := loadConfig(env(map[string]string{"VOICE_TTS_VOICE": "../af_heart"})); err == nil || !strings.Contains(err.Error(), "VOICE_TTS_VOICE") {
+		t.Errorf("loadConfig = %v, want an error naming VOICE_TTS_VOICE", err)
 	}
 }
 

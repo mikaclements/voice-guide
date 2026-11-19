@@ -160,7 +160,7 @@ Speaking on after the turn was taken, before any of its reply is heard, takes th
 
 Sending a message while the agent speaks, or talking over it for a fifth of a second, interrupts it: the audio stops, and the turn is saved as far as the user heard it, worked out from the audio already sent, so the agent never builds on words the user didn't hear. The whole reply is kept, and the agent is told the user cut in; what the user says over it becomes their next turn. Anything shorter while the user hears the agent, a click or a breath, lets it speak on and is never sent to the model; said as it finishes, it is the user's turn. One turn's speech runs to a minute at most, then is answered with what was heard.
 
-The prompt is built in layers, stable parts first, so the model reads most of it from cache. Each stage can be swapped by changing one setting. Which model answers is a setting too, recorded with every turn, unless the agent's file names its own.
+The prompt is built in layers, stable parts first, so the model reads most of it from cache. Each stage can be swapped by changing one setting. Which model answers is a setting too, recorded with every turn, unless the agent's file names its own. The voice and its speed are chosen the same way: a session's start, else the agent's file, else the service's, and kept with the session, so every reply is spoken as the session started.
 
 A typed turn skips the speech stages. The words are saved while the model starts, the reply streams back as it is written, and the reply is saved as it ended:
 

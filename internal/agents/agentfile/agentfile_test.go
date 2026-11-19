@@ -158,3 +158,27 @@ func TestLoadReadsTheModelAndRefusesOneThatIsNotAModelName(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadReadsTheVoiceAndSpeedAndRefusesAVoiceOutOfFormOrASpeedOutOfRange(t *testing.T) {
+	load := func(setting string) ([]agents.Agent, error) {
+		return agentfile.Load(context.Background(), fstest.MapFS{
+			"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+setting, "You answer every call from the sea.\n"),
+		})
+	}
+	for setting, want := range map[string]agents.Agent{
+		"":                             {},
+		"voice: bf_emma\n":             {Voice: "bf_emma"},
+		"speed: 1.25\n":                {Speed: 1.25},
+		"voice: am_adam\nspeed: 0.5\n": {Voice: "am_adam", Speed: 0.5},
+		"speed: 2\n":                   {Speed: 2},
+	} {
+		if got, err := load(setting); err != nil || len(got) != 1 || got[0].Voice != want.Voice || got[0].Speed != want.Speed {
+			t.Errorf("Load with %q = %+v, %v; want voice %q, speed %v", setting, got, err, want.Voice, want.Speed)
+		}
+	}
+	for _, bad := range []string{"voice: ../af_heart\n", "voice: AF_heart\n", "voice: af_heart+bf_emma\n", "speed: 0.49\n", "speed: 2.01\n", "speed: 0\n", "speed: -1\n", "speed: .nan\n", "speed: .inf\n"} {
+		if _, err := load(bad); err == nil || !strings.Contains(err.Error(), "lighthouse-keeper.md: ") {
+			t.Errorf("Load with %q = %v; want an error naming the file", bad, err)
+		}
+	}
+}
