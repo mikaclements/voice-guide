@@ -50,6 +50,8 @@ func main() {
 	}
 }
 
+// defaultContextLimit is about 5,000 tokens of English: room for a two-page resume (about
+// 5,000 characters) as session context, and for past session summaries in user context;
 // tuned once turns are timed. Both limits start here.
 const defaultContextLimit = 20_000
 

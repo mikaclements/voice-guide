@@ -60,11 +60,8 @@ type config struct {
 	settings conversation.Settings
 }
 
-// defaultContextLimit is about 5,000 tokens of English: room for a two-page resume (about
-// 5,000 characters) as session context, and for past session summaries in user context;
-
 // loadConfig reads every setting from the environment, one loader per area, in the order the
-// areas are named here. The first setting out of bounds stops the start.
+// areas are named here. The first bad setting stops the start.
 func loadConfig(getenv func(string) string) (config, error) {
 	var cfg config
 	for _, load := range []func(*config, func(string) string) error{
@@ -261,6 +258,7 @@ func httpAddress(name, value string) error {
 	return nil
 }
 
+// ipList reads the setting name as IP addresses separated by commas or spaces, or none when it is unset.
 func ipList(getenv func(string) string, name string) ([]net.IP, error) {
 	var ips []net.IP
 	for _, v := range strings.FieldsFunc(getenv(name), func(r rune) bool { return r == ',' || r == ' ' }) {
