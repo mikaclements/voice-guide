@@ -112,6 +112,31 @@ func TestAnAskOutsideAnySessionSendsNoSessionID(t *testing.T) {
 	}
 }
 
+func TestNewWordsSavedOtherwiseThanSentAreSentToo(t *testing.T) {
+	var asked []map[string]any
+	m := serving(t, func(w http.ResponseWriter, r *http.Request) {
+		var one map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&one)
+		asked = append(asked, one)
+		for _, l := range recorded(t) {
+			_, _ = io.WriteString(w, l+"\n")
+		}
+	})
+	withBoard := request
+	withBoard.NewWords = "<board>\nTwo boxes.\n</board>\n\nLike this?"
+	withBoard.NewWordsSaved = "(The user's board changed here.)\n\nLike this?"
+	plain := request
+	plain.NewWordsSaved = plain.NewWords
+	collect(m.Reply(context.Background(), withBoard))
+	collect(m.Reply(context.Background(), plain))
+	if len(asked) != 2 || asked[0]["new_words_saved"] != withBoard.NewWordsSaved {
+		t.Errorf("asked %v, want new_words_saved sent with a board", asked)
+	}
+	if _, sent := asked[1]["new_words_saved"]; sent {
+		t.Errorf("asked %v, want no new_words_saved for words saved as sent", asked[1])
+	}
+}
+
 func TestARefusalAtTheModelServicesCapIsBusyAndAnyOther503Overloaded(t *testing.T) {
 	for problem, want := range map[string]conversation.ModelErrorKind{
 		`{"type":"/v1/problems/at-capacity","title":"At capacity","status":503}`: "busy",

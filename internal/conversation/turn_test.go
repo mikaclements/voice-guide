@@ -57,6 +57,7 @@ func TestATurnStreamsTheReplyAndSavesItExactlyForTheNextTurn(t *testing.T) {
 	first := turnIn(s.ID, "Where is the ferry?")
 	first.ScreenInput = []conversation.ScreenInputBlock{{Name: "chart", Content: "Rocks to the north."}}
 	firstMessage := "<chart>\nRocks to the north.\n</chart>\n\nWhere is the ferry?"
+	firstSaved := "(The user's chart changed here.)\n\nWhere is the ferry?"
 
 	turn, sent := h.takeTurn(t, first)
 	if !slices.Equal(sent, replyPieces) {
@@ -76,9 +77,9 @@ func TestATurnStreamsTheReplyAndSavesItExactlyForTheNextTurn(t *testing.T) {
 	asked, _ := h.model.Requests()
 	wantFirst := conversation.ModelRequest{Model: "claude-test", Session: s.ID, Prompt: conversation.Prompt{
 		StableLayers: []string{"You read every log.", "Learned about the user in earlier conversations:\n\n<session_summary>\nDeckhand, two seasons.\n</session_summary>"},
-		Conversation: []conversation.Message{}, NewWords: firstMessage,
+		Conversation: []conversation.Message{}, NewWords: firstMessage, NewWordsSaved: firstSaved,
 	}}
-	wantConversation := []conversation.Message{{Role: conversation.RoleUser, Text: firstMessage}, {Role: conversation.RoleAgent, Text: reply}}
+	wantConversation := []conversation.Message{{Role: conversation.RoleUser, Text: firstSaved}, {Role: conversation.RoleAgent, Text: reply}}
 	if len(asked) != 2 || !reflect.DeepEqual(asked[0], wantFirst) || !reflect.DeepEqual(asked[1].Conversation, wantConversation) {
 		t.Errorf("model asked %+v; want first %+v, then the conversation %q", asked, wantFirst, wantConversation)
 	}

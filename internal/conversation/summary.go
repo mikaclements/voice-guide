@@ -136,7 +136,7 @@ func summaryPrompt(instruction string, turns []Turn) Prompt {
 	note := ""
 	for _, t := range turns {
 		// The opening's cue is no one's words: the agent's greeting comes first.
-		if said := userMessage(t, note); !t.Opening && strings.TrimSpace(said) != "" {
+		if said := userMessage(t, note, whole(t.ScreenInput)); !t.Opening && strings.TrimSpace(said) != "" {
 			b.WriteString("User: " + said + "\n\n")
 		}
 		reply := agentMessage(t)
