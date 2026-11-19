@@ -188,7 +188,7 @@ func say(ctx context.Context, tts *kokoro.TextToSpeech, sentence string) ([][]by
 	text <- sentence
 	close(text)
 	var packets [][]byte
-	for p := range tts.Speak(ctx, "af_heart", text) {
+	for p := range tts.Speak(ctx, "af_heart", 1, text) {
 		if p.Err != nil {
 			return nil, fmt.Errorf("say the sentence: %w", p.Err)
 		}

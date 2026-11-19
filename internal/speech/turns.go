@@ -24,7 +24,7 @@ const textAhead = 1024
 // cancels the turn in flight, waits for it to be saved, and lets the
 // connection go. A turn that arrives while the agent answers or speaks
 // interrupts it: the user cut in.
-func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection, hangup <-chan struct{}, served chan<- struct{}) {
+func (s *Service) serve(c access.Caller, session uuid.UUID, voice voiceSettings, id uuid.UUID, conn Connection, hangup <-chan struct{}, served chan<- struct{}) {
 	defer s.watchers.Done()
 	defer close(served) // after the turns are saved and the connection let go, below
 	defer s.letGo(session, id)
@@ -32,7 +32,7 @@ func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection,
 	var turns sync.WaitGroup
 	defer turns.Wait()
 	defer cancel()
-	r := &replies{s: s, conn: conn, caller: c, session: session, turns: &turns, waiting: make(chan struct{}, waitingTurns), active: make(chan struct{}, 1)}
+	r := &replies{s: s, conn: conn, caller: c, session: session, voice: voice, turns: &turns, waiting: make(chan struct{}, waitingTurns), active: make(chan struct{}, 1)}
 	// The microphone is listened to for as long as the connection lasts, and the session is marked
 	// active as the user speaks.
 	turns.Go(func() { s.listen(ctx, conn, session, r) })
@@ -123,7 +123,7 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 	due := r.aired.due()
 	playing.Go(func() {
 		defer close(stopped)
-		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, due, onAir)
+		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, r.voice.name, r.voice.speed, text), s.clock, due, onAir)
 	})
 	var firstText time.Time
 	turn, err := s.conversation.TakeTurn(ctx, r.caller, req, s.forward(speaking, r.conn, run, request, text, &firstText))

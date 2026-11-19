@@ -73,8 +73,8 @@ type heldFirst struct {
 	calls   atomic.Int32
 }
 
-func (h *heldFirst) Speak(ctx context.Context, voice string, text <-chan string) <-chan speech.Packet {
-	packets := h.TextToSpeech.Speak(ctx, voice, text)
+func (h *heldFirst) Speak(ctx context.Context, voice string, speed float64, text <-chan string) <-chan speech.Packet {
+	packets := h.TextToSpeech.Speak(ctx, voice, speed, text)
 	if h.calls.Add(1) > 1 {
 		return packets
 	}

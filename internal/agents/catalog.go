@@ -32,6 +32,14 @@ type Agent struct {
 	// Model names the model that answers this agent's turns and writes its
 	// summaries; empty, the server's own model answers.
 	Model string
+	// Voice names the voice that speaks this agent's replies, as the
+	// text-to-speech service names its voices; empty, the server's voice
+	// speaks. A session's start may name another, which then wins.
+	Voice string
+	// Speed is how fast the voice speaks, 1 the voice's own pace; 0 is not
+	// set, and the server's speed applies. A session's start may name
+	// another, which then wins.
+	Speed float64
 }
 
 // Catalog is how the other modules see agents: the newest versions a
@@ -124,6 +132,28 @@ var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 // and not on every turn.
 func IsModelName(name string) bool { return modelName.MatchString(name) }
 
+// A style is at most 32 characters: Kokoro's styles are about ten (gongitsune is the longest
+// seen), so 32 leaves room for new voices while refusing a name that is really text. A round
+// guess, to be checked when a voice with a longer style appears.
+var voiceName = regexp.MustCompile(`^[a-z]{2}_[a-z0-9]{1,32}$`)
+
+// IsVoiceName reports whether name can name a voice: a language and a style
+// joined by an underscore, as Kokoro names them (af_heart), checked before a
+// name reaches any request to the text-to-speech service.
+func IsVoiceName(name string) bool { return voiceName.MatchString(name) }
+
+// The speeds a voice may be asked to speak at: half the voice's pace to double
+// it. A round guess at the range that stays understandable; to be checked by
+// ear on Kokoro's voices once an agent asks for one near an end.
+const (
+	MinSpeed = 0.5
+	MaxSpeed = 2.0
+)
+
+// IsSpeed reports whether speed lies within MinSpeed and MaxSpeed, the bounds
+// included. NaN is not a speed.
+func IsSpeed(speed float64) bool { return speed >= MinSpeed && speed <= MaxSpeed }
+
 var blockName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 // IsBlockName reports whether name can name a block of text a product sends,
@@ -142,6 +172,12 @@ func validate(a Agent) error {
 	}
 	if a.Model != "" && !IsModelName(a.Model) {
 		return fmt.Errorf("agent %s: model %q must be lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", a.ID, a.Model)
+	}
+	if a.Voice != "" && !IsVoiceName(a.Voice) {
+		return fmt.Errorf("agent %s: voice %q must be a language and a style, such as af_heart: two lower-case letters, an underscore, then lower-case letters and digits", a.ID, a.Voice)
+	}
+	if a.Speed != 0 && !IsSpeed(a.Speed) {
+		return fmt.Errorf("agent %s: speed %v must be from %v to %v", a.ID, a.Speed, MinSpeed, MaxSpeed)
 	}
 	switch {
 	case a.ID == uuid.Nil():

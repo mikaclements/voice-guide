@@ -68,6 +68,8 @@ func TestAChangeToTheSettingsOrPersonaSavesTheNextVersion(t *testing.T) {
 		"summary":         func(a *agents.Agent) { a.Summary = "Note the ships you guided." },
 		"who opens":       func(a *agents.Agent) { a.Opens = true },
 		"model":           func(a *agents.Agent) { a.Model = "claude-sonnet-5-5" },
+		"voice":           func(a *agents.Agent) { a.Voice = "bf_emma" },
+		"speed":           func(a *agents.Agent) { a.Speed = 1.25 },
 	}
 	for name, change := range changes {
 		t.Run(name, func(t *testing.T) {

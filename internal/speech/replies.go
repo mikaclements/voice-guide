@@ -24,6 +24,7 @@ type replies struct {
 	conn    Connection
 	caller  access.Caller
 	session uuid.UUID
+	voice   voiceSettings // how its replies are spoken
 	turns   *sync.WaitGroup
 	waiting chan struct{} // a place for each turn waiting
 	active  chan struct{} // the user began speaking, for marking the session active
@@ -114,4 +115,10 @@ func (r *replies) begun(request uuid.UUID) *turnRun {
 // microphone brings next comes after it.
 func (r *replies) beginSpoken(ctx context.Context, h heardTurn) {
 	r.begin(ctx, turnIn{Type: "turn", RequestID: h.request, Words: h.words}, r.s.clock.Now(), &h)
+}
+
+// voiceSettings is the voice and speed a session's replies are spoken in.
+type voiceSettings struct {
+	name  string
+	speed float64
 }

@@ -122,13 +122,16 @@ curl https://voice.example.com/v1/sessions \
     "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
     "request_id": "<a new UUID for each start>",
     "user": "<your own ID for this user>",
-    "session_context": [{ "name": "resume", "content": "<resume text>" }]
+    "session_context": [{ "name": "resume", "content": "<resume text>" }],
+    "voice": "bf_emma",
+    "speed": 1.1
   }'
 ```
 
 - `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description` and the `session_context` it needs.
 - `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new. A repeat must carry the same `agent_id` and `session_context`, or it is refused with `422` and the problem type `/v1/problems/request-reused`.
 - `user`: the product's own stable ID for the user, not a name or an email address. It is at most 200 printable characters, on one line. The same ID is the same user every time, so the agent remembers them.
+- `voice` and `speed` (optional): the voice the agent speaks in, such as `bf_emma`, and how fast, from `0.5` to `2` with `1` the voice's own pace. They override the agent file's, which override the server's. A voice that isn't a language and a style (`af_heart`), or a speed out of range, is refused with `422` and the problem type `/v1/problems/voice-settings`. A repeat keeps the first start's voice and speed.
 - `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty. Its blocks hold at most 20,000 characters in all (`VOICE_SESSION_CONTEXT_MAX_CHARS`); more is refused with `413`.
 
 The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
@@ -360,7 +363,7 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 | `VOICE_MODEL` | `claude-sonnet-5-5` | The model that answers for agents whose file names none |
 | `MODEL_PROVIDER` | `claude-api` | Where replies come from: see [Choose your setup](#setup) |
 | `KOKORO` | unset | Where text-to-speech runs: unset (Docker) or `mlx`; see [Choose your setup](#setup) |
-| `VOICE_TTS_VOICE` | `af_heart` | Kokoro's voice |
+| `VOICE_TTS_VOICE` | `af_heart` | Kokoro's voice for sessions that name none, at its own pace |
 | `STT_MODEL` | `small` | Speech-to-text's model size: `tiny`, `small` or `medium` |
 | `VOICE_PAUSE` | 0.2 s | How long a pause in your speech before voice-guide checks whether you've finished |
 | `VOICE_MAX_WAIT` | 3 s | How long voice-guide waits for more when that check says you haven't finished |
@@ -376,7 +379,8 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `reads`: what the agent may know about the user from earlier sessions;
 - `session_context`: what the product must send at the start, such as the resume;
 - `summary`: how the agent sums up a session for next time;
-- `model`: the model that answers its turns and writes its summary, the server's `VOICE_MODEL` unless set.
+- `model`: the model that answers its turns and writes its summary, the server's `VOICE_MODEL` unless set;
+- `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set.
 
 The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
 

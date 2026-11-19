@@ -141,8 +141,6 @@ type Service struct {
 type Settings struct {
 	// MaxConnections bounds the audio connections this server holds.
 	MaxConnections int
-	// Voice is the voice replies are spoken in, as text-to-speech names it.
-	Voice string
 	// TextToSpeech names what speaks, for the turn's stage times.
 	TextToSpeech string
 	// Listening sets how the user is noticed speaking, pausing and cutting in.
@@ -183,9 +181,11 @@ func (s *Service) Connect(ctx context.Context, c access.Caller, session uuid.UUI
 	// Checked before any place is kept, so an offer for a session out of the
 	// caller's reach never holds one while the lookup runs. An ended session
 	// takes no more turns, so it gets no audio to take them on.
-	if found, err := s.conversation.Session(ctx, c, session); err != nil {
+	found, err := s.conversation.Session(ctx, c, session)
+	if err != nil {
 		return uuid.Nil(), "", err
-	} else if found.Ended() {
+	}
+	if found.Ended() {
 		return uuid.Nil(), "", conversation.ErrSessionEnded
 	}
 	if err := s.reserve(session); err != nil {
@@ -194,6 +194,9 @@ func (s *Service) Connect(ctx context.Context, c access.Caller, session uuid.UUI
 	// Deferred, so a panic can't keep the place for good; once the connection
 	// is held, the session keeps its place through it.
 	defer s.release(session)
+	// Read with the session, once: every reply on this connection is spoken so, and a session's
+	// voice never changes, so no reply reads it again.
+	voice, speed := s.conversation.Speaking(found)
 	conn, answer, err := s.transport.Answer(ctx, offer)
 	if err != nil {
 		return uuid.Nil(), "", err
@@ -213,7 +216,7 @@ func (s *Service) Connect(ctx context.Context, c access.Caller, session uuid.UUI
 		s.watchers.Add(1)
 	}
 	s.mu.Unlock()
-	go s.serve(c, session, id, conn, lc.hangup, lc.served)
+	go s.serve(c, session, voiceSettings{name: voice, speed: speed}, id, conn, lc.hangup, lc.served)
 	if replacing {
 		// Not waited for here: the old browser's acknowledgement shouldn't hold up the new one.
 		go func() {

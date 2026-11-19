@@ -43,6 +43,11 @@ type Settings struct {
 	// SessionIdle is how long a session goes with no turn started and no
 	// speech heard before it ends.
 	SessionIdle time.Duration
+	// Voice is the voice replies are spoken in for a session whose start and
+	// agent version name none, as text-to-speech names it.
+	Voice string
+	// Speed is how fast that voice speaks, 1 its own pace, when neither names one.
+	Speed float64
 }
 
 // NewService returns the service over the agents the catalog offers, the

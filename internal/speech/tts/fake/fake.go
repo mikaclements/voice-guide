@@ -38,7 +38,7 @@ var _ speech.TextToSpeech = TextToSpeech{}
 
 // Speak reads the text on its own goroutine, so speaking never holds the text back, and keeps
 // reading it after a failure until it is closed.
-func (f TextToSpeech) Speak(ctx context.Context, _ string, text <-chan string) <-chan speech.Packet {
+func (f TextToSpeech) Speak(ctx context.Context, _ string, _ float64, text <-chan string) <-chan speech.Packet {
 	out := make(chan speech.Packet)
 	go func() {
 		defer drain(ctx, text)

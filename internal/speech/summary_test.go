@@ -42,7 +42,7 @@ func TestEndingAfterThePageHangsUpSummarizesTheReplyOnlyAsFarAsItWasHeard(t *tes
 	caller := access.Caller{Workspace: workspace, User: s.User, Expires: expires}
 	transport := fake.New()
 	svc := speech.NewService(conv, transport, ttsfake.TextToSpeech{PacketsPerWord: slowWords}, detectionfake.Detection{}, nil, nil,
-		speech.Settings{MaxConnections: 10, Voice: "af_heart", TextToSpeech: "fake", Listening: startingListening}, slog.New(slog.DiscardHandler))
+		speech.Settings{MaxConnections: 10, TextToSpeech: "fake", Listening: startingListening}, slog.New(slog.DiscardHandler))
 	t.Cleanup(func() { closeService(t, svc) })
 	id, _, err := svc.Connect(context.Background(), caller, s.ID, "offer")
 	if err != nil {

@@ -149,8 +149,11 @@ const (
 	defaultTurnCheckURL = "http://127.0.0.1:8092"
 )
 
-// defaultVoice speaks replies until agents choose their own: af_heart, the voice Kokoro's
-// timings were measured in.
+// defaultSpeed is a voice's own pace, which Kokoro's speed field names 1.
+const defaultSpeed = 1.0
+
+// defaultVoice speaks replies of sessions whose start and agent name no voice: af_heart, the
+// voice Kokoro's timings were measured in.
 const defaultVoice = "af_heart"
 
 // defaultSpeechThreshold is the probability from which a frame counts as speech: 0.5, the model's
@@ -254,7 +257,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	}
 	defer sweeper.Wait()
 	defer stopSweep()
-	audio := speech.NewService(svc, transport, tts, detection, cfg.stt, cfg.endOfTurn, speech.Settings{MaxConnections: cfg.maxAudio, Voice: cfg.voice, TextToSpeech: cfg.tts, Listening: cfg.listening}, log)
+	audio := speech.NewService(svc, transport, tts, detection, cfg.stt, cfg.endOfTurn, speech.Settings{MaxConnections: cfg.maxAudio, TextToSpeech: cfg.tts, Listening: cfg.listening}, log)
 	// Waits, once the server has stopped taking requests, for every connection to end, so none is
 	// set up after it.
 	defer audio.Close()

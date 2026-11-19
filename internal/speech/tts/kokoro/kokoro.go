@@ -71,7 +71,7 @@ func New(baseURL string, o Options) *TextToSpeech {
 // made ahead of what plays, so stopping wastes little. Kokoro sends a phrase's audio only once
 // it has made all of it, which is why the first phrase is short. Cancelling ctx closes Kokoro's
 // request too. After a failure it keeps reading text until text is closed.
-func (k *TextToSpeech) Speak(ctx context.Context, voice string, text <-chan string) <-chan speech.Packet {
+func (k *TextToSpeech) Speak(ctx context.Context, voice string, speed float64, text <-chan string) <-chan speech.Packet {
 	out := make(chan speech.Packet)
 	go func() {
 		// Last: after a failure the text is still read to its end, so the reply reaches the page.
@@ -106,7 +106,7 @@ func (k *TextToSpeech) Speak(ctx context.Context, voice string, text <-chan stri
 				audio, made := make(chan speech.Packet), make(chan struct{})
 				wg.Go(func() {
 					defer close(audio)
-					k.speak(ctx, voice, phrase, audio, made)
+					k.speak(ctx, voice, speed, phrase, audio, made)
 				})
 				select {
 				case queue <- audio:
@@ -176,7 +176,7 @@ func drain(ctx context.Context, text <-chan string) {
 // speak asks Kokoro for one phrase and sends its packets once all have arrived, or those that
 // came and the error that stopped them. It closes made once the first packet arrives, when Kokoro has made the
 // phrase, or when it gives up, and gives up if that takes longer than firstAudio.
-func (k *TextToSpeech) speak(ctx context.Context, voice string, phrase speech.Phrase, audio chan<- speech.Packet, made chan<- struct{}) {
+func (k *TextToSpeech) speak(ctx context.Context, voice string, speed float64, phrase speech.Phrase, audio chan<- speech.Packet, made chan<- struct{}) {
 	asking, stop := context.WithCancelCause(ctx)
 	defer stop(nil)
 	slow := fmt.Errorf("no audio within %v", k.o.FirstAudio)
@@ -207,7 +207,7 @@ func (k *TextToSpeech) speak(ctx context.Context, voice string, phrase speech.Ph
 	var packets [][]byte
 	var size int
 	var tooBig error
-	err := k.ask(asking, voice, phrase.Text, func(packet []byte) bool {
+	err := k.ask(asking, voice, speed, phrase.Text, func(packet []byte) bool {
 		first()
 		size += len(packet)
 		switch {
@@ -244,10 +244,14 @@ func (k *TextToSpeech) speak(ctx context.Context, voice string, phrase speech.Ph
 	}
 }
 
-func (k *TextToSpeech) ask(ctx context.Context, voice, text string, packet func([]byte) bool) error {
-	body, err := json.Marshal(map[string]any{
+func (k *TextToSpeech) ask(ctx context.Context, voice string, speed float64, text string, packet func([]byte) bool) error {
+	ask := map[string]any{
 		"model": "kokoro", "input": text, "voice": voice, "response_format": "opus", "stream": true,
-	})
+	}
+	if speed > 0 { // 0 is a caller that sets none: Kokoro's own pace
+		ask["speed"] = speed
+	}
+	body, err := json.Marshal(ask)
 	if err != nil {
 		return err
 	}

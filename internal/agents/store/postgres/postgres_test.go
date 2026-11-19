@@ -121,6 +121,22 @@ func TestAnAgentsModelReadsBackAndOneWithoutReadsBackEmpty(t *testing.T) {
 	}
 }
 
+func TestAnAgentsVoiceAndSpeedReadBackAndOneWithoutReadsBackEmpty(t *testing.T) {
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	save(t, s, keeper, "first")
+	keeper.Voice, keeper.Speed = "bf_emma", 1.1
+	save(t, s, keeper, "second")
+
+	first, err := s.Version(context.Background(), workspace, keeperID, 1)
+	second, secondErr := s.Version(context.Background(), workspace, keeperID, 2)
+	newest, newestErr := s.Newest(context.Background(), workspace)
+	if err != nil || secondErr != nil || newestErr != nil || first.Voice != "" || first.Speed != 0 ||
+		second.Voice != "bf_emma" || second.Speed != 1.1 || len(newest) != 1 || newest[0].Voice != "bf_emma" || newest[0].Speed != 1.1 {
+		t.Errorf("versions %+v, %v and %+v, %v; Newest %+v, %v; want nothing set, then bf_emma at 1.1 exactly", first, err, second, secondErr, newest, newestErr)
+	}
+}
+
 func TestTheSameContentAgainSavesNoVersion(t *testing.T) {
 	s := storeWithWorkspaces(t)
 	save(t, s, agentNamed(keeperID, "Lighthouse keeper"), "first")

@@ -13,6 +13,7 @@ import (
 	"time"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	"github.com/mikaclements/voice-guide/internal/speech"
 	"github.com/mikaclements/voice-guide/internal/speech/endofturn/smartturn"
@@ -36,7 +37,7 @@ type config struct {
 	// maxAudio bounds the audio connections this server holds at once.
 	maxAudio int
 	// tts names what speaks replies, kokoro or fake; ttsURL is where Kokoro-FastAPI listens; voice
-	// is the voice replies are spoken in; firstAudio bounds the wait for a phrase's first audio.
+	// is the service's own voice, for sessions whose start and agent name none; firstAudio bounds the wait for a phrase's first audio.
 	tts        string
 	ttsURL     string
 	voice      string
@@ -127,6 +128,11 @@ func (cfg *config) loadTextToSpeech(getenv func(string) string) (err error) {
 	if err = httpAddress("VOICE_TTS_URL", cfg.ttsURL); err != nil {
 		return err
 	}
+	if !agents.IsVoiceName(cfg.voice) {
+		return fmt.Errorf("VOICE_TTS_VOICE: %q is not a voice's name, such as af_heart", cfg.voice)
+	}
+	// Sessions whose start and agent name no voice or speed take these.
+	cfg.settings.Voice, cfg.settings.Speed = cfg.voice, defaultSpeed
 	cfg.firstAudio, err = positiveDuration(getenv, "VOICE_TTS_FIRST_AUDIO", kokoro.DefaultFirstAudio)
 	return err
 }

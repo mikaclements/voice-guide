@@ -19,14 +19,14 @@ LIMIT 1;
 
 -- name: AddVersion :exec
 INSERT INTO agent.agent_versions
-    (workspace_id, agent_id, version, name, description, reads, session_context, persona, summary, opens, model, content_hash)
+    (workspace_id, agent_id, version, name, description, reads, session_context, persona, summary, opens, model, voice, speed, content_hash)
 VALUES
-    (@workspace_id, @agent_id, @version, @name, @description, @reads, @session_context, @persona, @summary, @opens, @model, @content_hash);
+    (@workspace_id, @agent_id, @version, @name, @description, @reads, @session_context, @persona, @summary, @opens, @model, @voice, @speed, @content_hash);
 
 -- name: NewestVersions :many
-SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.opens, newest.model
+SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.opens, newest.model, newest.voice, newest.speed
 FROM (
-    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, opens, model
+    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, opens, model, voice, speed
     FROM agent.agent_versions
     WHERE workspace_id = @workspace_id
     ORDER BY agent_id, version DESC
@@ -34,6 +34,6 @@ FROM (
 ORDER BY newest.name, newest.agent_id;
 
 -- name: Version :one
-SELECT agent_id, version, name, description, reads, session_context, persona, summary, opens, model
+SELECT agent_id, version, name, description, reads, session_context, persona, summary, opens, model, voice, speed
 FROM agent.agent_versions
 WHERE workspace_id = @workspace_id AND agent_id = @agent_id AND version = @version;

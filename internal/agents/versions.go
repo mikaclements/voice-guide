@@ -85,9 +85,12 @@ func contentHash(a Agent) string {
 		Opens bool `json:"opens,omitempty"`
 		// Left out when empty, for the same reason.
 		Model string `json:"model,omitempty"`
-	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model})
+		// Left out when empty or 0, for the same reason.
+		Voice string  `json:"voice,omitempty"`
+		Speed float64 `json:"speed,omitempty"`
+	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed})
 	if err != nil {
-		panic(err) // strings, a slice of strings and a bool always encode
+		panic(err) // strings, a slice of strings, a bool and a speed that Check keeps finite always encode
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])

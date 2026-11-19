@@ -96,7 +96,7 @@ func speakFrom(t *testing.T, o Options, h http.HandlerFunc) []speech.Packet {
 	text <- "Tell me about the rebuild."
 	close(text)
 	var got []speech.Packet
-	for s := range New(srv.URL, o).Speak(t.Context(), "af_heart", text) {
+	for s := range New(srv.URL, o).Speak(t.Context(), "af_heart", 1, text) {
 		got = append(got, s)
 	}
 	return got

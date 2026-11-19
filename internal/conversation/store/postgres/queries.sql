@@ -21,28 +21,28 @@ RETURNING user_id;
 
 -- A repeat of the same request inserts nothing; the caller then reads the session it made.
 -- name: AddSession :one
-INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context)
-VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context)
+INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
+VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context, @voice, @speed)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at;
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at;
 
 -- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND request_id = @request_id;
 
 -- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id;
 
 -- A product's server names no user, so its reads find a session by its workspace alone.
 -- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = @workspace_id AND id = @id;
 
 -- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
 -- @before, the last id of the page before, is where this one starts.
 -- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
 ORDER BY id DESC
 LIMIT @page_size;

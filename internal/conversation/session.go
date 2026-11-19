@@ -30,7 +30,11 @@ type Session struct {
 	// SessionContext is what the product sent, in order, kept for the whole
 	// session.
 	SessionContext []SessionContextBlock
-	StartedAt      time.Time
+	// Voice and Speed are what every reply in the session is spoken in, chosen
+	// when it started; empty and 0 for a session started before they were kept.
+	Voice     string
+	Speed     float64
+	StartedAt time.Time
 	// EndedAt is when the session ended: zero while it is live.
 	EndedAt time.Time
 }
@@ -47,6 +51,10 @@ type StartRequest struct {
 	RequestID      uuid.UUID
 	SessionContext []SessionContextBlock
 	User           string
+	// Voice and Speed override the agent's, which override the server's; empty
+	// and nil leave it to them. A repeat of a start keeps the first one's.
+	Voice string
+	Speed *float64
 }
 
 // maxUserReference bounds a user reference, in characters: room for any ID a
@@ -201,10 +209,15 @@ func (s *Service) Session(ctx context.Context, c access.Caller, id uuid.UUID) (S
 // it started, as it was, so pressing start twice makes one session; a refused
 // or failed start saves nothing, and the request can be retried. The product
 // names the user by its own reference, which keeps naming the same user: one
-// it names for the first time is added with their first session.
+// it names for the first time is added with their first session. Replies are
+// spoken in the voice and speed the request names, else the agent version's,
+// else the server's; a repeat keeps those of the start it repeats.
 func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequest) (Session, bool, error) {
 	agent, requestID := r.Agent, r.RequestID
 	if err := checkUserReference(r.User); err != nil {
+		return Session{}, false, err
+	}
+	if err := checkVoiceSettings(r); err != nil {
 		return Session{}, false, err
 	}
 	offered, err := s.catalog.Available(ctx, c.Workspace)
@@ -253,6 +266,7 @@ func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequ
 	if err != nil {
 		return Session{}, false, err
 	}
+	voice, speed := s.voiceOf(r, version)
 	started, isNew, err := s.sessions.Start(ctx, Session{
 		ID:             uuid.NewV7(),
 		Workspace:      c.Workspace,
@@ -261,6 +275,8 @@ func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequ
 		AgentVersion:   version.Number,
 		ContextItems:   items,
 		SessionContext: slices.Clone(r.SessionContext),
+		Voice:          voice,
+		Speed:          speed,
 	}, requestID, newReference)
 	if err != nil {
 		return Session{}, false, fmt.Errorf("save the session: %w", err)
