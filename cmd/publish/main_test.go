@@ -5,6 +5,8 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,18 +141,37 @@ func TestPublishGoesAheadAndWarnsWhenTheTextToSpeechServiceCantBeAsked(t *testin
 	}
 }
 
-func TestPublishAsksForVoicesOnlyWhenAnAgentNamesOneAndAServiceIsConfigured(t *testing.T) {
+func TestPublishDoesNotAskForVoicesWhenNoAgentNamesOne(t *testing.T) {
 	list := voicefake.New("af_heart")
-	log := slog.New(slog.DiscardHandler)
-	_ = checkVoices(t.Context(), namingVoice(""), list, log)
-	_ = checkVoices(t.Context(), namingVoice("af_heart"), nil, log)
-	if list.Asked() != 0 {
-		t.Errorf("the list was asked %d times, want none for an agent naming no voice", list.Asked())
+	if err := checkVoices(t.Context(), namingVoice(""), list, slog.New(slog.DiscardHandler)); err != nil || list.Asked() != 0 {
+		t.Errorf("checkVoices = %v with the list asked %d times, want nil and none", err, list.Asked())
 	}
-	if cfg, _ := loadConfig(env(map[string]string{"VOICE_TTS": "fake"})); cfg.ttsURL != "" {
+}
+
+func TestPublishAsksKokoroWhereComposePublishesItUnlessTheTextToSpeechIsTheFake(t *testing.T) {
+	if cfg, _ := loadConfig(env(nil)); cfg.ttsURL != defaultTTSURL || voiceList(cfg) == nil {
+		t.Errorf("ttsURL = %q, want %q where compose publishes Kokoro, with a list to ask", cfg.ttsURL, defaultTTSURL)
+	}
+	if cfg, _ := loadConfig(env(map[string]string{"VOICE_TTS": "fake"})); cfg.ttsURL != "" || voiceList(cfg) != nil {
 		t.Errorf("ttsURL = %q with the fake text-to-speech, want none to ask", cfg.ttsURL)
 	}
-	if cfg, _ := loadConfig(env(nil)); cfg.ttsURL != defaultTTSURL {
-		t.Errorf("ttsURL = %q, want %q where compose publishes Kokoro", cfg.ttsURL, defaultTTSURL)
+}
+
+// Through run, with the agent file and the service's answer as a person's publish has them, and a
+// database no one listens on: the refusal comes before it is reached.
+func TestPublishRefusesAnAgentFileNamingAVoiceTheServiceLacks(t *testing.T) {
+	kokoro := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"voices":["af_heart"]}`))
+	}))
+	defer kokoro.Close()
+	dir := t.TempDir()
+	file := "---\nid: 01a1de8b-bba7-7000-bad0-0000000000a1\nname: Lighthouse keeper\nvoice: bf_emma\n---\nYou answer every call from the sea.\n"
+	if err := os.WriteFile(filepath.Join(dir, "lighthouse-keeper.md"), []byte(file), 0o600); err != nil {
+		t.Fatalf("write the agent file: %v", err)
+	}
+	getenv := env(map[string]string{"DATABASE_URL": "postgres://keeper@127.0.0.1:1/harbour?sslmode=disable", "VOICE_AGENTS_DIR": dir, "VOICE_TTS_URL": kokoro.URL})
+	err := run(context.Background(), getenv, slog.New(slog.DiscardHandler), publishTimeout)
+	if err == nil || !strings.Contains(err.Error(), "Lighthouse keeper") || !strings.Contains(err.Error(), "bf_emma") {
+		t.Errorf("run = %v, want a refusal naming the agent and its voice", err)
 	}
 }

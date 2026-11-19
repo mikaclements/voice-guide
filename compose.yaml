@@ -69,8 +69,12 @@ services:
       DATABASE_URL: postgres://voice:voice@postgres:5432/voice_app?sslmode=disable
       VOICE_WORKSPACE_ID: ${VOICE_WORKSPACE_ID:-}
       VOICE_DEV_PRODUCT_KEY: ${VOICE_DEV_PRODUCT_KEY:-}
+      # Publishing checks the agents' voices against Kokoro's list.
+      VOICE_TTS_URL: http://kokoro:8880
     depends_on:
       postgres:
+        condition: service_healthy
+      kokoro:
         condition: service_healthy
 
   voice:

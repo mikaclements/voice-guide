@@ -53,7 +53,8 @@ const defaultTTSURL = "http://127.0.0.1:8880"
 
 // voicesTimeout bounds asking the text-to-speech service for its voices, which is a few hundred
 // bytes from a service on this network, so 2s is a wide margin without holding up a publish when it
-// isn't running. A round guess.
+// isn't running. A round guess, to be measured the first time a publish warns that Kokoro was
+// slow rather than down.
 const voicesTimeout = 2 * time.Second
 
 func loadConfig(getenv func(string) string) (config, error) {
