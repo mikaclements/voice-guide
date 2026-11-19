@@ -167,3 +167,23 @@ func TestTheLastPhraseWithoutPunctuationEndsAtItsLastWord(t *testing.T) {
 		t.Errorf("phrases %+v, want %+v: the last ends after its last word, not the spaces after it", got, want)
 	}
 }
+
+func TestAShortSentenceAtTheEndOfAPieceIsCutAtOnce(t *testing.T) {
+	// The model's text arrives in bursts; one ending at "Okay." shouldn't wait for the next.
+	for _, tc := range []struct {
+		name, piece string
+		want        []cutPhrase
+	}{
+		{"a sentence end after a word", "Okay.", []cutPhrase{{"Okay.", 5}}},
+		{"a question", "Really?", []cutPhrase{{"Really?", 7}}},
+		{"a period after a number may go on", "We spent 2.", nil},
+		{"a period after one letter may go on", "Ask the e.", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var p phrases
+			if got := p.add(tc.piece); !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("phrases %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}

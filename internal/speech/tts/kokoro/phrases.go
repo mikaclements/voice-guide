@@ -80,7 +80,7 @@ func (p *phrases) take(final bool) []cutPhrase {
 
 // next returns where the next phrase in pending ends, or 0 if it hasn't ended yet.
 func (p *phrases) next(final bool) int {
-	words := wordsIn(p.pending, final)
+	words := wordsIn(p.pending, final || endsSentence(p.pending))
 	early := p.spoken < minWords
 	for i, w := range words {
 		short := i < minWords-1
@@ -131,6 +131,22 @@ func wordsIn(s string, final bool) []word {
 		words = append(words, word{s[start:], len(s)})
 	}
 	return words
+}
+
+// endsSentence reports whether s ends a sentence at its very end, with no space after it yet: the
+// model's text arrives in bursts, and one ending at "Okay." would otherwise wait for the next. A
+// period after a digit or a single letter may still go on ("2.5", "e.g.").
+func endsSentence(s string) bool {
+	last, size := utf8.DecodeLastRuneInString(s)
+	switch last {
+	case '?', '!', '…':
+		return true
+	case '.':
+		before, n := utf8.DecodeLastRuneInString(s[:len(s)-size])
+		earlier, _ := utf8.DecodeLastRuneInString(s[:len(s)-size-n])
+		return unicode.IsLetter(before) && unicode.IsLetter(earlier)
+	}
+	return false
 }
 
 // digitDash reports whether the dash at s[dash:end] has a digit on both sides, in a word that
