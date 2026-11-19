@@ -100,21 +100,22 @@ func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection,
 // reply ends or the user cuts in. It releases run for the next turn once the
 // turn is saved, as far as it was heard, and its last message has gone.
 // said is the turn as speech heard it, when the user spoke it; what is played
-// is noted on aired. A spoken turn stays in flight until its reply reaches the
+// is noted in r.aired. A spoken turn stays in flight until its reply reaches the
 // user, or stops with none; if the user talks on before then, it is taken back
 // and ends without another word to the page, and the words they go on to say
 // are taken with its words as one turn, in its place.
-func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c access.Caller, session uuid.UUID, m turnIn, received time.Time, run *turnRun, said *heardTurn, aired *aired) {
+func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time.Time, run *turnRun, said *heardTurn) {
+	s := r.s
 	request := m.RequestID.String()
 	if said != nil && said.continues != nil && said.continues.stillInFlight() {
 		// All the words can't take the place of a turn that couldn't be taken
 		// back: it is still in flight, or, past the turn deadline, cut off
 		// under the same request ID. They go back to the page, to send again.
 		run.leftInFlight()
-		s.tell(conn, out{Type: "refused", RequestID: request, Reason: reasonBusy, Detail: "the turn before couldn't be taken back; send it again"})
+		s.tell(r.conn, out{Type: "refused", RequestID: request, Reason: reasonBusy, Detail: "the turn before couldn't be taken back; send it again"})
 		return
 	}
-	req := conversation.TurnRequest{Session: session, RequestID: m.RequestID, Words: m.Words, Opening: m.Opening, Interrupt: run.interrupted, Hold: said != nil}
+	req := conversation.TurnRequest{Session: r.session, RequestID: m.RequestID, Words: m.Words, Opening: m.Opening, Interrupt: run.interrupted, Hold: said != nil}
 	for _, b := range m.ScreenInput {
 		req.ScreenInput = append(req.ScreenInput, conversation.ScreenInputBlock(b))
 	}
@@ -122,21 +123,21 @@ func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c acce
 	var audio played
 	var playing sync.WaitGroup
 	stopped := make(chan struct{})
-	onAir := func(at time.Time, on bool) { aired.note(run, at, on) }
+	onAir := func(at time.Time, on bool) { r.aired.note(run, at, on) }
 	playing.Go(func() {
 		defer close(stopped)
-		audio = play(speaking, gatedConn{Connection: conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, onAir)
+		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, onAir)
 	})
 	var firstText time.Time
-	turn, err := s.conversation.TakeTurn(ctx, c, req, s.forward(speaking, conn, run, request, text, &firstText))
+	turn, err := s.conversation.TakeTurn(ctx, r.caller, req, s.forward(speaking, r.conn, run, request, text, &firstText))
 	textDone := s.clock.Now()
 	close(text)
 	var failed *conversation.ReplyFailedError
 	if req.Hold && (err == nil || errors.As(err, &failed)) { // in flight
-		if !s.reached(speaking, conn, run, stopped, turn.SettleBy()) {
+		if !s.reached(speaking, r.conn, run, stopped, turn.SettleBy()) {
 			playing.Wait()
 			if err := s.conversation.TakeBack(ctx, turn); err != nil {
-				s.log.Warn("take back a turn the user talked on after", "session", session, "err", err)
+				s.log.Warn("take back a turn the user talked on after", "session", r.session, "err", err)
 				run.leftInFlight()
 			}
 			return
@@ -152,12 +153,12 @@ func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c acce
 		return
 	}
 	ending := s.ending(request, turn, err, !firstText.IsZero())
-	s.tell(conn, ending)
+	s.tell(r.conn, ending)
 	playing.Wait()
 	if ending.Reason == reasonEnded {
 		// The session ended, here or on another server: this connection learns
 		// it from the turn refused, and ends, so the page stops listening.
-		conn.Close(Ended)
+		r.conn.Close(Ended)
 		return
 	}
 	if ending.Type != "done" && ending.Type != "lost" {
@@ -167,14 +168,14 @@ func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c acce
 	// Cut in before the reply's text was complete, or before all of it was
 	// heard: once it has all played, a new turn simply follows it.
 	if at, ok := run.interruptedAt(); ok {
-		heardTo := heard(audio.sent, at, conn.RoundTrip())
+		heardTo := heard(audio.sent, at, r.conn.RoundTrip())
 		if !at.After(textDone) || heardTo < len(strings.TrimRightFunc(turn.Reply, unicode.IsSpace)) {
-			attrs := []any{"session", session, "turn", turn.ID}
+			attrs := []any{"session", r.session, "turn", turn.ID}
 			if !audio.stopped.IsZero() { // audio was playing
 				attrs = append(attrs, "stopped_ms", max(audio.stopped.Sub(at), 0).Milliseconds())
 			}
 			if cut, err := s.conversation.Interrupted(ctx, turn, heardTo); err != nil {
-				s.log.Warn("save where an interrupted reply was cut", "session", session, "err", err)
+				s.log.Warn("save where an interrupted reply was cut", "session", r.session, "err", err)
 			} else if saved = cut; cut.Status == conversation.TurnCut {
 				attrs = append(attrs, "saved_ms", s.clock.Now().Sub(at).Milliseconds())
 			}
@@ -186,11 +187,11 @@ func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c acce
 	if said != nil && !audio.first.IsZero() {
 		last.FirstAudioMS = audio.first.Sub(said.ended).Milliseconds()
 	}
-	s.tell(conn, last)
+	s.tell(r.conn, last)
 	run.release()
 	// Timing and logging follow, still this turn's, while the next may start.
 	if audio.err != nil {
-		s.log.Warn("speak a reply", "session", session, "err", audio.err)
+		s.log.Warn("speak a reply", "session", r.session, "err", audio.err)
 	}
 	from, stages := stagesAt(received, firstText, audio, said)
 	// Saved, not turn: the same turn's ID, workspace and user, and what a cut
