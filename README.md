@@ -286,7 +286,9 @@ Apple silicon Mac, faster text-to-speech:
 KOKORO=mlx scripts/run.sh
 ```
 
-The first run asks for the Claude API key as `scripts/up.sh` does, unless `.env` has one already. It takes a few minutes. It's ready when it logs `ready: open http://127.0.0.1:5173`. After that, just `scripts/run.sh` starts the same setup, as [Choose your setup](#setup) explains. Stop it with Ctrl-C in the same terminal.
+The first run asks for the Claude API key as `scripts/up.sh` does, unless `.env` has one already. It takes a few minutes. It's ready when it logs `ready: open http://127.0.0.1:5173`. Stop it with Ctrl-C in the same terminal.
+
+`KOKORO=mlx` on the command line lasts one run, unless that run creates `.env`, as [Choose your setup](#setup) explains. To keep the faster text-to-speech, add the line `KOKORO=mlx` to `.env`. Remove it to go back to Kokoro in Docker.
 
 <a id="setup"></a>
 ## Choose your setup
@@ -310,7 +312,7 @@ The model is the one the agent file names with `model:` (the mock interviewer na
 
 End to end, a reply starts about 1.6 s after you stop talking with the API and `mlx` on Sonnet 5.5 (1.4 s on Haiku 5.5), and about 2.6 s with the subscription and Docker.
 
-The first run of `scripts/up.sh` or `scripts/run.sh` saves `ANTHROPIC_API_KEY`, `KOKORO` and `MODEL_PROVIDER` given or exported in your shell into `.env`. To change a setting later, edit `.env` and restart the script. A key exported in your shell wins over the one in `.env`, and the scripts say so when they differ.
+The run of `scripts/up.sh` or `scripts/run.sh` that creates `.env`, usually the first, saves `ANTHROPIC_API_KEY`, `KOKORO` and `MODEL_PROVIDER` given or exported in your shell into it. Later runs use a setting given in the shell for that run only. To change a setting for good, edit `.env` and restart the script. A key exported in your shell wins over the one in `.env`, and the scripts say so when they differ.
 
 <a id="tune"></a>
 ## Tune it
