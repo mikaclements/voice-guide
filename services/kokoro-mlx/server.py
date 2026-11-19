@@ -21,7 +21,8 @@ import mlx.core as mx
 import numpy as np
 from mlx_audio.tts.utils import load_model
 
-RATE = 24000  # Kokoro's sample rate
+from trim import RATE, trim
+
 # voice sends one phrase, a sentence or two, so 64 KiB is far over any real request; the bound
 # keeps a wrong caller from filling memory. A round guess.
 MAX_BODY = 64 * 1024
@@ -57,7 +58,7 @@ def speak(text: str, voice: str, gone=lambda: False) -> np.ndarray:
             raise Gone
     if not parts:
         return SILENCE
-    return (np.clip(np.concatenate(parts), -1, 1) * 32767).astype(np.int16)
+    return (np.clip(trim(np.concatenate(parts), text), -1, 1) * 32767).astype(np.int16)
 
 
 # The format voice asks for, Ogg Opus (RFC 7845), which it unwraps into its 20 ms packets.
