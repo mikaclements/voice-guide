@@ -30,8 +30,7 @@ export const insecureMessage = "voice-guide needs this page served over https";
 
 // How long the microphone stays held for a session that never gets ready, as when its greeting's
 // first sound never arrives: a round guess, room for a slow first model call before the greeting
-// sounds (over 4 s seen) or for voice reading a large session context; voice gives up waiting on
-// that read after the same time. To be measured with the largest session context allowed.
+// sounds (over 4 s seen); to be measured once the model starts with the session, which shortens it.
 const holdMs = 30_000;
 
 type State = {
@@ -41,7 +40,7 @@ type State = {
   // Muted by the user's own press; the microphone also sends silence while the session gets ready.
   muted: boolean;
   // The session isn't ready for the user's words yet: the agent's greeting is still to sound, or
-  // voice is still reading what the session was given; the microphone holds muted meanwhile.
+  // voice hasn't said it is ready; the microphone holds muted meanwhile.
   gettingReady: boolean;
   // The browser refused to play the agent until the user interacts with the page.
   blocked: boolean;
@@ -247,7 +246,7 @@ export class JoinedSession {
   }
 
   // Holds the microphone muted until the session is ready: the greeting's first sound, or the
-  // opening ending without one once voice says it has read what the session was given. Speech into
+  // opening ending without one once voice says the session is ready. Speech into
   // the silence before a greeting, while the model starts, would interrupt it at its first packet,
   // and the user would never hear it; once it sounds, the user cuts in as on any reply.
   private hold(): void {
@@ -453,7 +452,7 @@ export class JoinedSession {
     // sent while it refused would be lost to the user, yet saved as heard. Again on each
     // connection, as after a drop: voice takes only the first, and refuses the rest. The greeting's
     // first sound ends the hold; an opening ending without one, as for an agent that waits, ends it
-    // once voice has read what the session was given.
+    // once voice says the session is ready.
     if (blocked || opened.asked) return;
     opened.asked = true;
     const cap = this.holdCap;
@@ -469,7 +468,7 @@ export class JoinedSession {
     if ((next === "retry" || next === "text") && !this.openedInText) {
       this.openedInText = true;
       void this.sender.open(this.turns); // shown, not heard, rather than waiting on the tries
-      // In text the user waits on the first reply anyway, which reads what the session was given.
+      // In text the user waits on the first reply anyway, which shows as text.
       this.becameReady();
     }
     if (next === "over") this.foundOver(whyOver(err) ?? "ended", err);

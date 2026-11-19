@@ -182,8 +182,8 @@ export class ChannelTurns implements Turns {
 const firstAudio = (m: { first_audio_ms?: number }) =>
   m.first_audio_ms === undefined ? {} : { firstAudioMs: m.first_audio_ms };
 
-// ready settles once voice says the session can take the user's words: it has read what the
-// session was given, or tried to; never, for a connection that closes first.
+// ready settles once voice says the session can take the user's words; never, for a connection
+// that closes first.
 export type Audio = {
   turns: ChannelTurns;
   stream: Promise<MediaStream>;
@@ -340,7 +340,7 @@ export async function openAudio(
     }
     dc.bufferedAmountLowThreshold = screenSendBelow;
     dc.onbufferedamountlow = () => turns.drained();
-    // voice reads what the session was given now, ahead of the user's first words, and says ready.
+    // Asks voice to ready the session for the user's words; it says ready once it can take them.
     dc.send(JSON.stringify({ type: "warm" }));
     turns.opened(() => dc.bufferedAmount);
     return {
