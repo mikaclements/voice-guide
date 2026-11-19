@@ -258,3 +258,22 @@ func TestTheNoteComesBeforeTheScreenInput(t *testing.T) {
 		t.Errorf("new words = %q, want %q", got, want)
 	}
 }
+
+func TestASummaryMarksEachScreenChangeAndHoldsTheNewestBlockOfEachNameOnce(t *testing.T) {
+	turns := []Turn{
+		{ScreenInput: []ScreenInputBlock{{Name: "chart", Content: "Rocks to the north."}}, Words: "Which way?", Reply: "South."},
+		{ScreenInput: []ScreenInputBlock{{Name: "logbook", Content: "Fog at dawn."}}, Words: "Noted?", Reply: "Noted."},
+		{ScreenInput: []ScreenInputBlock{{Name: "chart", Content: "Rocks to the east."}}, Words: "Moved?", Reply: "Yes."},
+	}
+	got := summaryPrompt("Note the course.", turns).NewWords
+	want := "<transcript>\n" +
+		"User: (The user's chart changed here.)\n\nWhich way?\n\nAgent: South.\n\n" +
+		"User: (The user's logbook changed here.)\n\nNoted?\n\nAgent: Noted.\n\n" +
+		"User: (The user's chart changed here.)\n\nMoved?\n\nAgent: Yes.\n\n" +
+		"</transcript>\n\n" +
+		screenAtEnd + "\n\n<chart>\nRocks to the east.\n</chart>\n\n<logbook>\nFog at dawn.\n</logbook>\n\n" +
+		"<instructions>\nNote the course.\n</instructions>"
+	if got != want {
+		t.Errorf("summary's ask =\n%s\nwant\n%s", got, want)
+	}
+}

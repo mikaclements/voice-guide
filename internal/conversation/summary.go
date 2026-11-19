@@ -128,17 +128,26 @@ func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, erro
 	return reply.text, reply.failed
 }
 
+// screenAtEnd introduces the newest screen input block of each name after a
+// summary's transcript, which marks only where each changed.
+const screenAtEnd = "What the user's screen showed when it last changed:"
+
 // summaryPrompt asks for the summary: the conversation as the user heard it,
-// in a transcript, then the agent's instruction.
+// in a transcript, each screen input block as the line marking where it
+// changed, then the newest block of each name whole, then the agent's
+// instruction. A board replayed whole at every change would grow the ask
+// with the session until it no longer fits a request.
 func summaryPrompt(instruction string, turns []Turn) Prompt {
 	var b strings.Builder
 	b.WriteString("<transcript>\n")
 	note := ""
+	var screen []ScreenInputBlock
 	for _, t := range turns {
 		// The opening's cue is no one's words: the agent's greeting comes first.
-		if said := userMessage(t, note, whole(t.ScreenInput)); !t.Opening && strings.TrimSpace(said) != "" {
+		if said := userMessage(t, note, markers(t.ScreenInput)); !t.Opening && strings.TrimSpace(said) != "" {
 			b.WriteString("User: " + said + "\n\n")
 		}
+		screen = newest(screen, t.ScreenInput)
 		reply := agentMessage(t)
 		if reply != "" {
 			b.WriteString("Agent: " + reply + "\n\n")
@@ -146,6 +155,9 @@ func summaryPrompt(instruction string, turns []Turn) Prompt {
 		note = noteAfter(t, reply)
 	}
 	b.WriteString("</transcript>\n\n")
+	if len(screen) > 0 {
+		b.WriteString(strings.Join(append([]string{screenAtEnd}, whole(screen)...), "\n\n") + "\n\n")
+	}
 	b.WriteString(tagged("instructions", instruction))
 	return Prompt{StableLayers: []string{summaryLayer}, NewWords: b.String()}
 }
