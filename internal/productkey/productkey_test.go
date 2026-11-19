@@ -13,6 +13,7 @@ import (
 
 	"github.com/mikaclements/voice-guide/internal/productkey"
 	"github.com/mikaclements/voice-guide/internal/productkey/store/fake"
+	"github.com/mikaclements/voice-guide/internal/redacttest"
 )
 
 var (
@@ -62,6 +63,7 @@ type holder struct{ key productkey.Key }
 
 func TestAKeyPrintsLogsAndEncodesRedacted(t *testing.T) {
 	k, _ := create(t, productkey.NewKeys(fake.New()), workspace)
+	redacttest.Check(t, k, k.Reveal(), "productkey.Key(redacted)")
 	var asJSON, asText bytes.Buffer
 	slog.New(slog.NewJSONHandler(&asJSON, nil)).Info("key", "key", k, "held", holder{k})
 	slog.New(slog.NewTextHandler(&asText, nil)).Info("key", "key", k, "held", holder{k})

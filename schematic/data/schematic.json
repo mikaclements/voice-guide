@@ -821,7 +821,7 @@
       "id": "voice",
       "title": "Inside voice",
       "level": 2,
-      "lead": "Four modules with walls between them, checked on every push. Speech calls conversation and never the other way round; conversation calls user context's service and agents' catalog directly. The router, the ticket check, product keys, the caller, the secret holder and the job runner sit outside the modules and import none of them: each module's HTTP adapter plugs into the one router, and cmd/voice hands the runner each kind of job's handler.",
+      "lead": "Four modules with walls between them, checked on every push. Speech calls conversation and never the other way round; conversation calls user context's service and agents' catalog directly. The router, the ticket check, product keys, the caller and the job runner sit outside the modules and import none of them: each module's HTTP adapter plugs into the one router, and cmd/voice hands the runner each kind of job's handler.",
       "considerations": [
         "one-service-four-modules",
         "hexagonal",
@@ -1037,18 +1037,6 @@
           "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
           "why": "A plain type every part may import, so the caller crosses module walls without a module importing another.",
           "considerations": ["one-service-four-modules", "workspace-every-record"],
-          "importedFreely": true
-        },
-        {
-          "id": "secret",
-          "kind": "shared",
-          "parent": "box",
-          "name": "Secret",
-          "path": "internal/secret",
-          "summary": "Holds a ticket, a product key or a webhook's secret so it prints, logs and encodes redacted.",
-          "description": "Holds a secret behind a pointer in a type that shows itself as its holder's name, then (redacted), however it is formatted, logged or encoded as JSON; only Reveal gives the secret, to send it, show it once or sign with it. A ticket, a product key and conversation's webhook secret each embed one, so how a secret stays out of logs is written once. It imports nothing of voice-guide's.",
-          "why": "A plain type every part may import, so no secret reaches a log or an error, whichever part holds it.",
-          "considerations": ["product-keys"],
           "importedFreely": true
         },
         {
@@ -2320,7 +2308,7 @@
           "kind": "core",
           "parent": "core",
           "name": "Service",
-          "path": "service.go · turns.go · replies.go · spoken.go · heard.go",
+          "path": "service.go · turns.go · spoken.go · heard.go",
           "summary": "Holds each session's audio connection, takes its turns, plays replies, cuts in, works out what was heard.",
           "description": "speech's use cases. It answers audio offers, one connection per session on a server, a newer one replacing the old, at most a set number per server, each ended when the ticket that opened it expires, a reply playing cut where heard and no turn taken from then, even while it closes; reads the data channel's turns in order, at most two waiting; takes spoken turns from what the listener notices once the end-of-turn check and the final text agree; hands every turn to conversation; streams the reply's text to the page and its audio to the track in real time; and when the user cuts in, stops the audio at once and saves the reply as far as it was heard.",
           "why": "The browser removes the agent's echo only from audio arriving over WebRTC, and interrupting needs the microphone open while the agent speaks.",
@@ -3641,6 +3629,7 @@
   ],
   "omitted": {
     "internal/pgtest": "Test support: a fresh PostgreSQL database per test, copied from a migrated template. It ships in no service.",
+    "internal/redacttest": "Test support: checks that a value holding a secret shows only its redacted text wherever it could be printed, logged or encoded. It ships in no service.",
     "cmd/checkspeak": "A developer check: plays the browser over WebRTC to time a spoken turn. It ships in no service.",
     "cmd/classgen": "This schematic's own generator, which writes the class views from the Go code.",
     "internal/agents/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",

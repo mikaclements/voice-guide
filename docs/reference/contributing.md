@@ -30,6 +30,7 @@ The git hooks and CI enforce what a tool can check: formatting, static checks, m
 - No package-level mutable state and no `init` side effects. Every dependency is passed in from the program in `cmd/` that runs the code.
 - A program checks what it depends on when it starts, each check with a deadline, so an unreachable database stops it with a message instead of hanging.
 - Code that measures or waits on time takes a clock as a dependency, so tests control time instead of sleeping.
+- Idiomatic Go over clever Go: code a Go reader recognises at once. No reflection or type tricks to save a few lines. A little copying is better than a small shared abstraction; what must stay the same across the copies is checked by a shared test helper, as `internal/redacttest` checks each type that holds a secret.
 
 <a id="concurrency"></a>
 ## 4. Sync, async and streaming
@@ -61,7 +62,7 @@ Rules for every kind:
 - Every port has a fake adapter from its first day, used by the core's tests and by load tests ([D2](architecture.md#d2)).
 - Only the programs in `cmd/` wire adapters to a core and modules to each other: `cmd/voice` for the service, and `cmd/publish`, `cmd/productkey`, `cmd/webhook` and `cmd/checkspeak` for what each needs.
 - A vendor's package is imported only by its adapter, never by a module's core. The exception is a program in `cmd/` that plays the browser for a check, as `cmd/checkspeak` does for `.claude/skills/measure/check-speak.sh`: it may import the transport's vendor (Pion) itself, since it is the other side of the connection, which no adapter of voice's plays, and it ships in no service.
-- The API's router (`internal/api`), the ticket check (`internal/ticket`), product keys (`internal/productkey`, whose store is an adapter of its own) and the caller a credential names (`internal/access`) sit outside the modules and import none of them, so any module's HTTP adapter registers on the router without importing another module. A secret (a ticket, a product key, a webhook's secret) is held in `internal/secret`'s `Value`, which prints, logs and encodes redacted, so how a secret stays out of logs is written once; it imports only the standard library.
+- The API's router (`internal/api`), the ticket check (`internal/ticket`), product keys (`internal/productkey`, whose store is an adapter of its own) and the caller a credential names (`internal/access`) sit outside the modules and import none of them, so any module's HTTP adapter registers on the router without importing another module.
 - A depguard list changes only in the pull request that needs it, so every loosening is visible in review.
 
 <a id="api"></a>
