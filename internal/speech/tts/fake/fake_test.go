@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -104,5 +105,14 @@ func TestCancellingStopsTheSpeech(t *testing.T) {
 	}
 	if after > 1 { // one may have been on its way as the speech was stopped
 		t.Errorf("%d packets after stopping, want at most 1", after)
+	}
+}
+
+func TestTheFakeListsTwoVoicesUnlessItIsToldOthers(t *testing.T) {
+	if got, err := (fake.TextToSpeech{}).Voices(t.Context()); err != nil || !slices.Equal(got, []string{"af_heart", "bf_emma"}) {
+		t.Errorf("Voices = %v, %v; want af_heart and bf_emma", got, err)
+	}
+	if got, _ := (fake.TextToSpeech{Offered: []string{"zf_xiaobei"}}).Voices(t.Context()); !slices.Equal(got, []string{"zf_xiaobei"}) {
+		t.Errorf("Voices = %v, want the one it was told", got)
 	}
 }

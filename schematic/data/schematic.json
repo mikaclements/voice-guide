@@ -1405,7 +1405,7 @@
       "id": "conversation",
       "title": "conversation",
       "level": 3,
-      "lead": "Hexagonal: the core holds the rules and declares its ports, Sessions, Turns, Model, Webhooks and Poster, as small interfaces. The HTTP adapter and speech call the core; the stores, the model client and the webhook poster implement its ports. cmd/voice wires the PostgreSQL stores, the HTTP model client and the HTTP poster in.",
+      "lead": "Hexagonal: the core holds the rules and declares its ports, Sessions, Turns, Model, VoiceList, Webhooks and Poster, as small interfaces. The HTTP adapter and speech call the core; the stores, the model client and the webhook poster implement its ports. cmd/voice wires the PostgreSQL stores, the HTTP model client and the HTTP poster in.",
       "considerations": [
         "hexagonal",
         "layered-prompt",
@@ -1739,6 +1739,20 @@
           "focus": "internal/conversation"
         },
         {
+          "id": "p-voices",
+          "kind": "port",
+          "parent": "core",
+          "name": "VoiceList",
+          "path": "voices.go",
+          "summary": "The voices the text-to-speech service offers, to check a voice a start names.",
+          "members": ["Voices() → []string"],
+          "description": "The port for the voices on offer: a start naming a voice is checked against it, and GET /v1/voices lists it. A start naming no voice never asks, so a session in text doesn't depend on the text-to-speech service. Conversation stays text-only: it keeps a session's voice and speed as settings, and speech's text-to-speech, wired in by cmd/voice, answers the list.",
+          "why": "Only a voice named at a start is checked, so a text-only session never depends on the text-to-speech service.",
+          "considerations": ["kokoro"],
+          "drill": "types-conversation",
+          "focus": "internal/conversation"
+        },
+        {
           "id": "http",
           "kind": "adapter",
           "tag": "inbound",
@@ -1921,6 +1935,21 @@
           "protocol": "port",
           "send": "Reply(prompt)",
           "back": "text …, then report or failure"
+        },
+        {
+          "id": "service-voices",
+          "from": "service",
+          "to": "p-voices",
+          "protocol": "port",
+          "send": "Voices()",
+          "back": "voice names, or the service unreachable"
+        },
+        {
+          "id": "speech-voices",
+          "from": "x-speech",
+          "to": "p-voices",
+          "style": "implements",
+          "detail": "cmd/voice hands conversation speech's text-to-speech, which lists the voices."
         },
         {
           "id": "pg-sessions",
@@ -2397,8 +2426,8 @@
           "path": "texttospeech.go",
           "setting": "VOICE_TTS: kokoro · fake",
           "summary": "Reply text in, 20 ms Opus packets out.",
-          "members": ["Speak(voice, speed, <-chan string) → <-chan Packet"],
-          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it, in the session's voice and at its speed, and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out.",
+          "members": ["Speak(voice, speed, <-chan string) → <-chan Packet", "Voices() → []string"],
+          "description": "Text-to-speech's swap point: reads the reply's text as the model streams it, in the session's voice and at its speed, and yields 20 ms Opus packets, each marked with its phrase (its text, where it ends in the reply, its packet count), so how much was heard can be worked out. Voices lists the voices the service offers, which conversation checks a voice named at a start against.",
           "why": "Each phrase's packets mark where it ends in the reply, so after an interrupt voice knows how much was heard.",
           "considerations": ["kokoro", "heard"],
           "drill": "types-speech",
@@ -2656,6 +2685,14 @@
           "protocol": "HTTP",
           "send": "POST /v1/audio/speech, with voice and speed",
           "back": "Ogg Opus"
+        },
+        {
+          "id": "kokoro-voices",
+          "from": "kokoro",
+          "to": "x-kokoro",
+          "protocol": "HTTP",
+          "send": "GET /v1/audio/voices",
+          "back": "voice names"
         }
       ]
     },

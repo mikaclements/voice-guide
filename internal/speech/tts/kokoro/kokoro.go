@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -49,6 +50,7 @@ type Options struct {
 // TextToSpeech asks Kokoro-FastAPI for speech.
 type TextToSpeech struct {
 	url    string
+	voices string
 	o      Options
 	client *http.Client
 }
@@ -62,7 +64,36 @@ func New(baseURL string, o Options) *TextToSpeech {
 		// A deadline already past would fail every phrase before Kokoro could answer.
 		o.FirstAudio = DefaultFirstAudio
 	}
-	return &TextToSpeech{url: strings.TrimSuffix(baseURL, "/") + "/v1/audio/speech", o: o, client: &http.Client{}}
+	base := strings.TrimSuffix(baseURL, "/")
+	return &TextToSpeech{url: base + "/v1/audio/speech", voices: base + "/v1/audio/voices", o: o, client: &http.Client{}}
+}
+
+// maxVoicesBytes bounds the voices list read: Kokoro has about sixty voices, a few hundred bytes
+// of names, so a megabyte is far over any real list. A round guess.
+const maxVoicesBytes = 1 << 20
+
+// Voices asks Kokoro-FastAPI, or the MLX server that answers the same route, which voices it can
+// speak in.
+func (k *TextToSpeech) Voices(ctx context.Context) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, k.voices, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := k.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("kokoro: voices refused with status %d", resp.StatusCode)
+	}
+	var list struct {
+		Voices []string `json:"voices"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxVoicesBytes)).Decode(&list); err != nil {
+		return nil, fmt.Errorf("kokoro: voices: %w", err)
+	}
+	return list.Voices, nil
 }
 
 // Speak asks Kokoro for each phrase once the phrase before is made, so the next is made while

@@ -221,7 +221,13 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 
 	userContext := usercontext.NewService(usercontextstore.New(pool))
 	sessions, turns := conversationstore.NewSessions(pool), conversationstore.NewTurns(pool)
-	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings)
+	// Text-to-speech also lists the voices a session may start with, which conversation checks a
+	// voice named at a start against.
+	var tts speech.TextToSpeech = kokoro.New(cfg.ttsURL, kokoro.Options{FirstAudio: cfg.firstAudio})
+	if cfg.tts == "fake" {
+		tts = ttsfake.TextToSpeech{}
+	}
+	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings, conversation.WithVoices(tts))
 	deliveries := conversation.NewDeliveries(sessions, turns, conversationstore.NewWebhooks(pool), userContext, webhookhttp.New(webhookhttp.Deadline))
 	transport, err := webrtctransport.New(cfg.audio, speech.MessageLimit(svc.TurnLimit()), log)
 	if err != nil {
@@ -230,10 +236,6 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	// Deferred before speech's own close, so it runs after: the port goes once every connection on it
 	// has ended.
 	defer transport.Close()
-	var tts speech.TextToSpeech = kokoro.New(cfg.ttsURL, kokoro.Options{FirstAudio: cfg.firstAudio})
-	if cfg.tts == "fake" {
-		tts = ttsfake.TextToSpeech{}
-	}
 	var detection speech.SpeechDetection = detectionfake.Detection{}
 	if cfg.detection == "silero" {
 		if detection, err = silero.New(); err != nil {

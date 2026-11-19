@@ -262,6 +262,9 @@ func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequ
 	if err := checkSessionContext(r.SessionContext, version.SessionContext, s.settings.SessionContextChars); err != nil {
 		return Session{}, false, err
 	}
+	if err := s.checkVoiceOffered(ctx, r.Voice); err != nil {
+		return Session{}, false, err
+	}
 	items, err := s.loadUserContext(ctx, c, version.ID, version.Reads)
 	if err != nil {
 		return Session{}, false, err

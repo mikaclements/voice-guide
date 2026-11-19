@@ -5,6 +5,7 @@ package fake
 import (
 	"cmp"
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -32,9 +33,19 @@ type TextToSpeech struct {
 	PacketsPerWord int
 	Fail           error
 	FailAfter      int
+	// Offered is the voices it lists, af_heart and bf_emma when empty.
+	Offered []string
 }
 
 var _ speech.TextToSpeech = TextToSpeech{}
+
+// Voices returns the voices the fake offers: Offered, or two when it names none.
+func (f TextToSpeech) Voices(context.Context) ([]string, error) {
+	if len(f.Offered) == 0 {
+		return []string{"af_heart", "bf_emma"}, nil
+	}
+	return slices.Clone(f.Offered), nil
+}
 
 // Speak reads the text on its own goroutine, so speaking never holds the text back, and keeps
 // reading it after a failure until it is closed.
