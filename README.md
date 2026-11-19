@@ -384,7 +384,7 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `model`: the model that answers its turns, and writes its summary unless the summary names its own, the server's `VOICE_MODEL` unless set;
 - `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
 
-The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary, a `scale` of two whole numbers, lowest first, with `levels` saying what some scores mean, and the `criteria`, each a `name` (lower-case letters, digits and `_`) and what it `looks_for`. A scale and criteria come together or not at all, and the criteria and scale reach the agent too, so it can steer toward them:
+The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary, a `scale` of two whole numbers, lowest first, with `levels` saying what some scores mean, and the `criteria`, each a `name` (lower-case letters, digits and `_`, at most 32 characters) and what it `looks_for`. A scale and criteria come together or not at all, and the criteria and scale reach the agent too, so it can steer toward them:
 
 ```yaml
 summary:
