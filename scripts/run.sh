@@ -11,6 +11,17 @@
 # MODEL_PROVIDER=claude-subscription uses Claude Code signed in on this Mac instead: the model service
 # runs on this Mac, not in a container, so Claude Code finds the login in the macOS keychain.
 # MODEL_PROVIDER=fake costs nothing.
+#
+# Use this to work on voice-guide: it runs voice, the model service and the page from this checkout,
+# so a change shows on a restart, and it is the way to the faster Kokoro on Apple silicon. Use
+# scripts/up.sh to try voice-guide without installing anything but Docker.
+#
+# Settings it reads, from the shell or .env (the shell wins; the first run keeps ANTHROPIC_API_KEY,
+# KOKORO and MODEL_PROVIDER given in the shell): MODEL_PROVIDER (claude-api, claude-subscription or
+# fake), ANTHROPIC_API_KEY, MODEL_HOST, MODEL_PORT (8091), VOICE_MODEL_URL, VOICE_TTS (kokoro, the
+# default, starts Kokoro; fake starts none), KOKORO (unset for Docker, or mlx), KOKORO_MLX_PORT
+# (8882), VOICE_SPEECH_DETECTION (silero, the default, starts the speech-to-text service; fake
+# starts none), VOICE_ADDR (127.0.0.1:8080); voice itself reads the rest of .env.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 save_given_settings=1

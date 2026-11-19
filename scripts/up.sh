@@ -6,7 +6,16 @@
 # foreground: Ctrl-C stops the containers.
 #   scripts/up.sh        start, and say when the page is ready
 #   scripts/up.sh down   remove the containers; the database is kept
-# scripts/run.sh is the development path, and the way to the faster voice on Apple silicon.
+#
+# Use this to try voice-guide, or to run it as a whole, with only Docker installed. Use scripts/run.sh
+# to work on it (voice, the model service and the page run from this checkout without a rebuild),
+# for MODEL_PROVIDER=claude-subscription, and for the faster Kokoro on Apple silicon (KOKORO=mlx).
+#
+# Settings this script reads, from the shell or .env (the shell wins; the first run keeps
+# ANTHROPIC_API_KEY and MODEL_PROVIDER given in the shell): MODEL_PROVIDER (claude-api or fake) and
+# ANTHROPIC_API_KEY. Compose reads the rest of .env for the containers, such as VOICE_MODEL and
+# STT_MODEL; it always starts Kokoro and the speech-to-text service, so KOKORO, VOICE_TTS and
+# VOICE_SPEECH_DETECTION are not read here.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 case "${1:-}" in
