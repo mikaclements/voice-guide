@@ -8,9 +8,8 @@ import (
 	"unicode/utf8"
 )
 
-// SessionContextBlock is one named piece of session context: something the
-// product already knows about the user, such as their resume, sent when it
-// starts a session.
+// SessionContextBlock is one document of session context: something the
+// product already knows about the user, sent by name when it starts a session.
 type SessionContextBlock struct {
 	Name    string
 	Content string
@@ -39,10 +38,12 @@ func (e *SessionContextMismatchError) Error() string {
 // ErrSessionContextTooLarge reports session context over the character limit.
 var ErrSessionContextTooLarge = errors.New("session context is over the limit")
 
-// checkSessionContext refuses session context that isn't exactly the names
-// the version declares, each once, not empty and storable, or that is over
-// limit characters in all, which also bounds each block.
-func checkSessionContext(blocks []SessionContextBlock, declared []string, limit int) error {
+// checkSessionContext refuses session context that isn't every name the
+// version declares, and any of those its summary section names, each once,
+// not empty and storable, or that is over limit characters in all, which also
+// bounds each block. A document only the summary reads may be left out: a
+// product may have nothing for it yet, and an empty one is refused.
+func checkSessionContext(blocks []SessionContextBlock, declared, summaryReads []string, limit int) error {
 	var e SessionContextMismatchError
 	sent := make(map[string]bool, len(blocks))
 	chars := 0
@@ -50,7 +51,7 @@ func checkSessionContext(blocks []SessionContextBlock, declared []string, limit 
 		switch {
 		case sent[b.Name]:
 			e.Repeated = append(e.Repeated, b.Name)
-		case !slices.Contains(declared, b.Name):
+		case !slices.Contains(declared, b.Name) && !slices.Contains(summaryReads, b.Name):
 			e.Unknown = append(e.Unknown, b.Name)
 		case b.Content == "":
 			e.Empty = append(e.Empty, b.Name)
@@ -72,6 +73,19 @@ func checkSessionContext(blocks []SessionContextBlock, declared []string, limit 
 		return fmt.Errorf("%w: %d characters, at most %d", ErrSessionContextTooLarge, chars, limit)
 	}
 	return nil
+}
+
+// documentsNamed is the session context the product sent under names, in
+// the order sent: the conversation's prompt holds those its version declares
+// as session context, the summary those its summary section names.
+func documentsNamed(blocks []SessionContextBlock, names []string) []SessionContextBlock {
+	var out []SessionContextBlock
+	for _, b := range blocks {
+		if slices.Contains(names, b.Name) {
+			out = append(out, b)
+		}
+	}
+	return out
 }
 
 // quoted lists names for a message to the caller. The names come from the

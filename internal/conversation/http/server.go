@@ -53,6 +53,8 @@ type agentJSON struct {
 	Description string `json:"description"`
 	// What a product must send when it starts a session with this agent, by name.
 	SessionContext []string `json:"session_context"`
+	// What it may also send that only the summary reads, by name.
+	SummaryDocuments []string `json:"summary_documents"`
 }
 
 func (s *server) listAgents(w http.ResponseWriter, r *http.Request, c access.Caller) {
@@ -69,6 +71,7 @@ func (s *server) listAgents(w http.ResponseWriter, r *http.Request, c access.Cal
 	for _, a := range list {
 		body.Agents = append(body.Agents, agentJSON{
 			ID: a.ID.String(), Name: a.Name, Description: a.Description, SessionContext: append([]string{}, a.SessionContext...),
+			SummaryDocuments: append([]string{}, a.SummaryDocuments...),
 		})
 	}
 	s.api.Reply(w, r, http.StatusOK, "application/json", body)

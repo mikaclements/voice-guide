@@ -274,7 +274,7 @@ func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequ
 			return existing, false, nil
 		}
 	}
-	if err := checkSessionContext(r.SessionContext, version.SessionContext, s.settings.SessionContextChars); err != nil {
+	if err := checkSessionContext(r.SessionContext, version.SessionContext, version.SummaryDocuments, s.settings.SessionContextChars); err != nil {
 		return Session{}, false, err
 	}
 	if err := s.checkVoiceOffered(ctx, r.Voice); err != nil {

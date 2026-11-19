@@ -35,8 +35,8 @@ func TestLoadConfigUsesDefaultsForTheOptionalSettings(t *testing.T) {
 	if cfg.addr != "127.0.0.1:8080" {
 		t.Errorf("default address = %q, want this machine only", cfg.addr)
 	}
-	if cfg.settings.UserContextChars != defaultContextLimit || cfg.settings.SessionContextChars != defaultContextLimit {
-		t.Errorf("default limits = %+v, want %d for both", cfg.settings, defaultContextLimit)
+	if cfg.settings.UserContextChars != defaultContextLimit || cfg.settings.SessionContextChars != 280_000 {
+		t.Errorf("default limits = %+v, want %d for user context and 280,000 for session context", cfg.settings, defaultContextLimit)
 	}
 }
 
@@ -195,15 +195,15 @@ func TestSpeechToTextAndTheEndOfTurnCheckAreTheServiceOnThisMachineUnlessSet(t *
 	}
 }
 
-// .claude/skills/drive-session/start-session.sh sends the placeholder user's resume as session
+// .claude/skills/drive-session/start-session.sh sends the placeholder user's document as session
 // context; it must fit the default limit, or the script's start is refused.
-func TestThePlaceholderUsersResumeFitsTheSessionContextLimit(t *testing.T) {
-	resume, err := os.ReadFile("../../seed/placeholder-user/resume.md")
+func TestThePlaceholderUsersDocumentFitsTheSessionContextLimit(t *testing.T) {
+	document, err := os.ReadFile("../../seed/placeholder-user/resume.md")
 	if err != nil {
-		t.Fatalf("read the seed resume: %v", err)
+		t.Fatalf("read the seed document: %v", err)
 	}
-	if n := utf8.RuneCount(resume); n > defaultContextLimit {
-		t.Errorf("the seed resume has %d characters, over the default session context limit of %d", n, defaultContextLimit)
+	if n := utf8.RuneCount(document); n > defaultSessionContextLimit {
+		t.Errorf("the seed document has %d characters, over the default session context limit of %d", n, defaultSessionContextLimit)
 	}
 }
 

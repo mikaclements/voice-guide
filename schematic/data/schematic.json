@@ -207,7 +207,7 @@
       "title": "The product sends what it knows when a session starts, and what its screen shows with each turn",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "Session context, such as a resume, arrives as named text blocks from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt; screen input arrives with each turn, or, while audio is up, as it changes, held for the next turn taken there, spoken or typed; the newest block of each name goes after the cached conversation. User context holds only what voice-guide learns itself.",
+      "decision": "Session context arrives as named documents from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt, but for documents only the summary names, which never reach it; screen input arrives with each turn, or, while audio is up, as it changes, held for the next turn taken there, spoken or typed; the newest block of each name goes after the cached conversation. User context holds only what voice-guide learns itself.",
       "why": "The product is the source of truth for its users and its screen; a second copy in voice-guide would drift.",
       "tradeoff": "A product with no store of its own must keep, or resend, what it knows each session."
     },
@@ -351,7 +351,7 @@
       "title": "A session's summary: written by the model its agent names, with the agent's instruction, read back only by that agent",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery. For an agent with a summary schema, the same one call returns data in its shape; voice checks it is an object within its cap, asks once more, then keeps the text alone. The session says whether it is still coming: pending from the end, then written or none, settled by a second job if the first failed for good.",
+      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, from the documents the summary reads and the conversation, both in its record, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery. For an agent with a summary schema, the same one call returns data in its shape; voice checks it is an object within its cap, asks once more, then keeps the text alone. The session says whether it is still coming: pending from the end, then written or none, settled by a second job if the first failed for good.",
       "why": "What is worth remembering differs per agent, and the agent that wrote the summary is the one that knows what it is for.",
       "tradeoff": "The summary arrives a few seconds after the end, so a session started at once may open without it; each summary is a billed model call."
     },
@@ -1100,7 +1100,7 @@
           "name": "agents",
           "path": "internal/agents",
           "summary": "Agent definitions and their versions; the catalog serves each workspace's newest and exact ones.",
-          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read. Versions are written only by cmd/publish, from agents/<name>.md.",
+          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction with the documents the summary reads, and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read. Versions are written only by cmd/publish, from agents/<name>.md.",
           "why": "Versions never change once saved, so any instance finds the exact version a session started on, even mid-deploy.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "agents"
@@ -1549,7 +1549,7 @@
             {
               "nodes": ["service", "x-agents", "p-model", "modelhttp", "x-model"],
               "edges": ["service-agents", "service-model", "mh-model", "mh-service"],
-              "caption": "If the user said anything and the agent has a summary instruction, the model writes notes from the transcript as heard; with a summary schema, the same answer holds data in its shape"
+              "caption": "If the user said anything and the agent has a summary instruction, the model writes notes from the documents the summary reads and the transcript as heard; with a summary schema, the same answer holds data in its shape"
             },
             {
               "nodes": ["service", "x-usercontext"],
@@ -1612,7 +1612,7 @@
           "name": "Service",
           "path": "service.go · session.go · turn.go · summary.go",
           "summary": "Use cases: agents, start and end sessions, take a turn, save a cut, take one back, summarize an ended session.",
-          "description": "conversation's use cases, called by its HTTP adapter and by speech once they have proven who the caller is. Starting a session finds the user a product's server names by its own stable ID, or adds them with their first session, checks the session context against the agent version and loads user context; taking a turn keeps one in flight per session, saves the user's words while the model starts, streams the reply and saves how it ended, and a turn is saved before the next prompt is built; an agent that opens takes its opening only as the session's first turn, a fixed cue in the user's place. It also saves a cut reply as far as it was heard, settles or takes back a spoken turn, ends a session, and ends idle ones. Summarize, run as a background job once a session ends, asks the session's model outside any session for what it learned, as the agent's summary instruction says, from the conversation as the user heard it, waits while a turn is still in flight, and saves the summary through user context once per session.",
+          "description": "conversation's use cases, called by its HTTP adapter and by speech once they have proven who the caller is. Starting a session finds the user a product's server names by its own stable ID, or adds them with their first session, checks the session context against the agent version, the documents only the summary reads optional, and loads user context; taking a turn keeps one in flight per session, saves the user's words while the model starts, streams the reply and saves how it ended, and a turn is saved before the next prompt is built; an agent that opens takes its opening only as the session's first turn, a fixed cue in the user's place; no turn's prompt holds a document only the summary reads. It also saves a cut reply as far as it was heard, settles or takes back a spoken turn, ends a session, and ends idle ones. Summarize, run as a background job once a session ends, asks the session's model outside any session for what it learned, as the agent's summary instruction says, from the documents the summary reads and the conversation as the user heard it, waits while a turn is still in flight, and saves the summary through user context once per session.",
           "why": "The database is the conversation's source of truth, so any instance can take any turn.",
           "considerations": [
             "stateless",
@@ -3050,7 +3050,7 @@
           "name": "agentfile",
           "path": "internal/agents/agentfile",
           "summary": "Reads agents/<name>.md: a YAML settings block, then the persona.",
-          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary instruction, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID.",
+          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "types-agents",
           "focus": "internal/agents/agentfile"

@@ -12,7 +12,7 @@ test("unset settings take their defaults", () => {
   assert.equal(s.replyTimeoutMs, 15_000);
   assert.equal(s.backgroundReplyTimeoutMs, 120_000);
   assert.equal(s.maxConcurrentReplies, 4);
-  assert.equal(s.maxBodyBytes, 1 << 20);
+  assert.equal(s.maxBodyBytes, 4 << 20);
   assert.equal(s.maxSessionProcesses, 4);
   assert.equal(s.sessionProcessIdleMs, 300_000);
   assert.equal(s.maxTokens, 1024);

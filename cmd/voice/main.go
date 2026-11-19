@@ -50,10 +50,16 @@ func main() {
 	}
 }
 
-// defaultContextLimit is about 5,000 tokens of English: room for a two-page resume (about
-// 5,000 characters) as session context, and for past session summaries in user context;
-// tuned once turns are timed. Both limits start here.
+// defaultContextLimit is about 5,000 tokens of English: room for past session summaries in user
+// context; tuned once turns are timed.
 const defaultContextLimit = 20_000
+
+// defaultSessionContextLimit is about 100,000 tokens, at the 2.8 characters a token measured on a
+// Markdown document: room for long documents. Measured on the subscription with Sonnet 5.5, an
+// opening reached its first text in 1.4 to 3.9 s cold with 120,000 characters, and in 1.3 to
+// 2.4 s with 400,000, both well inside the model service's 15 s and the turn's 20 s. Not 400,000:
+// its some 141,000 tokens leave too little of a 200,000-token context for a long conversation.
+const defaultSessionContextLimit = 280_000
 
 // defaultScreenInputLimit is about 10,000 tokens of English with a turn: room for a whiteboard of
 // boxes and arrows, or a document the user is reading, turned into text. Only the newest block of
