@@ -28,6 +28,7 @@ type replies struct {
 	waiting chan struct{} // a place for each turn waiting
 	active  chan struct{} // the user began speaking, for marking the session active
 	aired   aired
+	screen  screenWaiting // what the screen shows, for the next turn taken
 
 	mu   sync.Mutex
 	last *turnRun // the turn the next one interrupts, or waits for

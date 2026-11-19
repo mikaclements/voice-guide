@@ -151,7 +151,7 @@ func TestAPieceOnItsWayAsTheUserCutInIsNeitherShownNorSaid(t *testing.T) {
 	run := &turnRun{interrupted: make(chan struct{}), stopSpeaking: func() {}, free: make(chan struct{})}
 	text := make(chan string, 2)
 	var firstText time.Time
-	send := (&Service{clock: &testClock{}}).forward(t.Context(), conn, run, "a request", text, &firstText)
+	send := (&Service{clock: &testClock{}}).forward(t.Context(), conn, run, "a request", 0, text, &firstText)
 	send("Tell me")
 	run.interrupt(time.Time{})
 	send(" about it.")

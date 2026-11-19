@@ -79,9 +79,14 @@ func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection,
 				continue
 			}
 			var m turnIn
-			if err := json.Unmarshal(raw, &m); err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {
+			err := json.Unmarshal(raw, &m)
+			if err == nil && m.Type == "screen" {
+				r.screenChanged(m)
+				continue
+			}
+			if err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {
 				s.tell(conn, out{Type: "refused", RequestID: requestOf(m), Reason: reasonUnreadable,
-					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content`})
+					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content; type "screen" sends screen_input alone, numbered n`})
 				continue
 			}
 			r.begin(ctx, m, received, nil)
@@ -113,6 +118,11 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 	for _, b := range m.ScreenInput {
 		req.ScreenInput = append(req.ScreenInput, conversation.ScreenInputBlock(b))
 	}
+	// What the screen shows, sent ahead, goes with this turn, a block the turn
+	// carries itself winning; given back unless the turn is saved, it goes with
+	// the next instead, so a change is never lost nor saved twice.
+	waiting, screenUpTo := r.screen.take()
+	req.ScreenInput = withNewer(waiting, req.ScreenInput)
 	text := make(chan string, textAhead)
 	var audio played
 	var playing sync.WaitGroup
@@ -126,7 +136,7 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, due, onAir)
 	})
 	var firstText time.Time
-	turn, err := s.conversation.TakeTurn(ctx, r.caller, req, s.forward(speaking, r.conn, run, request, text, &firstText))
+	turn, err := s.conversation.TakeTurn(ctx, r.caller, req, s.forward(speaking, r.conn, run, request, screenUpTo, text, &firstText))
 	textDone := s.clock.Now()
 	close(text)
 	var failed *conversation.ReplyFailedError
@@ -135,7 +145,9 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 			playing.Wait()
 			if err := s.conversation.TakeBack(ctx, turn); err != nil {
 				s.log.Warn("take back a turn the user talked on after", "session", r.session, "err", err)
-				run.leftInFlight()
+				run.leftInFlight() // its blocks stay with it, saved in flight
+			} else {
+				r.screen.giveBack(waiting, screenUpTo) // for the turn that takes its place
 			}
 			return
 		}
@@ -146,10 +158,17 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 		}
 	}
 	if run.talkedOn() { // before the turn was saved: nothing to take back
+		r.screen.giveBack(waiting, screenUpTo)
 		playing.Wait()
 		return
 	}
 	ending := s.ending(request, turn, err, !firstText.IsZero())
+	switch {
+	case ending.Type != "done" && ending.Type != "lost":
+		r.screen.giveBack(waiting, screenUpTo)
+	case firstText.IsZero():
+		ending.ScreenTaken = screenUpTo
+	}
 	s.tell(r.conn, ending)
 	playing.Wait()
 	if ending.Reason == reasonEnded {
@@ -235,10 +254,16 @@ func (s *Service) reached(speaking context.Context, conn Connection, run *turnRu
 
 // forward returns what TakeTurn calls with each piece of the reply: it goes
 // to the page and to text-to-speech, unless the user has cut in or talked
-// on, since a piece on its way as they did is neither shown nor said.
-func (s *Service) forward(speaking context.Context, conn Connection, run *turnRun, request string, text chan<- string, firstText *time.Time) func(string) {
+// on, since a piece on its way as they did is neither shown nor said. The
+// first piece shown says the screen messages up to screenUpTo went with the
+// turn, which is saved by then.
+func (s *Service) forward(speaking context.Context, conn Connection, run *turnRun, request string, screenUpTo int, text chan<- string, firstText *time.Time) func(string) {
 	return func(piece string) {
-		if !run.show(func() { s.tell(conn, out{Type: "text", RequestID: request, Text: piece}) }) {
+		m := out{Type: "text", RequestID: request, Text: piece}
+		if firstText.IsZero() {
+			m.ScreenTaken = screenUpTo
+		}
+		if !run.show(func() { s.tell(conn, m) }) {
 			return
 		}
 		if firstText.IsZero() {

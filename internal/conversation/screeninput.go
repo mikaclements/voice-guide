@@ -38,6 +38,12 @@ func (e *ScreenInputError) Error() string {
 // ErrScreenInputTooLarge reports screen input over the character limit.
 var ErrScreenInputTooLarge = errors.New("screen input is over the limit")
 
+// CheckScreenInput refuses screen input a turn would refuse, so screen input
+// sent ahead of its turn is refused when it arrives rather than with the turn.
+func (s *Service) CheckScreenInput(blocks []ScreenInputBlock) error {
+	return checkScreenInput(blocks, s.settings.ScreenInputChars)
+}
+
 // checkScreenInput refuses blocks with a badly formed or repeated name, empty
 // or unstorable content, or over limit characters in all.
 func checkScreenInput(blocks []ScreenInputBlock, limit int) error {
