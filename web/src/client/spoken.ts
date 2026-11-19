@@ -2,9 +2,9 @@
 // the turn, its reply follows as a typed turn's does, with how long after they finished speaking its
 // first sound went out.
 
-import { failure, keepRequestId } from "./api.ts";
 import type { Follow } from "./audio.ts";
 import type { Hearing } from "./hearing.ts";
+import { failure, keepRequestId } from "./retry.ts";
 import type { Page } from "./sending.ts";
 
 export class SpokenTurns {

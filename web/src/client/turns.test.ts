@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { failure, ProblemError, ticketExpired } from "./api.ts";
+import { ProblemError, ticketExpired } from "./api.ts";
+import { failure } from "./retry.ts";
 import { httpTurns, startTimer } from "./turns.ts";
 
 function clockAt(ms: number) {

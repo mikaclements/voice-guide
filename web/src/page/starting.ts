@@ -1,15 +1,8 @@
 // One press of Start: the product's server starts the session, with its request ID kept when voice
 // may have started the session, so pressing Start again can't start two.
-import {
-  type Agent,
-  failure,
-  type Kept,
-  keepRequestId,
-  ProblemError,
-  requestIdFor,
-  type Started,
-  ticketExpiredType,
-} from "../client/api.ts";
+import { ProblemError, ticketExpiredType } from "../client/api.ts";
+import { failure, type Kept, keepRequestId, requestIdFor } from "../client/retry.ts";
+import type { Agent, Started } from "./product.ts";
 
 export class Starter {
   private readonly startSession: (agentId: string, requestId: string) => Promise<Started>;
