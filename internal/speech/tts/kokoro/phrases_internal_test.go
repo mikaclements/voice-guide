@@ -45,6 +45,39 @@ func TestARepliesTextIsCutIntoPhrasesAtNaturalBreaks(t *testing.T) {
 		{"a break before four words doesn't end the first phrase",
 			[]string{"Sure, tell me about the rebuild."},
 			[]string{"Sure, tell me about the rebuild."}},
+		{"an opening word before a colon stays with what follows",
+			[]string{"So: what did you change first?"},
+			[]string{"So: what did you change first?"}},
+		{"a first sentence under four words is the first phrase",
+			[]string{"Got it. What did you change first?"},
+			[]string{"Got it.", "What did you change first?"}},
+		{"a one-word first sentence is the first phrase",
+			[]string{"Okay. ", "Tell me more about the rebuild."},
+			[]string{"Okay.", "Tell me more about the rebuild."}},
+		{"a short first question is the first phrase",
+			[]string{"Really? Why did the team pick that?"},
+			[]string{"Really?", "Why did the team pick that?"}},
+		{"after a short first sentence the next phrase ends at a break too",
+			[]string{"Okay. Where did that version come from, and who assigned it? Tell me, briefly."},
+			[]string{"Okay.", "Where did that version come from,", "and who assigned it?", "Tell me, briefly."}},
+		{"a reply of one short sentence is one phrase",
+			[]string{"Okay."},
+			[]string{"Okay."}},
+		{"short sentences in a row are each a phrase",
+			[]string{"Okay. Sure. Go on, then."},
+			[]string{"Okay.", "Sure.", "Go on, then."}},
+		{"a title's period ends no sentence",
+			[]string{"Hi Dr. Lee, thanks for joining. Good morning, Ms. Sato is here too."},
+			[]string{"Hi Dr. Lee, thanks for joining.", "Good morning, Ms. Sato is here too."}},
+		{"a word with periods inside ends no sentence",
+			[]string{"Okay. U.S. teams, how many did you have? E.g. the pricing team."},
+			[]string{"Okay.", "U.S. teams, how many did you have?", "E.g. the pricing team."}},
+		{"full stops as an ellipsis end a sentence",
+			[]string{"Well... tell me more."},
+			[]string{"Well...", "tell me more."}},
+		{"a short sentence holds a letter",
+			[]string{"… Okay. 2. Tell me more."},
+			[]string{"… Okay.", "2. Tell me more."}},
 		{"the first phrase ends at a dash",
 			[]string{"That sounds like a hard call—what did you do?"},
 			[]string{"That sounds like a hard call—", "what did you do?"}},
@@ -77,6 +110,9 @@ func TestWithJoiningWordsOnTheFirstPhraseAlsoEndsBeforeOne(t *testing.T) {
 		{"words that are often not joining words don't cut",
 			[]string{"Can you walk me through that decision? What did you learn after that? Tell me about your team and your manager."},
 			[]string{"Can you walk me through that decision?", "What did you learn after that?", "Tell me about your team and your manager."}},
+		{"after a short first sentence the next phrase also ends before a joining word",
+			[]string{"Okay. Tell me about a time when you disagreed."},
+			[]string{"Okay.", "Tell me about a time", "when you disagreed."}},
 		{"a joining word bound to the word before doesn't cut",
 			[]string{"I would keep going even if it failed."},
 			[]string{"I would keep going even if it failed."}},
@@ -110,9 +146,9 @@ func cutAll(joiningWords bool, pieces ...string) []cutPhrase {
 }
 
 func TestEachPhraseMarksWhereItEndsInTheReply(t *testing.T) {
-	reply := " Thanks for sharing that, now tell me more.\n"
+	reply := " Thanks for sharing that, now tell me more. Okay. Go on.\n"
 	got := cutAll(false, reply[:20], reply[20:])
-	want := []cutPhrase{{"Thanks for sharing that,", 25}, {"now tell me more.", 43}}
+	want := []cutPhrase{{"Thanks for sharing that,", 25}, {"now tell me more.", 43}, {"Okay. Go on.", 56}}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("phrases %+v, want %+v", got, want)
 	}
