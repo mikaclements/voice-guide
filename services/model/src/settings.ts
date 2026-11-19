@@ -5,6 +5,11 @@ import { isIP } from "node:net";
 // Claude Code's own API call, instead of leaving it running after voice has given up.
 export const DEFAULT_REPLY_TIMEOUT_MS = 15_000;
 
+// How long an ask outside any session may run unless set: a session's summary, which may grade it on a
+// slower model over a long transcript, and nobody waits for it. A round guess, to be measured on the
+// subscription with Opus; voice's summary job allows for two such asks in one run.
+export const DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS = 120_000;
+
 // The port voice calls unless told otherwise, so the two meet with neither set.
 const DEFAULT_PORT = 8091;
 
@@ -46,6 +51,7 @@ export interface Settings {
   host: string;
   port: number;
   replyTimeoutMs: number;
+  backgroundReplyTimeoutMs: number;
   maxConcurrentReplies: number;
   maxBodyBytes: number;
   maxSessionProcesses: number;
@@ -88,6 +94,12 @@ export function settingsFromEnv(env: Record<string, string | undefined>): Settin
     host,
     port: whole("MODEL_PORT", DEFAULT_PORT, 1, 65_535),
     replyTimeoutMs: whole("MODEL_REPLY_TIMEOUT_MS", DEFAULT_REPLY_TIMEOUT_MS, 1_000, 600_000),
+    backgroundReplyTimeoutMs: whole(
+      "MODEL_BACKGROUND_REPLY_TIMEOUT_MS",
+      DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
+      1_000,
+      600_000,
+    ),
     // At least two: one ask outside any session may hold a place, and live turns must keep one.
     maxConcurrentReplies: whole(
       "MODEL_MAX_CONCURRENT_REPLIES",

@@ -18,6 +18,7 @@ import {
   type Usage,
 } from "../api.ts";
 import {
+  DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_PROCESSES,
   DEFAULT_REPLY_TIMEOUT_MS,
   DEFAULT_SESSION_PROCESS_IDLE_MS,
@@ -48,12 +49,14 @@ export function claudeSubscriptionProvider(
   env: NodeJS.ProcessEnv = process.env,
   limits: {
     apiTimeoutMs?: number;
+    backgroundApiTimeoutMs?: number;
     maxSessionProcesses?: number;
     sessionProcessIdleMs?: number;
   } = {},
 ): Provider {
   const {
     apiTimeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    backgroundApiTimeoutMs = DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
     maxSessionProcesses = DEFAULT_MAX_SESSION_PROCESSES,
     sessionProcessIdleMs = DEFAULT_SESSION_PROCESS_IDLE_MS,
   } = limits;
@@ -93,7 +96,7 @@ export function claudeSubscriptionProvider(
       strictMcpConfig: true,
       mcpServers: {},
       persistSession: false,
-      env: childEnv(env, apiTimeoutMs),
+      env: childEnv(env, request.sessionId === undefined ? backgroundApiTimeoutMs : apiTimeoutMs),
     });
     live.add(started);
     started.exited.then(() => live.delete(started));

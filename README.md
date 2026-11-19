@@ -211,7 +211,8 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
       { "seq": 2, "words": "<what the user said>", "reply": "<the reply, as far as the user heard it>", "cut": true }
     ],
     "turns_left_out": 0,
-    "summary": "<the agent's summary, or null when none was written>"
+    "summary": "<the agent's summary, or null when none was written>",
+    "summary_status": "<written, or none when no summary was written>"
   }
 }
 ```
@@ -244,7 +245,8 @@ The reply lists the user's sessions, newest first, without their turns:
       "agent_version": 1,
       "started_at": "<RFC 3339 time>",
       "ended_at": "<RFC 3339 time, or null while the session is live>",
-      "summary": "<the agent's summary, or null while live or when none was written>"
+      "summary": "<the agent's summary, or null while live or when none was written>",
+      "summary_status": "<pending, written or none; null while live>"
     }
   ]
 }
@@ -253,7 +255,8 @@ The reply lists the user's sessions, newest first, without their turns:
 - The user is in the path: percent-encode the ID as one path segment (`encodeURIComponent` in JavaScript), since a raw `/`, `#`, `?` or `%` names something else. An ID a start would refuse is `400` here too. A user the product never started a session for has an empty list.
 - `limit` is 1 to 100 (20 without it). For the next page, send `before=<the last session's ID>`; a page shorter than `limit` is the last.
 - `GET /v1/sessions/<session ID>` reads one session of the product's workspace with every turn, as a delivery's `data` holds it: the same fields, plus `turns` as the user heard them, and no `turns_left_out`, since the whole session comes back. A long session makes a long reply, about 220 KiB for two hours of talk. Another workspace's session is `404`.
-- A live session has `ended_at` and `summary` null, and holds the turns finished so far.
+- `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`.
+- A live session has `ended_at`, `summary` and `summary_status` null, and holds the turns finished so far.
 
 <a id="new-workspace"></a>
 ### One workspace for each product

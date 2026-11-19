@@ -17,7 +17,7 @@ const addSession = `-- name: AddSession :one
 INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status
 `
 
 type AddSessionParams struct {
@@ -45,6 +45,7 @@ type AddSessionRow struct {
 	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
+	SummaryStatus  pgtype.Text
 }
 
 // A repeat of the same request inserts nothing; the caller then reads the session it made.
@@ -74,6 +75,7 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.SummaryStatus,
 	)
 	return i, err
 }
@@ -168,13 +170,16 @@ func (q *Queries) CutTurn(ctx context.Context, arg CutTurnParams) (int64, error)
 
 const endIdleSessions = `-- name: EndIdleSessions :many
 WITH ended AS (
-    UPDATE sessions SET ended_at = now()
+    UPDATE sessions SET ended_at = now(), summary_status = 'pending'
     WHERE sessions.ended_at IS NULL AND sessions.last_active_at <= now() - make_interval(secs => $1::float8)
     RETURNING sessions.id, sessions.workspace_id, sessions.user_id
 ), summaries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args)
     SELECT uuidv7(), ended.workspace_id, ended.user_id, 'session_summary', jsonb_build_object('session_id', ended.id) FROM ended
     RETURNING jobs.id, jobs.workspace_id, jobs.user_id, jobs.args
+), settles AS (
+    INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
+    SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_summary_settle', summaries.args, summaries.id FROM summaries
 ), deliveries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
     SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_delivery',
@@ -213,13 +218,16 @@ func (q *Queries) EndIdleSessions(ctx context.Context, idleSeconds float64) ([]u
 
 const endSession = `-- name: EndSession :one
 WITH ended AS (
-    UPDATE sessions SET ended_at = now()
+    UPDATE sessions SET ended_at = now(), summary_status = 'pending'
     WHERE sessions.workspace_id = $1 AND sessions.user_id = $2 AND sessions.id = $3 AND sessions.ended_at IS NULL
     RETURNING sessions.id, sessions.workspace_id, sessions.user_id
 ), summaries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args)
     SELECT uuidv7(), ended.workspace_id, ended.user_id, 'session_summary', jsonb_build_object('session_id', ended.id) FROM ended
     RETURNING jobs.id, jobs.workspace_id, jobs.user_id, jobs.args
+), settles AS (
+    INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
+    SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_summary_settle', summaries.args, summaries.id FROM summaries
 ), deliveries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
     SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_delivery',
@@ -235,13 +243,14 @@ type EndSessionParams struct {
 	ID          uuid.UUID
 }
 
-// Ending queues the job that writes the session's summary in the same statement, so the job exists
-// exactly when the end does, and, when the workspace has a webhook not stopped, the job that delivers
-// the session to it, run once the summary's job is done or failed, with a delivery ID kept on every
-// attempt; ending again changes nothing and queues nothing, so a retried end gets the same answer. It
-// waits for a turn starting in the session, which holds the session's row while it starts, and a turn
-// waiting on it then finds the session ended. It returns how many sessions it ended: one, or none when
-// the session had ended already or isn't the user's.
+// Ending marks the summary pending and, in the same statement, queues the job that writes it, so the job
+// exists exactly when the end does; the job that settles the summary's status once the summary's job is
+// done or failed, so no session stays pending; and, when the workspace has a webhook not stopped, the
+// job that delivers the session to it, run once the summary's job is done or failed, with a delivery ID
+// kept on every attempt. Ending again changes nothing and queues nothing, so a retried end gets the same
+// answer. It waits for a turn starting in the session, which holds the session's row while it starts,
+// and a turn waiting on it then finds the session ended. It returns how many sessions it ended: one, or
+// none when the session had ended already or isn't the user's.
 func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (int64, error) {
 	row := q.db.QueryRow(ctx, endSession, arg.WorkspaceID, arg.UserID, arg.ID)
 	var count int64
@@ -364,7 +373,7 @@ func (q *Queries) RotateWebhookSecret(ctx context.Context, arg RotateWebhookSecr
 }
 
 const sessionByID = `-- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id = $3
 `
 
@@ -386,6 +395,7 @@ type SessionByIDRow struct {
 	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
+	SummaryStatus  pgtype.Text
 }
 
 func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (SessionByIDRow, error) {
@@ -403,6 +413,7 @@ func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (Sessi
 		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.SummaryStatus,
 	)
 	return i, err
 }
@@ -424,7 +435,7 @@ func (q *Queries) SessionEnded(ctx context.Context, arg SessionEndedParams) (boo
 }
 
 const sessionForRequest = `-- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND request_id = $3
 `
 
@@ -446,6 +457,7 @@ type SessionForRequestRow struct {
 	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
+	SummaryStatus  pgtype.Text
 }
 
 func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestParams) (SessionForRequestRow, error) {
@@ -463,12 +475,13 @@ func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestPa
 		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.SummaryStatus,
 	)
 	return i, err
 }
 
 const sessionInWorkspace = `-- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -489,6 +502,7 @@ type SessionInWorkspaceRow struct {
 	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
+	SummaryStatus  pgtype.Text
 }
 
 // A product's server names no user, so its reads find a session by its workspace alone.
@@ -507,12 +521,13 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 		&i.Speed,
 		&i.StartedAt,
 		&i.EndedAt,
+		&i.SummaryStatus,
 	)
 	return i, err
 }
 
 const sessionsOfUser = `-- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id < $3
 ORDER BY id DESC
 LIMIT $4
@@ -537,6 +552,7 @@ type SessionsOfUserRow struct {
 	Speed          float64
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
+	SummaryStatus  pgtype.Text
 }
 
 // A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
@@ -567,6 +583,7 @@ func (q *Queries) SessionsOfUser(ctx context.Context, arg SessionsOfUserParams) 
 			&i.Speed,
 			&i.StartedAt,
 			&i.EndedAt,
+			&i.SummaryStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -597,6 +614,30 @@ func (q *Queries) SetWebhookURL(ctx context.Context, arg SetWebhookURLParams) (s
 	var secret string
 	err := row.Scan(&secret)
 	return secret, err
+}
+
+const settleSummary = `-- name: SettleSummary :exec
+UPDATE sessions SET summary_status = $1::text
+WHERE workspace_id = $2 AND user_id = $3 AND id = $4 AND summary_status = 'pending'
+`
+
+type SettleSummaryParams struct {
+	Status      string
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	ID          uuid.UUID
+}
+
+// The user's speech was heard in the live session.
+// A summary's status moves once, from pending to written or none, and never back.
+func (q *Queries) SettleSummary(ctx context.Context, arg SettleSummaryParams) error {
+	_, err := q.db.Exec(ctx, settleSummary,
+		arg.Status,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.ID,
+	)
+	return err
 }
 
 const startTurn = `-- name: StartTurn :one
@@ -687,7 +728,6 @@ type TouchSessionParams struct {
 	ID          uuid.UUID
 }
 
-// The user's speech was heard in the live session.
 func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, touchSession, arg.WorkspaceID, arg.UserID, arg.ID)
 	if err != nil {

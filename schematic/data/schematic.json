@@ -351,7 +351,7 @@
       "title": "A session's summary: written by the model its agent names, with the agent's instruction, read back only by that agent",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery.",
+      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery. The session says whether it is still coming: pending from the end, then written or none, settled by a second job if the first failed for good.",
       "why": "What is worth remembering differs per agent, and the agent that wrote the summary is the one that knows what it is for.",
       "tradeoff": "The summary arrives a few seconds after the end, so a session started at once may open without it; each summary is a billed model call."
     },
@@ -628,7 +628,7 @@
           "tech": "TypeScript · Claude API SDK · Claude Agent SDK",
           "setting": "MODEL_PROVIDER: claude-api · claude-subscription · fake",
           "summary": "One request per reply, answered as JSON lines; Claude through its API or a subscription, or a fake.",
-          "description": "A small TypeScript service on this machine (port 8091 unless set) that reaches the model for voice. Each reply is one POST /v1/replies, answered by one JSON event per line: text as it arrives, then done with the provider, model, usage and timing, or an error naming its kind and never the provider's message. Its provider is a setting: claude-api, Claude through the provider's Messages API on an API key that only this service reads, keeping nothing between replies, with the layers and the conversation marked for the provider's cache; claude-subscription, Claude through the Claude Agent SDK on the developer's login, keeping one Claude Code process per session between turns as a disposable cache, rebuilt from the whole conversation whenever it no longer matches; or fake, set text at a set pace for load tests. An ask outside any session, such as a session's summary, keeps nothing and runs one at a time within the cap, so live turns keep the other places.",
+          "description": "A small TypeScript service on this machine (port 8091 unless set) that reaches the model for voice. Each reply is one POST /v1/replies, answered by one JSON event per line: text as it arrives, then done with the provider, model, usage and timing, or an error naming its kind and never the provider's message. Its provider is a setting: claude-api, Claude through the provider's Messages API on an API key that only this service reads, keeping nothing between replies, with the layers and the conversation marked for the provider's cache; claude-subscription, Claude through the Claude Agent SDK on the developer's login, keeping one Claude Code process per session between turns as a disposable cache, rebuilt from the whole conversation whenever it no longer matches; or fake, set text at a set pace for load tests. An ask outside any session, such as a session's summary, keeps nothing, has a two-minute deadline where a live reply has 15 s, and runs one at a time within the cap, so live turns keep the other places.",
           "why": "No route from Go reaches the model on a subscription, so a small TypeScript service does, behind a swap point any model can replace.",
           "considerations": [
             "model-access",
@@ -1385,9 +1385,9 @@
           "from": "jobs",
           "to": "conversation",
           "protocol": "call",
-          "send": "Summarize(session) · Deliver(session, delivery ID)",
+          "send": "Summarize · SettleSummary · Deliver",
           "back": "done, failed, busy, or refused",
-          "detail": "The summary's handler calls conversation's Summarize; a model service with no place for it is busy, so the job is let go without using a run. The delivery's handler calls Deliver; an answer posting again wouldn't change fails the job at once.",
+          "detail": "The summary's handler calls conversation's Summarize; a model service with no place for it is busy, so the job is let go without using a run. Once it is done or has failed for good, SettleSummary settles the session's summary status if still pending. The delivery's handler calls Deliver; an answer posting again wouldn't change fails the job at once.",
           "considerations": ["session-summary", "background-jobs", "session-webhook"]
         },
         {
@@ -1664,12 +1664,13 @@
             "InWorkspace",
             "ListForUser",
             "End",
+            "SettleSummary",
             "Touch",
             "UserByReference",
             "Reference",
             "EndIdle"
           ],
-          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, list a user's sessions newest first from a cursor, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time and queuing its summary job, and its delivery job for a workspace with a webhook, in the same write, mark it active, and end every idle one in a single sweep.",
+          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, list a user's sessions newest first from a cursor, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time, its summary pending, and queuing its summary job, the job that settles the summary's status after it, and its delivery job for a workspace with a webhook, in the same write, settle the summary's status once, from pending, mark it active, and end every idle one in a single sweep.",
           "considerations": ["workspace-every-record", "session-end"],
           "drill": "types-conversation",
           "focus": "internal/conversation"
@@ -2031,8 +2032,8 @@
           "from": "x-jobs",
           "to": "service",
           "protocol": "call",
-          "send": "Summarize(session)",
-          "detail": "Through the handler cmd/voice registers for the session_summary kind.",
+          "send": "Summarize · SettleSummary(session)",
+          "detail": "Through the handlers cmd/voice registers for the session_summary and session_summary_settle kinds; the second runs once the first is done or has failed for good, and settles a status still pending.",
           "considerations": ["session-summary"]
         },
         {
@@ -3193,12 +3194,12 @@
             {
               "nodes": ["runner", "p-store", "storepg", "x-postgres"],
               "edges": ["runner-store", "pg-store", "pg-db"],
-              "caption": "Checking each second when idle, the summaries' runner claims the job due soonest, skipping rows another claim holds, on a one-minute lease"
+              "caption": "Checking each second when idle, the summaries' runner claims the job due soonest, skipping rows another claim holds, on a three-minute lease"
             },
             {
               "nodes": ["runner", "x-conversation"],
               "edges": ["runner-conversation"],
-              "caption": "The runner decodes the job's args and runs its handler, which calls Summarize, for at most 30 seconds"
+              "caption": "The runner decodes the job's args and runs its handler, which calls Summarize, for at most two and a half minutes"
             },
             {
               "nodes": ["runner", "p-store", "storepg", "x-postgres"],
@@ -3360,9 +3361,9 @@
           "from": "runner",
           "to": "x-conversation",
           "protocol": "call",
-          "send": "Summarize(session) · Deliver(session, delivery ID)",
+          "send": "Summarize · SettleSummary · Deliver",
           "back": "done, failed, busy, or refused",
-          "detail": "Through the handlers cmd/voice registered for the session_summary and session_delivery kinds.",
+          "detail": "Through the handlers cmd/voice registered for the session_summary, session_summary_settle and session_delivery kinds.",
           "considerations": ["session-summary", "session-webhook"]
         },
         {
@@ -3383,8 +3384,8 @@
           "from": "x-conversation",
           "to": "x-postgres",
           "protocol": "SQL",
-          "send": "a summary job, and a delivery job after it, with the end",
-          "detail": "conversation's store inserts both in the same statement that ends the session, so they exist exactly when the end commits; the delivery names the summary's job to run after, for a workspace with a webhook.",
+          "send": "summary, settle and delivery jobs, with the end",
+          "detail": "conversation's store inserts them in the same statement that ends the session, so they exist exactly when the end commits; the job that settles the summary's status and, for a workspace with a webhook, the delivery each name the summary's job to run after.",
           "considerations": ["background-jobs"]
         }
       ]

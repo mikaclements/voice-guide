@@ -196,6 +196,14 @@ func (st *Sessions) End(ctx context.Context, workspace, user, id uuid.UUID) (con
 	return s, n == 1, nil
 }
 
+// SettleSummary moves the user's session's summary status from pending to status.
+func (st *Sessions) SettleSummary(ctx context.Context, workspace, user, id uuid.UUID, status conversation.SummaryStatus) error {
+	if err := db.New(st.pool).SettleSummary(ctx, db.SettleSummaryParams{Status: string(status), WorkspaceID: workspace, UserID: user, ID: id}); err != nil {
+		return fmt.Errorf("settle the summary's status: %w", err)
+	}
+	return nil
+}
+
 // Touch marks the user's live session active now.
 func (st *Sessions) Touch(ctx context.Context, workspace, user, id uuid.UUID) (bool, error) {
 	n, err := db.New(st.pool).TouchSession(ctx, db.TouchSessionParams{WorkspaceID: workspace, UserID: user, ID: id})
@@ -254,6 +262,7 @@ func sessionFrom(r db.SessionForRequestRow) (conversation.Session, error) {
 	return conversation.Session{
 		ID: r.ID, Workspace: r.WorkspaceID, User: r.UserID, Agent: r.AgentID, AgentVersion: int(r.AgentVersion),
 		ContextItems: r.ContextItemIds, SessionContext: blocks, Voice: r.Voice, Speed: r.Speed, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
+		SummaryStatus: conversation.SummaryStatus(r.SummaryStatus.String),
 	}, nil
 }
 

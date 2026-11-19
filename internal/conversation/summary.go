@@ -17,6 +17,26 @@ import (
 // once the session ends. Ending a session queues one, in the same write.
 const SummaryJob = "session_summary"
 
+// SummaryStatus says whether an ended session's summary is still coming.
+type SummaryStatus string
+
+// An ended session's summary is pending until its summary job has run, then
+// written, or none when none will come: the agent asks for none, the user said
+// nothing, or the job failed for good.
+const (
+	SummaryPending SummaryStatus = "pending"
+	SummaryWritten SummaryStatus = "written"
+	SummaryNone    SummaryStatus = "none"
+)
+
+// settled is a summary's final status: written when user context holds it.
+func settled(written bool) SummaryStatus {
+	if written {
+		return SummaryWritten
+	}
+	return SummaryNone
+}
+
 // SummaryArgs are a summary job's inputs, as ending a session queues them.
 type SummaryArgs struct {
 	Session uuid.UUID `json:"session_id"`
@@ -46,8 +66,9 @@ var errTurnInFlight = errors.New("a turn of the session is still in flight")
 // Summarize writes the summary of the user's ended session and saves it
 // through user context, for the session's agent to read in its next session
 // with the user. It writes none when the agent asks for none, or the user
-// said nothing in the session. It is safe to run more than once: user context
-// keeps one summary per session. It fails, to be run again, while a turn is
+// said nothing in the session, and settles the summary's status either way.
+// It is safe to run more than once: user context keeps one summary per
+// session. It fails, to be run again, while a turn is
 // in flight, and when the model doesn't answer.
 func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args SummaryArgs) error {
 	session, found, err := s.sessions.ByID(ctx, workspace, user, args.Session)
@@ -72,14 +93,14 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 		return fmt.Errorf("read the session's turns: %w", err)
 	}
 	if !userSpoke(turns) {
-		return nil
+		return s.settle(ctx, session, SummaryNone)
 	}
 	version, err := s.catalog.Version(ctx, workspace, session.Agent, session.AgentVersion)
 	if err != nil {
 		return fmt.Errorf("read the session's agent version: %w", err)
 	}
 	if version.Summary == "" {
-		return nil
+		return s.settle(ctx, session, SummaryNone)
 	}
 	written, err := s.ask(ctx, s.summaryModelOf(version), summaryPrompt(version.Summary, turns))
 	if err != nil {
@@ -93,6 +114,38 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 		Workspace: workspace, User: user, Agent: session.Agent, Session: session.ID, SessionEnded: session.EndedAt, Content: summary,
 	}); err != nil {
 		return fmt.Errorf("save the summary: %w", err)
+	}
+	return s.settle(ctx, session, SummaryWritten)
+}
+
+// SummarySettleJob is the kind of background job that settles an ended
+// session's summary status once its summary job is done or has failed for
+// good. Ending a session queues one, in the same write, to run after it: a
+// summary job that failed for good can't say so itself.
+const SummarySettleJob = "session_summary_settle"
+
+// SettleSummary settles the user's ended session's summary status, if still
+// pending once its summary job is over: written when user context holds its
+// summary, none otherwise. A status settled already stays.
+func (s *Service) SettleSummary(ctx context.Context, workspace, user uuid.UUID, args SummaryArgs) error {
+	session, found, err := s.sessions.ByID(ctx, workspace, user, args.Session)
+	switch {
+	case err != nil:
+		return fmt.Errorf("read the session: %w", err)
+	case !found || session.SummaryStatus != SummaryPending:
+		return nil
+	}
+	_, written, err := s.userContext.SessionSummary(ctx, workspace, user, session.ID)
+	if err != nil {
+		return err
+	}
+	return s.settle(ctx, session, settled(written))
+}
+
+// settle moves the session's summary status from pending to status.
+func (s *Service) settle(ctx context.Context, session Session, status SummaryStatus) error {
+	if err := s.sessions.SettleSummary(ctx, session.Workspace, session.User, session.ID, status); err != nil {
+		return fmt.Errorf("settle the summary's status: %w", err)
 	}
 	return nil
 }

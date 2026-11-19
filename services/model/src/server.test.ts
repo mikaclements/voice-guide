@@ -511,3 +511,24 @@ test("a full stream drains before the next event is written", async () => {
   await pending;
   assert.equal(written, true);
 });
+
+test("an ask outside any session gets the longer deadline; a live reply keeps its own", async () => {
+  const deadlines: number[] = [];
+  const { session_id: _, ...background } = validBody;
+  await withServer(
+    scripted([]),
+    async (url) => {
+      await (await post(url, validBody)).text();
+      await (await post(url, background)).text();
+    },
+    {
+      replyTimeoutMs: 15_000,
+      backgroundReplyTimeoutMs: 120_000,
+      deadline: (ms) => {
+        deadlines.push(ms);
+        return new AbortController().signal;
+      },
+    },
+  );
+  assert.deepEqual(deadlines, [15_000, 120_000]);
+});

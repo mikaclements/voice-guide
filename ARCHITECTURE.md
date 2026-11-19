@@ -188,7 +188,7 @@ User context loads only the kinds of context an agent declares, in the order the
 
 ## 11. History
 
-A product's server reads back its users' past sessions, with its key and no ticket: one call lists a user's sessions, named by the product's own reference, newest first a page at a time, with each one's start, end and summary; another reads one session with all its turns, as the user heard them. A session still running is listed with no end and no summary, another workspace's session is answered as one that doesn't exist, and a user with no sessions has an empty list. A session's transcript and summary also reach the product through its webhook when the session ends.
+A product's server reads back its users' past sessions, with its key and no ticket: one call lists a user's sessions, named by the product's own reference, newest first a page at a time, with each one's start, end, summary and whether a summary is still coming, so a product that reads sessions rather than hearing deliveries knows when to look again; another reads one session with all its turns, as the user heard them. A session still running is listed with no end and no summary, another workspace's session is answered as one that doesn't exist, and a user with no sessions has an empty list. A session's transcript and summary also reach the product through its webhook when the session ends.
 
 ## 12. Timing and load
 

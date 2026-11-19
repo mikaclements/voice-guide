@@ -256,3 +256,17 @@ func TestATwoHourSessionIsReadWholeAndItsSizeIsSeen(t *testing.T) {
 	}
 	t.Logf("a session of %d turns of about 900 characters is read as %d KiB (%d bytes)", turns, size>>10, size)
 }
+
+func TestBothPastSessionRoutesSayWhetherASummaryIsStillComing(t *testing.T) {
+	f := newProductFixture(t)
+	ids := f.sessionsFor(t, "aiko-42", 2)
+	f.do("POST", "/v1/sessions/"+ids[0]+"/end", f.product)
+
+	list := f.send("GET", "/v1/users/aiko-42/sessions", f.product, "").Body.String()
+	if !strings.Contains(list, `"summary":null,"summary_status":null}`) || !strings.Contains(list, `"summary_status":"pending"`) {
+		t.Errorf("list = %s, want the running session with a null status, the ended one pending", list)
+	}
+	if read := f.send("GET", "/v1/sessions/"+ids[0], f.product, "").Body.String(); !strings.Contains(read, `"summary_status":"pending"`) {
+		t.Errorf("read = %s, want the summary pending", read)
+	}
+}

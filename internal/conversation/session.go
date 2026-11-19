@@ -37,6 +37,9 @@ type Session struct {
 	StartedAt time.Time
 	// EndedAt is when the session ended: zero while it is live.
 	EndedAt time.Time
+	// SummaryStatus says whether the ended session's summary is still coming:
+	// empty while it is live.
+	SummaryStatus SummaryStatus
 }
 
 // Ended says whether the session has ended.
@@ -109,12 +112,16 @@ type Sessions interface {
 	// order the sessions started in.
 	ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]Session, error)
 	// End marks the user's session with id in the workspace ended, unless it
-	// already is, and in the same write queues the job that writes its
-	// summary and, when the workspace has a webhook not stopped, the job that
+	// already is, its summary pending, and in the same write queues the job
+	// that writes its summary, the job that settles the summary's status once
+	// that one is done or failed, and, when the workspace has a webhook not stopped, the job that
 	// delivers the session to it once the summary's is done or failed. It returns the session as saved, and whether this call ended
 	// it: ended again, it keeps the time it first ended and queues nothing.
 	// It returns ErrNoSuchSession when there is no such session.
 	End(ctx context.Context, workspace, user, id uuid.UUID) (Session, bool, error)
+	// SettleSummary moves the user's session's summary status from pending to
+	// status; a status already settled stays.
+	SettleSummary(ctx context.Context, workspace, user, id uuid.UUID, status SummaryStatus) error
 	// Touch marks the user's live session with id in the workspace active
 	// now, and says whether there was one to mark.
 	Touch(ctx context.Context, workspace, user, id uuid.UUID) (bool, error)

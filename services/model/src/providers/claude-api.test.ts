@@ -42,9 +42,10 @@ const answered = {
 type Reply = { events: (Anthropic.MessageStreamEvent | Error | "hang")[]; final?: object };
 
 function fakeApi(...replies: Reply[]) {
-  const calls: { params: Anthropic.MessageStreamParams; signal: AbortSignal }[] = [];
-  const stream: StreamFn = (params, { signal }) => {
-    calls.push({ params, signal });
+  const calls: { params: Anthropic.MessageStreamParams; signal: AbortSignal; timeout: number }[] =
+    [];
+  const stream: StreamFn = (params, { signal, timeout }) => {
+    calls.push({ params, signal, timeout });
     const { events, final = answered } = replies.shift() ?? { events: [] };
     const messages = (async function* () {
       for (const item of events) {
@@ -306,4 +307,18 @@ test("a request with blank new words is refused before any call", async () => {
     kind: "bad_request",
   });
   assert.equal(calls.length, 0);
+});
+
+test("an ask outside any session has the background deadline; a turn keeps its own", async () => {
+  const { stream, calls } = fakeApi({ events: [] }, { events: [] });
+  const api = claudeApiProvider(
+    { apiKey: "sk-ant-test", timeoutMs: 15_000, backgroundTimeoutMs: 120_000 },
+    stream,
+  );
+  await collect(api.reply({ ...request, sessionId: undefined }, never));
+  await collect(api.reply(request, never));
+  assert.deepEqual(
+    calls.map((c) => c.timeout),
+    [120_000, 15_000],
+  );
 });

@@ -20,10 +20,12 @@ function providerFor(s: Settings): Provider {
         apiKey: s.apiKey ?? "",
         maxTokens: s.maxTokens,
         timeoutMs: s.replyTimeoutMs,
+        backgroundTimeoutMs: s.backgroundReplyTimeoutMs,
       });
     case "claude-subscription":
       return claudeSubscriptionProvider(undefined, process.env, {
         apiTimeoutMs: s.replyTimeoutMs,
+        backgroundApiTimeoutMs: s.backgroundReplyTimeoutMs,
         maxSessionProcesses: s.maxSessionProcesses,
         sessionProcessIdleMs: s.sessionProcessIdleMs,
       });

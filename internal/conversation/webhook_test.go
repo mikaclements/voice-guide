@@ -98,8 +98,9 @@ type body struct {
 			Reply string `json:"reply"`
 			Cut   bool   `json:"cut"`
 		} `json:"turns"`
-		TurnsLeftOut int     `json:"turns_left_out"`
-		Summary      *string `json:"summary"`
+		TurnsLeftOut  int     `json:"turns_left_out"`
+		Summary       *string `json:"summary"`
+		SummaryStatus string  `json:"summary_status"`
 	} `json:"data"`
 }
 
@@ -396,5 +397,16 @@ func TestAWebhookSecretShowsItselfRedacted(t *testing.T) {
 		if strings.Contains(shown, "bGln") {
 			t.Errorf("the secret shows in %s", shown)
 		}
+	}
+}
+
+func TestADeliveryCarriesTheSummarysStatusSettledAsTheJobLeftIt(t *testing.T) {
+	d := newDelivering(t)
+	// The summary job failed for good, leaving the summary pending: the delivery says none.
+	if err := d.deliver(conversation.DeliveryArgs{Session: d.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if b := read(t, d.poster.Posted()[0]); b.Data.SummaryStatus != "none" {
+		t.Errorf("status %q, want none", b.Data.SummaryStatus)
 	}
 }

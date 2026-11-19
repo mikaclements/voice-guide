@@ -651,3 +651,10 @@ test("an ask outside any session gets a process of its own, closed once it answe
   await collect(provider.reply(nextTurn(request, "How much faster?", "Ten times."), never));
   assert.equal(calls.length, 2, "the session's next turn still takes its kept process");
 });
+
+test("an ask outside any session gives Claude Code the background deadline", async () => {
+  const { query, calls } = fakeQuery([delta("Kind."), success]);
+  const provider = newProvider(query);
+  await collect(provider.reply({ ...request, sessionId: undefined }, new AbortController().signal));
+  assert.equal(calls[0]?.options?.env?.API_TIMEOUT_MS, "120000");
+});

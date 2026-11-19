@@ -13,8 +13,8 @@ import (
 
 // pastSessionJSON is a session as its product reads it later, in the shape
 // of a delivery's session: the user by the product's own reference, never
-// voice-guide's user ID. A session still live has no end and no summary, both
-// null.
+// voice-guide's user ID. A session still live has no end, summary or summary
+// status, all null.
 type pastSessionJSON struct {
 	ID           uuid.UUID  `json:"id"`
 	User         string     `json:"user"`
@@ -23,6 +23,8 @@ type pastSessionJSON struct {
 	StartedAt    time.Time  `json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at"`
 	Summary      *string    `json:"summary"`
+	// SummaryStatus is pending until the summary job has run, then written or none.
+	SummaryStatus *conversation.SummaryStatus `json:"summary_status"`
 }
 
 func pastReply(p conversation.PastSession) pastSessionJSON {
@@ -33,6 +35,9 @@ func pastReply(p conversation.PastSession) pastSessionJSON {
 	if p.Session.Ended() {
 		ended := p.Session.EndedAt.UTC()
 		out.EndedAt = &ended
+	}
+	if p.Session.SummaryStatus != "" {
+		out.SummaryStatus = &p.Session.SummaryStatus
 	}
 	return out
 }

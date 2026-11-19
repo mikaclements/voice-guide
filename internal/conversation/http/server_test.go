@@ -528,6 +528,10 @@ func (brokenSessions) End(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (con
 	return conversation.Session{}, false, errors.New("connection refused by 10.0.0.7:5432")
 }
 
+func (brokenSessions) SettleSummary(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, conversation.SummaryStatus) error {
+	return errors.New("connection refused by 10.0.0.7:5432")
+}
+
 func (brokenSessions) Touch(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (bool, error) {
 	return false, errors.New("connection refused by 10.0.0.7:5432")
 }

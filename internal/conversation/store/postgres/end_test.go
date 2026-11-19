@@ -381,3 +381,32 @@ func TestATurnLeftInFlightPastTheDeadlineIsCutOffAsLost(t *testing.T) {
 		t.Error("a turn within the deadline was cut off")
 	}
 }
+
+func TestAnEndedSessionsSummaryIsPendingThenSettlesOnce(t *testing.T) {
+	sessions, pool := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	ctx := context.Background()
+	if s.SummaryStatus != "" {
+		t.Errorf("a live session's status is %q, want none", s.SummaryStatus)
+	}
+	ended, _, err := sessions.End(ctx, workspace, user, s.ID)
+	if err != nil || ended.SummaryStatus != conversation.SummaryPending {
+		t.Fatalf("End = %q, %v; want the summary pending", ended.SummaryStatus, err)
+	}
+	for _, status := range []conversation.SummaryStatus{conversation.SummaryWritten, conversation.SummaryNone} {
+		if err := sessions.SettleSummary(ctx, workspace, user, s.ID, status); err != nil {
+			t.Fatalf("SettleSummary: %v", err)
+		}
+	}
+	// Another workspace changes nothing.
+	_ = sessions.SettleSummary(ctx, elsewhere, user, s.ID, conversation.SummaryNone)
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryStatus != conversation.SummaryWritten {
+		t.Errorf("read back %q, want written, never moved back", got.SummaryStatus)
+	}
+	// The job that settles the status waits on the summary's job.
+	var waits bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT FROM jobs j JOIN jobs s ON s.id = j.after_id
+		WHERE j.kind = $1 AND s.kind = $2 AND j.args = s.args)`, conversation.SummarySettleJob, conversation.SummaryJob).Scan(&waits); err != nil || !waits {
+		t.Errorf("a settle job waiting on the summary's: %v, %v", waits, err)
+	}
+}

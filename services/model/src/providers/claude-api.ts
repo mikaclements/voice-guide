@@ -6,7 +6,11 @@ import {
   ProviderError,
   type ReplyRequest,
 } from "../api.ts";
-import { DEFAULT_MAX_TOKENS, DEFAULT_REPLY_TIMEOUT_MS } from "../settings.ts";
+import {
+  DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_REPLY_TIMEOUT_MS,
+} from "../settings.ts";
 
 // What the provider needs of the SDK: a reply streamed event by event, then the whole message, for
 // why it stopped and its usage.
@@ -15,7 +19,7 @@ export interface ReplyStream extends AsyncIterable<Anthropic.MessageStreamEvent>
 }
 export type StreamFn = (
   params: Anthropic.MessageStreamParams,
-  options: { signal: AbortSignal },
+  options: { signal: AbortSignal; timeout: number },
 ) => ReplyStream;
 
 // Thinking before the first word adds seconds to every spoken reply, and each model turns it off
@@ -36,6 +40,8 @@ export interface ClaudeApiSettings {
   apiKey: string;
   maxTokens?: number;
   timeoutMs?: number;
+  // The deadline of an ask outside any session, which the SDK then gives up at instead.
+  backgroundTimeoutMs?: number;
   // Receives a record for a reply the model refused; never what was said.
   log?: (record: Record<string, unknown>) => void;
 }
@@ -47,6 +53,7 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
   const {
     maxTokens = DEFAULT_MAX_TOKENS,
     timeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    backgroundTimeoutMs = DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
     log = (record) => console.log(JSON.stringify(record)),
   } = settings;
   const send = stream ?? sdkStream(settings.apiKey, timeoutMs);
@@ -66,7 +73,8 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
         });
       let message: Anthropic.Message;
       try {
-        const reply = send(paramsFor(request, maxTokens, thinking), { signal });
+        const timeout = request.sessionId === undefined ? backgroundTimeoutMs : timeoutMs;
+        const reply = send(paramsFor(request, maxTokens, thinking), { signal, timeout });
         for await (const event of reply) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta")
             yield { type: "text", text: event.delta.text };

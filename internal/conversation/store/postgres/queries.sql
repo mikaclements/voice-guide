@@ -24,45 +24,49 @@ RETURNING user_id;
 INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
 VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context, @voice, @speed)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at;
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status;
 
 -- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND request_id = @request_id;
 
 -- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id;
 
 -- A product's server names no user, so its reads find a session by its workspace alone.
 -- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = @workspace_id AND id = @id;
 
 -- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
 -- @before, the last id of the page before, is where this one starts.
 -- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
 ORDER BY id DESC
 LIMIT @page_size;
 
--- Ending queues the job that writes the session's summary in the same statement, so the job exists
--- exactly when the end does, and, when the workspace has a webhook not stopped, the job that delivers
--- the session to it, run once the summary's job is done or failed, with a delivery ID kept on every
--- attempt; ending again changes nothing and queues nothing, so a retried end gets the same answer. It
--- waits for a turn starting in the session, which holds the session's row while it starts, and a turn
--- waiting on it then finds the session ended. It returns how many sessions it ended: one, or none when
--- the session had ended already or isn't the user's.
+-- Ending marks the summary pending and, in the same statement, queues the job that writes it, so the job
+-- exists exactly when the end does; the job that settles the summary's status once the summary's job is
+-- done or failed, so no session stays pending; and, when the workspace has a webhook not stopped, the
+-- job that delivers the session to it, run once the summary's job is done or failed, with a delivery ID
+-- kept on every attempt. Ending again changes nothing and queues nothing, so a retried end gets the same
+-- answer. It waits for a turn starting in the session, which holds the session's row while it starts,
+-- and a turn waiting on it then finds the session ended. It returns how many sessions it ended: one, or
+-- none when the session had ended already or isn't the user's.
 -- name: EndSession :one
 WITH ended AS (
-    UPDATE sessions SET ended_at = now()
+    UPDATE sessions SET ended_at = now(), summary_status = 'pending'
     WHERE sessions.workspace_id = @workspace_id AND sessions.user_id = @user_id AND sessions.id = @id AND sessions.ended_at IS NULL
     RETURNING sessions.id, sessions.workspace_id, sessions.user_id
 ), summaries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args)
     SELECT uuidv7(), ended.workspace_id, ended.user_id, 'session_summary', jsonb_build_object('session_id', ended.id) FROM ended
     RETURNING jobs.id, jobs.workspace_id, jobs.user_id, jobs.args
+), settles AS (
+    INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
+    SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_summary_settle', summaries.args, summaries.id FROM summaries
 ), deliveries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
     SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_delivery',
@@ -80,13 +84,16 @@ SELECT count(*) FROM ended;
 -- own workspace's webhook.
 -- name: EndIdleSessions :many
 WITH ended AS (
-    UPDATE sessions SET ended_at = now()
+    UPDATE sessions SET ended_at = now(), summary_status = 'pending'
     WHERE sessions.ended_at IS NULL AND sessions.last_active_at <= now() - make_interval(secs => @idle_seconds::float8)
     RETURNING sessions.id, sessions.workspace_id, sessions.user_id
 ), summaries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args)
     SELECT uuidv7(), ended.workspace_id, ended.user_id, 'session_summary', jsonb_build_object('session_id', ended.id) FROM ended
     RETURNING jobs.id, jobs.workspace_id, jobs.user_id, jobs.args
+), settles AS (
+    INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
+    SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_summary_settle', summaries.args, summaries.id FROM summaries
 ), deliveries AS (
     INSERT INTO jobs (id, workspace_id, user_id, kind, args, after_id)
     SELECT uuidv7(), summaries.workspace_id, summaries.user_id, 'session_delivery',
@@ -96,6 +103,11 @@ WITH ended AS (
 SELECT ended.id FROM ended;
 
 -- The user's speech was heard in the live session.
+-- A summary's status moves once, from pending to written or none, and never back.
+-- name: SettleSummary :exec
+UPDATE sessions SET summary_status = @status::text
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id AND summary_status = 'pending';
+
 -- name: TouchSession :execrows
 UPDATE sessions SET last_active_at = now()
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id AND ended_at IS NULL;

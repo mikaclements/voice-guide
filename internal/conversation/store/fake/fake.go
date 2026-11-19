@@ -159,7 +159,7 @@ func (f *Sessions) End(ctx context.Context, workspace, user, id uuid.UUID) (conv
 	if !s.EndedAt.IsZero() {
 		return s, false, nil
 	}
-	s.EndedAt = f.now()
+	s.EndedAt, s.SummaryStatus = f.now(), conversation.SummaryPending
 	f.byRequest[key] = s
 	f.summaries = append(f.summaries, s.ID)
 	return s, true, nil
@@ -170,6 +170,30 @@ func (f *Sessions) QueuedSummaries() []uuid.UUID {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]uuid.UUID(nil), f.summaries...)
+}
+
+// SettleSummary moves the user's session's summary status from pending to status.
+func (f *Sessions) SettleSummary(ctx context.Context, workspace, user, id uuid.UUID, status conversation.SummaryStatus) error {
+	return f.update(ctx, workspace, user, id, func(s *conversation.Session) {
+		if s.SummaryStatus == conversation.SummaryPending {
+			s.SummaryStatus = status
+		}
+	})
+}
+
+// update changes the user's session with id in the workspace, if there is one.
+func (f *Sessions) update(ctx context.Context, workspace, user, id uuid.UUID, change func(*conversation.Session)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if key, ok := f.find(workspace, id); ok && key.user == user {
+		s := f.byRequest[key]
+		change(&s)
+		f.byRequest[key] = s
+	}
+	return nil
 }
 
 // Touch marks the user's live session active now.
@@ -203,7 +227,7 @@ func (f *Sessions) EndIdle(ctx context.Context, idle time.Duration) ([]uuid.UUID
 		if !s.EndedAt.IsZero() || now.Sub(last) < idle {
 			continue
 		}
-		s.EndedAt = now
+		s.EndedAt, s.SummaryStatus = now, conversation.SummaryPending
 		f.byRequest[key] = s
 		f.summaries = append(f.summaries, s.ID)
 		ended = append(ended, s.ID)
