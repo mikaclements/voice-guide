@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"strings"
 	"time"
 	"uuid"
 )
@@ -72,3 +73,85 @@ const ModelBusy ModelErrorKind = "busy"
 type ReplyFailedError struct{ Kind ModelErrorKind }
 
 func (e *ReplyFailedError) Error() string { return "the model's reply failed: " + string(e.Kind) }
+
+// modelReply is the model's reply as readReply read it.
+type modelReply struct {
+	text string
+	// firstText is when the first text arrived; zero when none did.
+	firstText time.Time
+	// report is the model service's report on a reply it finished, nil when it
+	// sent none.
+	report *ModelReport
+	// failed is a *ReplyFailedError naming why the model didn't finish, or nil.
+	failed error
+	// cutIn says the user cut in before the model let go of the reply, which
+	// may still be running.
+	cutIn bool
+	// unfinished says the user cut in before the model's final event.
+	unfinished bool
+}
+
+// readReply reads the model's reply from events, handing each piece of text to
+// send as it arrives, until the model lets go of the channel or the user cuts
+// in by closing interrupt, which a nil interrupt never does. After a cut-in the
+// model may still hold the channel: the caller stops the reply at once, and
+// waits for the model to let go before it returns.
+func (s *Service) readReply(events <-chan ModelEvent, interrupt <-chan struct{}, send func(text string)) modelReply {
+	var text strings.Builder
+	var firstText time.Time
+	var final ModelEvent // the model's last word, done or failed; the zero event until it comes
+	for {
+		select {
+		case e, open := <-events:
+			// The interrupt is checked again before any text goes out: with an
+			// event and the interrupt both ready, select picks either.
+			cutIn := closed(interrupt)
+			switch {
+			case !open:
+			case isFinal(e):
+				final = e
+			case !cutIn:
+				if firstText.IsZero() {
+					firstText = s.now()
+				}
+				text.WriteString(e.Text)
+				send(e.Text)
+			}
+			if cutIn || !open {
+				return replyOf(text.String(), firstText, final, cutIn)
+			}
+		case <-interrupt:
+			// A final event already waiting when the interrupt won still counts,
+			// so a reply that failed as the user cut in stays failed.
+			select {
+			case e, open := <-events:
+				if open && isFinal(e) {
+					final = e
+				}
+			default:
+			}
+			return replyOf(text.String(), firstText, final, true)
+		}
+	}
+}
+
+// isFinal says whether e is the model's last word on its reply: done, or failed.
+func isFinal(e ModelEvent) bool { return e.Done || e.Error != "" }
+
+// replyOf says how a reply ended: as the model's final event says, if it sent
+// one; otherwise where the user cut in, if they did; otherwise the model let go
+// of it unfinished, which counts as unavailable.
+func replyOf(text string, firstText time.Time, final ModelEvent, cutIn bool) modelReply {
+	r := modelReply{text: text, firstText: firstText, cutIn: cutIn}
+	switch {
+	case final.Done:
+		r.report = final.Report
+	case final.Error != "":
+		r.failed = &ReplyFailedError{Kind: final.Error}
+	case cutIn:
+		r.unfinished = true // the reply ends where the user cut in, not by failing
+	default:
+		r.failed = &ReplyFailedError{Kind: ModelUnavailable}
+	}
+	return r
+}
