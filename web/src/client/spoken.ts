@@ -5,7 +5,7 @@
 import type { Follow } from "./audio.ts";
 import type { ReplySoundClock } from "./replysound.ts";
 import { failure, keepRequestId } from "./retry.ts";
-import type { Page } from "./sending.ts";
+import { type Page, showEnd, showSpoken } from "./sending.ts";
 
 export class SpokenTurns {
   private readonly page: Page;
@@ -48,7 +48,7 @@ export class SpokenTurns {
       const end = await follow((text) =>
         this.page.update(replyId, (r) => ({ ...r, text: r.text + text })),
       );
-      this.page.update(replyId, (r) => ({ ...r, ended: end.ended, model: end.model }));
+      showEnd(this.page, replyId, end);
       const spoken = await end.spoken;
       if (spoken?.talkedOn) {
         // Nothing of it sounded, and the turn is taken again with all the words.
@@ -56,12 +56,7 @@ export class SpokenTurns {
         this.page.takeBack(youId, replyId);
         return;
       }
-      this.page.update(replyId, (r) => ({
-        ...r,
-        ...(spoken?.failed && { audioFailed: true }),
-        ...(spoken?.heard !== undefined && { heard: spoken.heard }),
-        ...(spoken?.firstAudioMs !== undefined && { finishedToSoundMs: spoken.firstAudioMs }),
-      }));
+      showSpoken(this.page, replyId, spoken, true);
     } catch (err) {
       // Nothing of it plays, so a typed reply before it is still the one heard and timed.
       unspoke?.();

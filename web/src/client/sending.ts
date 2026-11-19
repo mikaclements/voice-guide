@@ -5,7 +5,7 @@ import type { Playback } from "./audio.ts";
 import { type Over, whyOver } from "./ending.ts";
 import type { ReplySoundClock } from "./replysound.ts";
 import { failure, keepRequestId, requestIdFor } from "./retry.ts";
-import { startTimer, type TurnEnd, type Turns } from "./turns.ts";
+import { type Spoken, startTimer, type TurnEnd, type Turns } from "./turns.ts";
 
 // A reply as the page shows it.
 export type Reply = {
@@ -79,6 +79,28 @@ export function transcriptPage(
   };
 }
 
+// Shows on the reply how its turn ended and with which model.
+export function showEnd(page: Page, replyId: string, end: TurnEnd): void {
+  page.update(replyId, (r) => ({ ...r, ended: end.ended, model: end.model }));
+}
+
+// Shows on the reply how its audio went: that it stopped, and how far the user heard it. For a turn
+// the user spoke, also how long after they finished speaking its first sound went out.
+export function showSpoken(
+  page: Page,
+  replyId: string,
+  spoken: Spoken | undefined,
+  spokenTurn = false,
+): void {
+  page.update(replyId, (r) => ({
+    ...r,
+    ...(spoken?.failed && { audioFailed: true }),
+    ...(spoken?.heard !== undefined && { heard: spoken.heard }),
+    ...(spokenTurn &&
+      spoken?.firstAudioMs !== undefined && { finishedToSoundMs: spoken.firstAudioMs }),
+  }));
+}
+
 export class Sender {
   private readonly clock: ReplySoundClock;
   private readonly page: Page;
@@ -131,7 +153,7 @@ export class Sender {
     try {
       const end = await turns.take(
         "",
-        crypto.randomUUID(),
+        this.newId(),
         (text) => {
           if (!shown) this.page.open(replyId);
           shown = true;
@@ -140,11 +162,8 @@ export class Sender {
         },
         true,
       );
-      this.page.update(replyId, (r) => ({ ...r, ended: end.ended, model: end.model }));
-      const spoken = await end.spoken;
-      if (spoken?.failed) this.page.update(replyId, (r) => ({ ...r, audioFailed: true }));
-      if (spoken?.heard !== undefined)
-        this.page.update(replyId, (r) => ({ ...r, heard: spoken.heard }));
+      showEnd(this.page, replyId, end);
+      showSpoken(this.page, replyId, await end.spoken);
     } catch (err) {
       unsend();
       if (this.lastReply === replyId) this.lastReply = before;
@@ -194,12 +213,8 @@ export class Sender {
       unmute();
       // Only this request's: another send may have kept its own meanwhile.
       if (this.kept.get(words) === requestId) this.kept.delete(words);
-      this.page.update(replyId, (r) => ({ ...r, ended: end.ended, model: end.model }));
-      const spoken = await end.spoken;
-      if (spoken?.failed) this.page.update(replyId, (r) => ({ ...r, audioFailed: true }));
-      if (spoken?.heard !== undefined) {
-        this.page.update(replyId, (r) => ({ ...r, heard: spoken.heard }));
-      }
+      showEnd(this.page, replyId, end);
+      showSpoken(this.page, replyId, await end.spoken);
     } catch (err) {
       unmute();
       // Nothing of this send plays, so the reply before it is still the one heard and timed.
