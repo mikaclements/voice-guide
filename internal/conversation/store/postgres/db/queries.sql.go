@@ -628,7 +628,6 @@ type SettleSummaryParams struct {
 	ID          uuid.UUID
 }
 
-// The user's speech was heard in the live session.
 // A summary's status moves once, from pending to written or none, and never back.
 func (q *Queries) SettleSummary(ctx context.Context, arg SettleSummaryParams) error {
 	_, err := q.db.Exec(ctx, settleSummary,
@@ -728,6 +727,7 @@ type TouchSessionParams struct {
 	ID          uuid.UUID
 }
 
+// The user's speech was heard in the live session.
 func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, touchSession, arg.WorkspaceID, arg.UserID, arg.ID)
 	if err != nil {

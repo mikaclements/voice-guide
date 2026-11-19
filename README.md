@@ -255,7 +255,7 @@ The reply lists the user's sessions, newest first, without their turns:
 - The user is in the path: percent-encode the ID as one path segment (`encodeURIComponent` in JavaScript), since a raw `/`, `#`, `?` or `%` names something else. An ID a start would refuse is `400` here too. A user the product never started a session for has an empty list.
 - `limit` is 1 to 100 (20 without it). For the next page, send `before=<the last session's ID>`; a page shorter than `limit` is the last.
 - `GET /v1/sessions/<session ID>` reads one session of the product's workspace with every turn, as a delivery's `data` holds it: the same fields, plus `turns` as the user heard them, and no `turns_left_out`, since the whole session comes back. A long session makes a long reply, about 220 KiB for two hours of talk. Another workspace's session is `404`.
-- `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`.
+- `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`, waiting longer each time: when writing fails, it is tried again for about 15 minutes before the status turns `none`.
 - A live session has `ended_at`, `summary` and `summary_status` null, and holds the turns finished so far.
 
 <a id="new-workspace"></a>

@@ -106,8 +106,8 @@ func (s *Service) PastSession(ctx context.Context, c access.Caller, id uuid.UUID
 	return past, turns, nil
 }
 
-// past adds a session's summary, which only an ended session has: a live one
-// is still being talked through.
+// past adds an ended session's summary, and settles a summary status never
+// recorded; a live one is still being talked through, and has neither.
 func (s *Service) past(ctx context.Context, session Session, reference string) (PastSession, error) {
 	past := PastSession{Session: session, Reference: reference}
 	if !session.Ended() {
@@ -119,6 +119,11 @@ func (s *Service) past(ctx context.Context, session Session, reference string) (
 	}
 	if found {
 		past.Summary = &summary.Content
+	}
+	// A session ended before its status was kept, or by an older build, has none recorded: it
+	// settles from its summary, so null stays the mark of a live session.
+	if session.SummaryStatus == "" {
+		past.Session.SummaryStatus = settled(found)
 	}
 	return past, nil
 }

@@ -5,10 +5,15 @@ import { isIP } from "node:net";
 // Claude Code's own API call, instead of leaving it running after voice has given up.
 export const DEFAULT_REPLY_TIMEOUT_MS = 15_000;
 
-// How long an ask outside any session may run unless set: a session's summary, which may grade it on a
+// How long an ask outside any session may run unless set: a session's summary, which may run on a
 // slower model over a long transcript, and nobody waits for it. A round guess, to be measured on the
-// subscription with Opus; voice's summary job allows for two such asks in one run.
+// subscription with Opus; voice's summary job allows one such ask and 30 s around it in one run.
 export const DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS = 120_000;
+
+// The longest answer, in tokens, to an ask outside any session on a model whose thinking stays on: a
+// summary of up to 2,000 characters, some 500 tokens, with room for the thinking before it, so the
+// thinking never cuts the text short. A round guess, measured with the first summaries on Opus.
+export const BACKGROUND_MAX_TOKENS = 16_000;
 
 // The port voice calls unless told otherwise, so the two meet with neither set.
 const DEFAULT_PORT = 8091;

@@ -322,3 +322,23 @@ test("an ask outside any session has the background deadline; a turn keeps its o
     [120_000, 15_000],
   );
 });
+
+test("an ask outside any session on a model with no thinking rule thinks by default, with room; a live reply is still refused", async () => {
+  const { stream, calls } = fakeApi({ events: [delta("Covered the lamp.")] }, { events: [] });
+  const summary = { ...request, model: "claude-opus-5-5", sessionId: undefined };
+  const events = await collect(provider(stream).reply(summary, never));
+  assert.equal("thinking" in (calls[0]?.params ?? {}), false);
+  assert.equal(calls[0]?.params.max_tokens, 16_000);
+  assert.deepEqual(events[0], { type: "text", text: "Covered the lamp." });
+
+  // A model with a rule keeps it, and the limit, outside a session too.
+  await collect(provider(stream).reply({ ...request, sessionId: undefined }, never));
+  assert.deepEqual(calls[1]?.params.thinking, { type: "between_tools" });
+  assert.equal(calls[1]?.params.max_tokens, 512);
+
+  await assert.rejects(
+    collect(provider(stream).reply({ ...request, model: "claude-opus-5-5" }, never)),
+    (err) => err instanceof ProviderError && err.kind === "bad_request",
+  );
+  assert.equal(calls.length, 2);
+});

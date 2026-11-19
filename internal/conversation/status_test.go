@@ -2,9 +2,12 @@ package conversation_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
@@ -82,5 +85,40 @@ func TestASummarySavedBeforeItsJobFailedForGoodSettlesAsWritten(t *testing.T) {
 	_ = h.sessions.SettleSummary(ctx, workspace, user, s.ID, conversation.SummaryNone)
 	if got := h.read(t, s.ID).SummaryStatus; got != conversation.SummaryWritten {
 		t.Errorf("status %q, want written, kept once settled", got)
+	}
+}
+
+// unreadableSummaries is user context's fake store, failing every read of a session's summary.
+type unreadableSummaries struct{ *countingItems }
+
+func (unreadableSummaries) SessionSummary(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) (usercontext.Item, bool, error) {
+	return usercontext.Item{}, false, errors.New("connection refused by 10.0.0.7:5432")
+}
+
+func TestSettlingFailsToRunAgainWhenUserContextCantBeRead(t *testing.T) {
+	h, s := summarizing(t)
+	svc := conversation.NewService(agents.NewCatalog(h.agents), h.sessions, h.turns, h.model, usercontext.NewService(unreadableSummaries{h.items}), h.settings)
+	if err := svc.SettleSummary(context.Background(), workspace, user, conversation.SummaryArgs{Session: s.ID}); err == nil {
+		t.Error("SettleSummary = nil with user context unreadable, want a failure, so the job runs again")
+	}
+	if got := h.read(t, s.ID).SummaryStatus; got != conversation.SummaryPending {
+		t.Errorf("status %q, want still pending, never settled none on a guess", got)
+	}
+}
+
+func TestASessionEndedBeforeItsStatusWasKeptSettlesFromItsSummary(t *testing.T) {
+	h := newServiceOverFakes(t)
+	ctx := context.Background()
+	old, _, _ := h.sessions.Start(ctx, conversation.Session{ID: uuid.NewV7(), Workspace: workspace, User: user, Agent: keeperID, AgentVersion: 1, StartedAt: time.Now().Add(-time.Hour), EndedAt: time.Now()}, uuid.NewV7(), "aiko-42")
+	product := access.Caller{Workspace: workspace, Product: true}
+	got, _, err := h.svc.PastSession(ctx, product, old.ID)
+	if err != nil || got.Session.SummaryStatus != conversation.SummaryNone {
+		t.Errorf("PastSession = %q, %v; want none, not the live session's null", got.Session.SummaryStatus, err)
+	}
+	if _, err := usercontext.NewService(h.items).SaveSummary(ctx, usercontext.SummaryRequest{Workspace: workspace, User: user, Agent: keeperID, Session: old.ID, SessionEnded: old.EndedAt, Content: "Covered the lamp."}); err != nil {
+		t.Fatalf("SaveSummary: %v", err)
+	}
+	if got, _, _ := h.svc.PastSession(ctx, product, old.ID); got.Session.SummaryStatus != conversation.SummaryWritten {
+		t.Errorf("with its summary saved: %q, want written", got.Session.SummaryStatus)
 	}
 }

@@ -7,6 +7,7 @@ import {
   type ReplyRequest,
 } from "../api.ts";
 import {
+  BACKGROUND_MAX_TOKENS,
   DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
   DEFAULT_MAX_TOKENS,
   DEFAULT_REPLY_TIMEOUT_MS,
@@ -24,7 +25,9 @@ export type StreamFn = (
 
 // Thinking before the first word adds seconds to every spoken reply, and each model turns it off
 // its own way: Sonnet 5.5 refuses "disabled" and answers without thinking under "between_tools". A
-// model missing here is refused rather than left thinking.
+// live reply on a model missing here is refused rather than left thinking; an ask outside any
+// session, which nobody waits for, thinks as its model does by default, Opus 5.5 say, which can't
+// turn thinking off.
 const thinkingOff: Record<string, Anthropic.ThinkingConfigParam> = {
   "claude-sonnet-5-5": { type: "between_tools" },
   "claude-haiku-5-5": { type: "disabled" },
@@ -67,7 +70,7 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
           reason: "the new words are blank",
         });
       const thinking = thinkingOff[request.model];
-      if (!thinking)
+      if (!thinking && request.sessionId !== undefined)
         throw new ProviderError("bad_request", "claude-api: no rule turns thinking off", {
           reason: `no rule turns thinking off for this model; known: ${Object.keys(thinkingOff).join(", ")}`,
         });
@@ -139,7 +142,7 @@ function sdkStream(apiKey: string, timeoutMs: number): StreamFn {
 function paramsFor(
   r: ReplyRequest,
   maxTokens: number,
-  thinking: Anthropic.ThinkingConfigParam,
+  thinking: Anthropic.ThinkingConfigParam | undefined,
 ): Anthropic.MessageStreamParams {
   const last = r.stableLayers.length - 1;
   const system = r.stableLayers.flatMap((text, i): Anthropic.TextBlockParam[] =>
@@ -149,10 +152,11 @@ function paramsFor(
   );
   return {
     model: r.model,
-    max_tokens: maxTokens,
+    // Thinking left on counts against the limit, so it gets room enough to leave the text whole.
+    max_tokens: thinking ? maxTokens : BACKGROUND_MAX_TOKENS,
     ...(system.length > 0 && { system }),
     messages: messagesFor(r.conversation, r.newWords, r.sessionId !== undefined),
-    thinking,
+    ...(thinking && { thinking }),
     // A spoken reply is short and plain; the least effort reaches its first word soonest.
     output_config: { effort: "low" },
   };

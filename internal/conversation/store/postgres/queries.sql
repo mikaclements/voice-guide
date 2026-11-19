@@ -102,12 +102,12 @@ WITH ended AS (
 )
 SELECT ended.id FROM ended;
 
--- The user's speech was heard in the live session.
 -- A summary's status moves once, from pending to written or none, and never back.
 -- name: SettleSummary :exec
 UPDATE sessions SET summary_status = @status::text
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id AND summary_status = 'pending';
 
+-- The user's speech was heard in the live session.
 -- name: TouchSession :execrows
 UPDATE sessions SET last_active_at = now()
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id AND ended_at IS NULL;

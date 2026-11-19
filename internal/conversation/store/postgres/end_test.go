@@ -393,13 +393,17 @@ func TestAnEndedSessionsSummaryIsPendingThenSettlesOnce(t *testing.T) {
 	if err != nil || ended.SummaryStatus != conversation.SummaryPending {
 		t.Fatalf("End = %q, %v; want the summary pending", ended.SummaryStatus, err)
 	}
+	// Another workspace, or another user, changes nothing while it is pending.
+	_ = sessions.SettleSummary(ctx, elsewhere, user, s.ID, conversation.SummaryNone)
+	_ = sessions.SettleSummary(ctx, workspace, uuid.NewV7(), s.ID, conversation.SummaryNone)
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryStatus != conversation.SummaryPending {
+		t.Errorf("after settling from elsewhere: %q, want still pending", got.SummaryStatus)
+	}
 	for _, status := range []conversation.SummaryStatus{conversation.SummaryWritten, conversation.SummaryNone} {
 		if err := sessions.SettleSummary(ctx, workspace, user, s.ID, status); err != nil {
 			t.Fatalf("SettleSummary: %v", err)
 		}
 	}
-	// Another workspace changes nothing.
-	_ = sessions.SettleSummary(ctx, elsewhere, user, s.ID, conversation.SummaryNone)
 	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryStatus != conversation.SummaryWritten {
 		t.Errorf("read back %q, want written, never moved back", got.SummaryStatus)
 	}
@@ -408,5 +412,22 @@ func TestAnEndedSessionsSummaryIsPendingThenSettlesOnce(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT FROM jobs j JOIN jobs s ON s.id = j.after_id
 		WHERE j.kind = $1 AND s.kind = $2 AND j.args = s.args)`, conversation.SummarySettleJob, conversation.SummaryJob).Scan(&waits); err != nil || !waits {
 		t.Errorf("a settle job waiting on the summary's: %v, %v", waits, err)
+	}
+}
+
+func TestTheIdleSweepMarksTheSummaryPendingAndQueuesTheJobThatSettlesIt(t *testing.T) {
+	sessions, pool := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	idleFor(t, pool, s.ID, time.Hour)
+	if _, err := sessions.EndIdle(context.Background(), idle); err != nil {
+		t.Fatalf("EndIdle: %v", err)
+	}
+	if got, _, _ := sessions.ByID(context.Background(), workspace, user, s.ID); got.SummaryStatus != conversation.SummaryPending {
+		t.Errorf("status %q after the idle end, want pending", got.SummaryStatus)
+	}
+	var settles int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM jobs j JOIN jobs s ON s.id = j.after_id
+		WHERE j.kind = $1 AND s.kind = $2 AND j.args = s.args AND j.args->>'session_id' = $3`, conversation.SummarySettleJob, conversation.SummaryJob, s.ID.String()).Scan(&settles); err != nil || settles != 1 {
+		t.Errorf("%d settle jobs after the summary's, %v; want one", settles, err)
 	}
 }

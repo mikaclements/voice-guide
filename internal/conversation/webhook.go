@@ -336,10 +336,11 @@ func (d *Deliveries) body(ctx context.Context, workspace, user uuid.UUID, args D
 	} else if found {
 		ended.Summary = &summary.Content
 	}
-	// The delivery runs once the summary job is done or failed for good, so a summary still
-	// pending is one the settling job hasn't got to yet: it settles as that job will.
+	// The delivery runs once the summary job is done or failed for good, so a status still pending
+	// is one the settling job hasn't got to yet, and none at all one ended before the status was
+	// kept: either settles as that job would.
 	ended.SummaryStatus = session.SummaryStatus
-	if ended.SummaryStatus == SummaryPending {
+	if ended.SummaryStatus != SummaryWritten && ended.SummaryStatus != SummaryNone {
 		ended.SummaryStatus = settled(found)
 	}
 	all := make([]turnJSON, 0, len(turns))

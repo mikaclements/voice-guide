@@ -80,6 +80,7 @@ type wiring struct {
 	workspace, user uuid.UUID
 	session         conversation.Session
 	queue           *jobsfake.Store
+	sessions        *conversationfake.Sessions
 	webhooks        *conversationfake.Webhooks
 	svc             *conversation.Service
 	deliveries      *conversation.Deliveries
@@ -91,7 +92,7 @@ func newWiring(t *testing.T, poster conversation.Poster) wiring {
 	t.Helper()
 	w := wiring{workspace: uuid.NewV7(), user: uuid.NewV7(), queue: jobsfake.New()}
 	sessions, webhooks := conversationfake.New(), conversationfake.NewWebhooks()
-	w.webhooks = webhooks
+	w.sessions, w.webhooks = sessions, webhooks
 	w.session, _, _ = sessions.Start(context.Background(), conversation.Session{ID: uuid.NewV7(), Workspace: w.workspace, User: w.user, Agent: uuid.NewV7(), AgentVersion: 1}, uuid.NewV7(), "aiko-42")
 	if _, _, err := sessions.End(context.Background(), w.workspace, w.user, w.session.ID); err != nil {
 		t.Fatalf("End: %v", err)
@@ -272,5 +273,15 @@ func TestASweepRunsAtOnceThenEveryInterval(t *testing.T) {
 	<-done
 	if n := calls.Load(); n != 1 {
 		t.Errorf("the sweep ran %d times within its hour, want once, at once", n)
+	}
+}
+
+func TestTheSettleJobSettlesASummaryLeftPendingOnTheSummariesRunner(t *testing.T) {
+	w := newWiring(t, webhookfake.New())
+	w.add(conversation.SummarySettleJob, conversation.SummaryArgs{Session: w.session.ID})
+	w.run(t, jobSettings, deliverySettings, func(q []jobsfake.Queued) bool { return q[0].State != jobsfake.Waiting })
+	s, _, _ := w.sessions.ByID(context.Background(), w.workspace, w.user, w.session.ID)
+	if j := w.queue.All()[0]; j.State != jobsfake.Done || s.SummaryStatus != conversation.SummaryNone {
+		t.Errorf("job %s, status %q; want the job done and the summary, never written, settled none", j.State, s.SummaryStatus)
 	}
 }
