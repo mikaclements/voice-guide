@@ -111,23 +111,11 @@ func userSpoke(turns []Turn) bool {
 func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, error) {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
-	events := s.model.Reply(ctx, ModelRequest{Model: model, Prompt: p})
-	var text strings.Builder
-	var failed error = &ReplyFailedError{Kind: "unavailable"} // until a final event says otherwise
-	for e := range events {
-		switch {
-		case e.Done:
-			failed = nil
-		case e.Error != "":
-			failed = &ReplyFailedError{Kind: e.Error}
-		default:
-			text.WriteString(e.Text)
-		}
+	reply := s.readReply(s.model.Reply(ctx, ModelRequest{Model: model, Prompt: p}), nil, func(string) {})
+	if busy := (*ReplyFailedError)(nil); errors.As(reply.failed, &busy) && busy.Kind == ModelBusy {
+		return "", fmt.Errorf("%w: %w", ErrModelBusy, reply.failed)
 	}
-	if busy := (*ReplyFailedError)(nil); errors.As(failed, &busy) && busy.Kind == "busy" {
-		return "", fmt.Errorf("%w: %w", ErrModelBusy, failed)
-	}
-	return text.String(), failed
+	return reply.text, reply.failed
 }
 
 // summaryPrompt asks for the summary: the conversation as the user heard it,

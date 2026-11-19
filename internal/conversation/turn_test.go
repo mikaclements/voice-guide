@@ -716,6 +716,125 @@ func TestAReplyTheModelFinishedAsTheUserCutInIsNotUnfinished(t *testing.T) {
 	}
 }
 
+// endsAsInterrupted sends one piece, then, once the interrupt has closed, lets
+// go of the reply with no final event, as a model stopped just as the user cut
+// in does.
+type endsAsInterrupted struct {
+	interrupt <-chan struct{}
+	ended     chan struct{}
+}
+
+func (m *endsAsInterrupted) Reply(ctx context.Context, _ conversation.ModelRequest) <-chan conversation.ModelEvent {
+	events := make(chan conversation.ModelEvent, 1)
+	interrupt, ended := m.interrupt, m.ended
+	go func() {
+		defer close(ended)
+		defer close(events)
+		events <- conversation.ModelEvent{Text: "It is."}
+		select {
+		case <-interrupt:
+		case <-ctx.Done():
+		}
+	}()
+	return events
+}
+
+func TestAReplyTheModelLetGoOfAsTheUserCutInIsUnfinishedNotLost(t *testing.T) {
+	h := newServiceOverFakes(t)
+	model := &endsAsInterrupted{}
+	svc := h.instance(model)
+	s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+	// Both the interrupt and the reply's end are ready when the turn next
+	// looks, and it may see either first: a hundred tries make a miss all but
+	// certain.
+	for range 100 {
+		interrupt := make(chan struct{})
+		model.interrupt, model.ended = interrupt, make(chan struct{})
+		r := turnIn(s.ID, "Is the lamp lit?")
+		r.Interrupt = interrupt
+		turn, err := svc.TakeTurn(context.Background(), caller, r, func(string) {
+			close(interrupt)
+			<-model.ended
+		})
+		if err != nil || !turn.Unfinished || turn.Status != conversation.TurnAnswered {
+			t.Fatalf("TakeTurn = %+v, %v; want it answered and unfinished, not lost", turn, err)
+		}
+	}
+}
+
+// writesOn sends a piece, then writes on until its reply is stopped, and
+// sends one more piece as it stops, as a model a little slow to stop does. It
+// lets go of the reply only once that piece is taken.
+type writesOn struct {
+	ctx   context.Context // the reply's, to see whether it was stopped
+	letGo chan struct{}   // closed as the model lets go of the reply
+}
+
+func (m *writesOn) Reply(ctx context.Context, _ conversation.ModelRequest) <-chan conversation.ModelEvent {
+	m.ctx, m.letGo = ctx, make(chan struct{})
+	events, letGo := make(chan conversation.ModelEvent), m.letGo
+	go func() {
+		defer close(events)
+		defer close(letGo)
+		select {
+		case events <- conversation.ModelEvent{Text: "It is."}:
+		case <-ctx.Done():
+			return
+		}
+		<-ctx.Done()
+		events <- conversation.ModelEvent{Text: " Lit."}
+	}()
+	return events
+}
+
+// stopSeenAtSave is the fake store of turns, noting whether the model's reply
+// had been stopped by the time how the turn ended was saved.
+type stopSeenAtSave struct {
+	*sessionsfake.Turns
+	model   *writesOn
+	stopped *bool
+}
+
+func (s stopSeenAtSave) Finish(ctx context.Context, t conversation.Turn) error {
+	*s.stopped = s.model.ctx.Err() != nil
+	return s.Turns.Finish(ctx, t)
+}
+
+// A model stopped only after the save would write on meanwhile, for nobody.
+func TestACutInStopsTheModelBeforeTheTurnIsSaved(t *testing.T) {
+	h := newServiceOverFakes(t)
+	model := &writesOn{}
+	var stopped bool
+	svc := conversation.NewService(agents.NewCatalog(h.agents), h.sessions, stopSeenAtSave{h.turns, model, &stopped}, model, usercontext.NewService(h.items), h.settings)
+	s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+	r, send, _ := interruptAfterFirstPiece(turnIn(s.ID, "Is the lamp lit?"))
+
+	if turn, err := svc.TakeTurn(context.Background(), caller, r, send); err != nil || !turn.Unfinished || !stopped {
+		t.Errorf("TakeTurn = %+v, %v; stopped before the save: %v; want the turn unfinished and the model stopped first", turn, err, stopped)
+	}
+}
+
+// The turn started the model's reply, so it waits for the reply to end
+// rather than leave it running, and sends on nothing the model sent after
+// the user cut in.
+func TestATurnReturnsOnlyOnceTheModelLetsGoOfItsReply(t *testing.T) {
+	h := newServiceOverFakes(t)
+	model := &writesOn{}
+	svc := h.instance(model)
+	s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+	r, send, sent := interruptAfterFirstPiece(turnIn(s.ID, "Is the lamp lit?"))
+
+	_, err := svc.TakeTurn(context.Background(), caller, r, send)
+	select {
+	case <-model.letGo:
+	default:
+		t.Error("TakeTurn returned while the model still held its reply")
+	}
+	if err != nil || !slices.Equal(*sent, []string{"It is."}) {
+		t.Errorf("TakeTurn = %v; sent %q; want only the piece before the interrupt", err, *sent)
+	}
+}
+
 // failingFinish is the fake store of turns, failing to save how a turn ended.
 type failingFinish struct{ *sessionsfake.Turns }
 

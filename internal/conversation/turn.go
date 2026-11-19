@@ -220,71 +220,19 @@ func (s *Service) TakeTurn(ctx context.Context, c access.Caller, r TurnRequest, 
 		return Turn{}, fmt.Errorf("start the turn: %w", err)
 	}
 
-	var reply strings.Builder
-	var firstText time.Time
-	var report *ModelReport
-	failed := error(&ReplyFailedError{Kind: "unavailable"}) // until a final event says otherwise
-	ended := false                                          // the model sent its final event
-	final := func(e ModelEvent) {                           // the model's last word: finished, or failed
-		switch {
-		case e.Done:
-			failed, report, ended = nil, e.Report, true
-		case e.Error != "":
-			failed, ended = &ReplyFailedError{Kind: e.Error}, true
-		}
-	}
-	for {
-		var e ModelEvent
-		ok, got := true, false
-		select {
-		case e, ok = <-events:
-			got = true
-		case <-r.Interrupt:
-		}
-		// The interrupt is checked again before any text goes out: with both
-		// ready, select picks either. A final event still counts, so a reply
-		// that failed as the user cut in stays failed.
-		interrupted := closed(r.Interrupt)
-		switch {
-		case !got || !ok:
-		case e.Done || e.Error != "":
-			final(e)
-		case !interrupted:
-			if firstText.IsZero() {
-				firstText = s.now()
-			}
-			reply.WriteString(e.Text)
-			send(e.Text)
-		}
-		if interrupted {
-			if !got { // the interrupt won the select: a final event already waiting still counts
-				select {
-				case e, ok := <-events:
-					if ok {
-						final(e)
-					}
-				default:
-				}
-			}
-			stop() // now, not after the save: the model would go on writing meanwhile
-			if !ended {
-				failed, turn.Unfinished = nil, true // the reply ends where the user cut in, not by failing
-			}
-			break
-		}
-		if !ok {
-			break
-		}
+	reply := s.readReply(events, r.Interrupt, send)
+	if reply.interrupted {
+		stop() // now, not after the save: the model would go on writing meanwhile
 	}
 	replyStage.Took = s.now().Sub(replyStage.Started)
-	turn.Reply, turn.Status = reply.String(), TurnAnswered
-	if failed != nil {
+	turn.Reply, turn.Status, turn.Unfinished = reply.text, TurnAnswered, reply.unfinished
+	if reply.failed != nil {
 		turn.Status = TurnLost
 	}
 	if r.Hold {
-		turn.Stages = stagesOf(promptStage, replyStage, Stage{}, firstText, report, model)
+		turn.Stages = stagesOf(promptStage, replyStage, Stage{}, reply.firstText, reply.report, model)
 		turn.settleBy, _ = ctx.Deadline()
-		return turn, failed
+		return turn, reply.failed
 	}
 	// Saved even once the caller has gone, or the turn would hold up its
 	// session until the deadline, its words unsaved.
@@ -292,11 +240,11 @@ func (s *Service) TakeTurn(ctx context.Context, c access.Caller, r TurnRequest, 
 	defer cancelSave()
 	saveStage := Stage{Started: s.now()}
 	if err := s.turns.Finish(saveCtx, turn); err != nil {
-		return Turn{}, saveFailed(turn, failed, err)
+		return Turn{}, saveFailed(turn, reply.failed, err)
 	}
 	saveStage.Took = s.now().Sub(saveStage.Started)
-	turn.Stages = stagesOf(promptStage, replyStage, saveStage, firstText, report, model)
-	return turn, failed
+	turn.Stages = stagesOf(promptStage, replyStage, saveStage, reply.firstText, reply.report, model)
+	return turn, reply.failed
 }
 
 // endedFor says why a turn with requestID is refused in the ended session.
