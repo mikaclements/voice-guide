@@ -85,7 +85,7 @@ func (s *Service) serve(c access.Caller, session uuid.UUID, voice voiceSettings,
 				continue
 			}
 			if err == nil && m.Type == "warm" {
-				r.getReady()
+				r.answerWarm()
 				continue
 			}
 			if err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {

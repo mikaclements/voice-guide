@@ -30,9 +30,9 @@ type replies struct {
 	active  chan struct{} // the user began speaking or changed the screen, for marking the session active
 	aired   aired
 	screen  screenWaiting // what the screen shows, for the next turn taken
-	// readying is set once the page asked for the session to be readied on
-	// this connection; read and set only on the data channel's goroutine.
-	readying bool
+	// toldReady is set once the page's warm is answered on this connection;
+	// read and set only on the data channel's goroutine.
+	toldReady bool
 
 	mu   sync.Mutex
 	last *turnRun // the turn the next one interrupts, or waits for
