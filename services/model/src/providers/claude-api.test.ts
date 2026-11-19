@@ -79,6 +79,13 @@ const said = (role: string, ...words: string[]) => ({
   role,
   content: words.map((text) => ({ type: "text", text })),
 });
+// The same message with the cache point on its last block.
+const cachedAt = (message: ReturnType<typeof said>) => ({
+  ...message,
+  content: message.content.map((block, i, all) =>
+    i === all.length - 1 ? { ...block, cache_control: cached } : block,
+  ),
+});
 
 test("sends the layers as cached system blocks and the conversation with the newest words last", async () => {
   const { stream, calls } = fakeApi({ events: [] });
@@ -88,17 +95,18 @@ test("sends the layers as cached system blocks and the conversation with the new
   assert.equal(params?.model, "claude-sonnet-5-5");
   assert.equal(params?.max_tokens, 512);
   // The agent's layer is shared by every session of its version, and the last layer closes what
-  // this session keeps the same; the conversation so far is cached from the newest words back.
+  // this session keeps the same; the conversation so far is cached at its last saved message, and
+  // the new words, with any screen input in them, come after it.
   assert.deepEqual(params?.system, [
     { type: "text", text: "You are an interviewer.", cache_control: cached },
     { type: "text", text: "<resume>Built a queue.</resume>", cache_control: cached },
   ]);
-  assert.deepEqual(params?.cache_control, cached);
+  assert.equal("cache_control" in (params ?? {}), false);
   assert.deepEqual(params?.messages, [
     said("user", "(The user has just joined.)"),
     said("assistant", "Tell me about the queue."),
     said("user", "It was fast."),
-    said("assistant", "How fast?"),
+    cachedAt(said("assistant", "How fast?")),
     said("user", "Mostly by batching."),
   ]);
   // No thinking before the first word, and no sampling settings, which the API refuses.
@@ -136,8 +144,34 @@ test("a conversation the agent starts opens with a fixed line, and a side with t
   assert.deepEqual(calls[0]?.params.messages, [
     said("user", "(The conversation starts.)"),
     said("assistant", "Hello!"),
-    said("user", "Hi.", "Are you there?"),
+    {
+      role: "user",
+      content: [
+        { type: "text", text: "Hi.", cache_control: cached },
+        { type: "text", text: "Are you there?" },
+      ],
+    },
   ]);
+});
+
+test("a board change in the new words leaves the cache point on the last saved message", async () => {
+  const { stream, calls } = fakeApi({ events: [] }, { events: [] });
+  const p = provider(stream);
+  const board = (shows: string) => `<board>\n${shows}\n</board>\n\nLike this?`;
+  await collect(p.reply({ ...request, newWords: board("Two boxes.") }, never));
+  await collect(p.reply({ ...request, newWords: board("Three boxes.") }, never));
+  // The two requests differ only after the cache point, so the second reads the first's cache.
+  const [first, second] = calls.map((c) => c.params.messages);
+  assert.deepEqual(first?.slice(0, -1), second?.slice(0, -1));
+  assert.deepEqual(second?.at(-2), cachedAt(said("assistant", "How fast?")));
+  assert.deepEqual(second?.at(-1), said("user", board("Three boxes.")));
+});
+
+test("the opening caches only its layers, since nothing is saved before it", async () => {
+  const { stream, calls } = fakeApi({ events: [] });
+  await collect(provider(stream).reply({ ...request, conversation: [] }, never));
+  assert.deepEqual(calls[0]?.params.messages, [said("user", "Mostly by batching.")]);
+  assert.equal("cache_control" in (calls[0]?.params ?? {}), false);
 });
 
 test("each request is sent as it came, with nothing kept from the one before", async () => {
@@ -154,6 +188,11 @@ test("an ask outside any session caches nothing past its layers", async () => {
   const { stream, calls } = fakeApi({ events: [] });
   await collect(provider(stream).reply({ ...request, sessionId: undefined }, never));
   assert.equal("cache_control" in (calls[0]?.params ?? {}), false);
+  const blocks = calls[0]?.params.messages.flatMap((m) => m.content as Anthropic.TextBlockParam[]);
+  assert.equal(
+    blocks?.some((b) => "cache_control" in b),
+    false,
+  );
 });
 
 test("yields text deltas in order, then the usage and the model that answered", async () => {

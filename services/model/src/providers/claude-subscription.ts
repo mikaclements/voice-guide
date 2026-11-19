@@ -261,9 +261,11 @@ class SessionProcess {
             throw new ProviderError(reported() ?? "unknown", `agent SDK: ${msg.subtype}`);
           const usage = usageOf(msg.modelUsage, this.totals);
           this.totals = msg.modelUsage;
+          // The words as voice will save them, so the next turn's conversation matches: a screen
+          // input block becomes a marker there. The process still holds the block it was shown.
           this.seen = [
             ...request.conversation,
-            { role: "user", text: request.newWords },
+            { role: "user", text: request.newWordsSaved ?? request.newWords },
             { role: "agent", text: reply },
           ];
           yield { type: "usage", ...usage };

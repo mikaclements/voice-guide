@@ -248,6 +248,35 @@ test("the next turn of a session reuses its process, sending only the new words"
   assert.deepEqual(calls[0]?.prompts.at(-1), "Ten times.");
 });
 
+test("a turn with a board continues its process when the next conversation holds the board's marker", async () => {
+  const { query, calls } = fakeQuery([delta("Two boxes."), success], [delta("Why?"), successAgain]);
+  const provider = newProvider(query);
+  const withBoard = {
+    ...request,
+    newWords: "<board>\nTwo boxes.\n</board>\n\nLike this?",
+    newWordsSaved: "(The user's board changed here.)\n\nLike this?",
+  };
+  await collect(provider.reply(withBoard, never));
+  const second = {
+    ...nextTurn({ ...withBoard, newWords: withBoard.newWordsSaved }, "Two boxes.", "Yes."),
+    newWordsSaved: undefined,
+  };
+  await collect(provider.reply(second, never));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.prompts[1], "Yes.");
+  // A fresh process reads the markers in the transcript and the board whole in the new words.
+  assert.match(
+    calls[0]?.prompts[0] ?? "",
+    /user: It was fast\.\n<\/transcript>[\s\S]*<board>\nTwo boxes\./,
+  );
+
+  const fresh = fakeQuery([success]);
+  await collect(newProvider(fresh.query).reply(second, never));
+  const transcript = fresh.calls[0]?.prompts[0] ?? "";
+  assert.match(transcript, /user: \(The user's board changed here\.\)\n\nLike this\?/);
+  assert.doesNotMatch(transcript, /Two boxes\.\n<\/board>/);
+});
+
 test("a conversation the process hasn't seen exactly gets a fresh process", async () => {
   const changes: [string, (r: ReplyRequest) => ReplyRequest][] = [
     // The user cut the reply short, so voice saved it as far as heard.
