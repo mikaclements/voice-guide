@@ -67,8 +67,10 @@ func withNewer(older, newer []conversation.ScreenInputBlock) []conversation.Scre
 }
 
 // screenChanged keeps the blocks of a screen message for the next turn taken on the connection,
-// or refuses them, so the page can tell the product; nothing of a message refused waits.
+// or refuses them, so the page can tell the product; nothing of a message refused waits. Either
+// way the user is at work on the screen, so the session is marked active as for their speech.
 func (r *replies) screenChanged(m turnIn) {
+	r.userActive()
 	blocks := make([]conversation.ScreenInputBlock, 0, len(m.ScreenInput))
 	for _, b := range m.ScreenInput {
 		blocks = append(blocks, conversation.ScreenInputBlock(b))

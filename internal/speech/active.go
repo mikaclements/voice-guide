@@ -22,7 +22,7 @@ const mostOftenEvery = 30 * time.Second
 func markEvery(idle time.Duration) time.Duration { return min(idle/10, mostOftenEvery) }
 
 // marker says when the session is next to be marked active: at the first
-// speech, then at the first speech each interval after the last mark.
+// signal, then at the first signal each interval after the last mark.
 type marker struct {
 	every time.Duration
 	last  time.Time
@@ -41,9 +41,10 @@ func (m *marker) due(now time.Time) bool {
 const activeWrite = 5 * time.Second
 
 // keepActive marks the session active each time heard says the user began
-// speaking, at most once a markEvery, until ctx ends: a user answering at
-// length after a long think isn't idle. It runs off the microphone's
-// goroutine, which only signals heard, so a slow write never holds the audio.
+// speaking or the page sent a screen change, at most once a markEvery, until
+// ctx ends: a user answering at length after a long think, or drawing in
+// silence, isn't idle. It runs off the goroutines that signal heard, the
+// microphone's and the data channel's, so a slow write never holds either.
 func (s *Service) keepActive(ctx context.Context, c access.Caller, session uuid.UUID, heard <-chan struct{}) {
 	m := marker{every: markEvery(s.conversation.SessionIdle())}
 	for {
@@ -65,9 +66,9 @@ func (s *Service) keepActive(ctx context.Context, c access.Caller, session uuid.
 	}
 }
 
-// heardSpeech tells the connection's marker the user began speaking; with a
-// signal already waiting, there is nothing to add.
-func (r *replies) heardSpeech() {
+// userActive tells the connection's marker the user began speaking or
+// changed the screen; with a signal already waiting, there is nothing to add.
+func (r *replies) userActive() {
 	select {
 	case r.active <- struct{}{}:
 	default:
