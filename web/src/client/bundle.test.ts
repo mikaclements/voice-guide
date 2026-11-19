@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { build } from "vite";
-import client from "../vite.config.client.ts";
+import client from "../../vite.config.client.ts";
 
 // The script a product's page loads, as the client build makes it, kept in memory.
 async function bundle(): Promise<string> {
