@@ -41,18 +41,20 @@ type settings struct {
 
 // summarySettings is the summary section: a plain string is the instruction
 // alone, as agent files written before the mapping say it; a mapping adds the
-// model that writes the summary and a JSON Schema, written as YAML, for a
-// structured part of it.
+// model that writes the summary, a JSON Schema, written as YAML, for a
+// structured part of it, and the documents the summary reads.
 type summarySettings struct {
 	Instruction string
 	Model       string
 	Schema      map[string]any
+	Documents   []string
 }
 
 type summaryMapping struct {
 	Instruction string         `yaml:"instruction"`
 	Model       string         `yaml:"model"`
 	Schema      map[string]any `yaml:"schema"`
+	Documents   []string       `yaml:"documents"`
 }
 
 // UnmarshalYAML reads the section as a string, else as a mapping. It takes
@@ -180,13 +182,14 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 		SessionContext: s.SessionContext,
 		Persona:        string(persona),
 		// A block's last line break is the YAML's, not the instruction's.
-		Summary:       strings.TrimSpace(s.Summary.Instruction),
-		SummaryModel:  s.Summary.Model,
-		SummarySchema: schema,
-		Opens:         s.Opens == "agent",
-		Model:         s.Model,
-		Voice:         s.Voice,
-		Speed:         speed,
+		Summary:          strings.TrimSpace(s.Summary.Instruction),
+		SummaryModel:     s.Summary.Model,
+		SummarySchema:    schema,
+		SummaryDocuments: s.Summary.Documents,
+		Opens:            s.Opens == "agent",
+		Model:            s.Model,
+		Voice:            s.Voice,
+		Speed:            speed,
 	}, nil
 }
 

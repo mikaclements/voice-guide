@@ -238,6 +238,18 @@ func TestLoadReadsASummaryMappingWithTheInstructionAloneAsAPlainString(t *testin
 	}
 }
 
+func TestLoadReadsTheDocumentsTheSummaryReads(t *testing.T) {
+	got, err := agentfile.Load(context.Background(), fstest.MapFS{
+		"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+"session_context: [current_page]\nsummary:\n  instruction: Note the ships.\n  documents: [ship_log]\n", "p"),
+	})
+	if err != nil || len(got) != 1 || !slices.Equal(got[0].SummaryDocuments, []string{"ship_log"}) || !slices.Equal(got[0].SessionContext, []string{"current_page"}) {
+		t.Fatalf("Load = %+v, %v; want the summary's documents apart from the session context", got, err)
+	}
+	if err := agents.Check(got); err != nil {
+		t.Errorf("Check = %v, want the loaded agent accepted", err)
+	}
+}
+
 func TestLoadRefusesASummaryMappingOutOfForm(t *testing.T) {
 	big := "summary:\n  instruction: Note it.\n  schema:\n    type: object\n    description: " + strings.Repeat("a", agents.MaxSummarySchemaChars) + "\n"
 	for name, summary := range map[string]string{
@@ -251,6 +263,7 @@ func TestLoadRefusesASummaryMappingOutOfForm(t *testing.T) {
 		"a schema JSON can't hold":       "summary:\n  instruction: Note it.\n  schema:\n    type: object\n    maximum: .inf\n",
 		"a schema over the cap":          big,
 		"a list":                         "summary: [Note it.]\n",
+		"documents as one string":        "summary:\n  instruction: Note it.\n  documents: ship_log\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := agentfile.Load(context.Background(), fstest.MapFS{

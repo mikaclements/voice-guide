@@ -31,28 +31,29 @@ func (q *Queries) AddAgent(ctx context.Context, arg AddAgentParams) error {
 
 const addVersion = `-- name: AddVersion :exec
 INSERT INTO agent.agent_versions
-    (workspace_id, agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, opens, model, voice, speed, content_hash)
+    (workspace_id, agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed, content_hash)
 VALUES
-    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 `
 
 type AddVersionParams struct {
-	WorkspaceID    uuid.UUID
-	AgentID        uuid.UUID
-	Version        int32
-	Name           string
-	Description    string
-	Reads          []string
-	SessionContext []string
-	Persona        string
-	Summary        string
-	SummaryModel   string
-	SummarySchema  []byte
-	Opens          bool
-	Model          string
-	Voice          string
-	Speed          float64
-	ContentHash    string
+	WorkspaceID      uuid.UUID
+	AgentID          uuid.UUID
+	Version          int32
+	Name             string
+	Description      string
+	Reads            []string
+	SessionContext   []string
+	Persona          string
+	Summary          string
+	SummaryModel     string
+	SummarySchema    []byte
+	SummaryDocuments []string
+	Opens            bool
+	Model            string
+	Voice            string
+	Speed            float64
+	ContentHash      string
 }
 
 func (q *Queries) AddVersion(ctx context.Context, arg AddVersionParams) error {
@@ -68,6 +69,7 @@ func (q *Queries) AddVersion(ctx context.Context, arg AddVersionParams) error {
 		arg.Summary,
 		arg.SummaryModel,
 		arg.SummarySchema,
+		arg.SummaryDocuments,
 		arg.Opens,
 		arg.Model,
 		arg.Voice,
@@ -121,9 +123,9 @@ func (q *Queries) NewestVersionOf(ctx context.Context, arg NewestVersionOfParams
 }
 
 const newestVersions = `-- name: NewestVersions :many
-SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.opens, newest.model, newest.voice, newest.speed
+SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.summary_documents, newest.opens, newest.model, newest.voice, newest.speed
 FROM (
-    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, opens, model, voice, speed
+    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
     FROM agent.agent_versions
     WHERE workspace_id = $1
     ORDER BY agent_id, version DESC
@@ -132,20 +134,21 @@ ORDER BY newest.name, newest.agent_id
 `
 
 type NewestVersionsRow struct {
-	AgentID        uuid.UUID
-	Version        int32
-	Name           string
-	Description    string
-	Reads          []string
-	SessionContext []string
-	Persona        string
-	Summary        string
-	SummaryModel   string
-	SummarySchema  []byte
-	Opens          bool
-	Model          string
-	Voice          string
-	Speed          float64
+	AgentID          uuid.UUID
+	Version          int32
+	Name             string
+	Description      string
+	Reads            []string
+	SessionContext   []string
+	Persona          string
+	Summary          string
+	SummaryModel     string
+	SummarySchema    []byte
+	SummaryDocuments []string
+	Opens            bool
+	Model            string
+	Voice            string
+	Speed            float64
 }
 
 func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]NewestVersionsRow, error) {
@@ -168,6 +171,7 @@ func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]
 			&i.Summary,
 			&i.SummaryModel,
 			&i.SummarySchema,
+			&i.SummaryDocuments,
 			&i.Opens,
 			&i.Model,
 			&i.Voice,
@@ -184,7 +188,7 @@ func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]
 }
 
 const version = `-- name: Version :one
-SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, opens, model, voice, speed
+SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
 FROM agent.agent_versions
 WHERE workspace_id = $1 AND agent_id = $2 AND version = $3
 `
@@ -196,20 +200,21 @@ type VersionParams struct {
 }
 
 type VersionRow struct {
-	AgentID        uuid.UUID
-	Version        int32
-	Name           string
-	Description    string
-	Reads          []string
-	SessionContext []string
-	Persona        string
-	Summary        string
-	SummaryModel   string
-	SummarySchema  []byte
-	Opens          bool
-	Model          string
-	Voice          string
-	Speed          float64
+	AgentID          uuid.UUID
+	Version          int32
+	Name             string
+	Description      string
+	Reads            []string
+	SessionContext   []string
+	Persona          string
+	Summary          string
+	SummaryModel     string
+	SummarySchema    []byte
+	SummaryDocuments []string
+	Opens            bool
+	Model            string
+	Voice            string
+	Speed            float64
 }
 
 func (q *Queries) Version(ctx context.Context, arg VersionParams) (VersionRow, error) {
@@ -226,6 +231,7 @@ func (q *Queries) Version(ctx context.Context, arg VersionParams) (VersionRow, e
 		&i.Summary,
 		&i.SummaryModel,
 		&i.SummarySchema,
+		&i.SummaryDocuments,
 		&i.Opens,
 		&i.Model,
 		&i.Voice,

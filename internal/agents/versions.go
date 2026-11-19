@@ -92,7 +92,9 @@ func contentHash(a Agent) string {
 		// author's own JSON, keys and all.
 		SummaryModel  string          `json:"summary_model,omitempty"`
 		SummarySchema json.RawMessage `json:"summary_schema,omitempty"`
-	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed, a.SummaryModel, a.SummarySchema})
+		// Left out when empty, for the same reason.
+		SummaryDocuments []string `json:"summary_documents,omitempty"`
+	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed, a.SummaryModel, a.SummarySchema, a.SummaryDocuments})
 	if err != nil {
 		panic(err) // strings, slices of strings, a bool, a schema Check keeps valid JSON and a speed it keeps finite always encode
 	}

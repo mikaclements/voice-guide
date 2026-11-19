@@ -43,7 +43,7 @@ func (s *Versions) Newest(ctx context.Context, workspace uuid.UUID) ([]agents.Ve
 			return nil, fmt.Errorf("read the summary schema of agent %s version %d: %w", r.AgentID, r.Version, err)
 		}
 		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
-		out[i].SummaryModel, out[i].SummarySchema = r.SummaryModel, schema
+		out[i].SummaryModel, out[i].SummarySchema, out[i].SummaryDocuments = r.SummaryModel, schema, r.SummaryDocuments
 	}
 	return out, nil
 }
@@ -65,7 +65,7 @@ func (s *Versions) Version(ctx context.Context, workspace, agent uuid.UUID, numb
 		return agents.Version{}, fmt.Errorf("read the agent version's summary schema: %w", err)
 	}
 	v := version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
-	v.SummaryModel, v.SummarySchema = r.SummaryModel, schema
+	v.SummaryModel, v.SummarySchema, v.SummaryDocuments = r.SummaryModel, schema, r.SummaryDocuments
 	return v, nil
 }
 
@@ -111,7 +111,7 @@ func (s *Versions) Save(ctx context.Context, workspace uuid.UUID, a agents.Agent
 	next := newest.Version + 1
 	if err := q.AddVersion(ctx, db.AddVersionParams{
 		WorkspaceID: workspace, AgentID: a.ID, Version: next,
-		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, SummaryModel: a.SummaryModel, SummarySchema: schema, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
+		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, SummaryModel: a.SummaryModel, SummarySchema: schema, SummaryDocuments: append([]string{}, a.SummaryDocuments...), Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
 	}); err != nil {
 		return 0, false, fmt.Errorf("save the agent version: %w", err)
 	}

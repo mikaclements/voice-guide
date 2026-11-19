@@ -78,6 +78,22 @@ func TestTheSessionContextReadsBackInOrder(t *testing.T) {
 	}
 }
 
+func TestTheSummaryDocumentsReadBackInOrder(t *testing.T) {
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	keeper.Summary, keeper.SummaryDocuments = "Note the ships you guided.", []string{"ship_log", "tide_notes"}
+	save(t, s, keeper, "first")
+
+	got, err := s.Version(context.Background(), workspace, keeperID, 1)
+	if err != nil || !slices.Equal(got.SummaryDocuments, keeper.SummaryDocuments) {
+		t.Errorf("Version = %+v, %v; want the summary documents %v", got, err, keeper.SummaryDocuments)
+	}
+	newest, err := s.Newest(context.Background(), workspace)
+	if err != nil || len(newest) != 1 || !slices.Equal(newest[0].SummaryDocuments, keeper.SummaryDocuments) {
+		t.Errorf("Newest = %+v, %v; want the summary documents there too", newest, err)
+	}
+}
+
 func TestTheSummaryInstructionReadsBack(t *testing.T) {
 	s := storeWithWorkspaces(t)
 	keeper := agentNamed(keeperID, "Lighthouse keeper")
