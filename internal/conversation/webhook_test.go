@@ -22,6 +22,7 @@ import (
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	sessionsfake "github.com/mikaclements/voice-guide/internal/conversation/store/fake"
 	webhookfake "github.com/mikaclements/voice-guide/internal/conversation/webhook/fake"
+	"github.com/mikaclements/voice-guide/internal/redacttest"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
@@ -386,6 +387,7 @@ func TestAWebhookURLMustBeHTTPSUnlessItIsOnThisMachine(t *testing.T) {
 
 func TestAWebhookSecretShowsItselfRedacted(t *testing.T) {
 	secret := conversation.NewWebhookSecret("whsec_bGlnaHRob3VzZS1rZWVwZXItc2VjcmV0LTMyLWJ5dGU=")
+	redacttest.Check(t, secret, secret.Reveal(), "conversation.WebhookSecret(redacted)")
 	holder := struct{ Secret conversation.WebhookSecret }{secret}
 	encoded, _ := json.Marshal(holder)
 	var logged bytes.Buffer

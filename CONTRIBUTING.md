@@ -59,9 +59,9 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `internal/agents/` | The published versions of each agent file |
 | `internal/api/` | The one router: every route behind its credential check (a product key or a ticket); also serves the drop-in client |
 | `internal/ticket/`, `internal/productkey/`, `internal/access/` | Tickets, product keys, and the caller a credential names |
-| `internal/secret/` | Holds a secret (a ticket, a product key, a webhook's secret) so it prints, logs and encodes redacted |
 | `internal/jobs/` | Background jobs (summaries, webhook deliveries), claimed from PostgreSQL |
 | `internal/pgtest/` | Gives each database test its own freshly migrated database |
+| `internal/redacttest/` | Checks, in a test, that a value holding a secret never shows it |
 | `agents/` | The agents, one Markdown file each: a settings block, then the persona |
 | `migrations/` | Database migrations (goose), numbered across modules |
 | `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |
@@ -115,12 +115,12 @@ Every piece of work is one of four kinds:
 ## 5. Modules and hexagonal layout
 
 - Four modules with walls between them: conversation, speech, user context and agents. Speech calls conversation, never the reverse.
-- Inside each, the core holds the rules and depends on nothing outside it but the modules it may call, who a request comes from and the type a secret is held in; HTTP, WebRTC, speech, the model and the database plug in as adapters in subfolders, and a new one is held to its core's limits until it gets its own.
+- Inside each, the core holds the rules and depends on nothing outside it but the modules it may call and who a request comes from; HTTP, WebRTC, speech, the model and the database plug in as adapters in subfolders, and a new one is held to its core's limits until it gets its own.
 - Ports are for I/O only (storage, the network, vendors); the rules are called directly, never through an interface. A vendor or another service gets a port only where a second real implementation is planned; the one exception so far is the poster that sends deliveries to a product's server, kept so the network stays out of conversation's tests.
 - Every port has a fake from its first day.
 - Only the programs in `cmd/` wire things together: `cmd/voice` the Go service, `cmd/publish`, `cmd/productkey`, `cmd/webhook` and `cmd/checkspeak` what each needs.
 - A vendor's package is used only by its adapter. A `cmd/` program that plays the browser for a check, `cmd/checkspeak`, may use WebRTC's (Pion) itself: it is the other side of the connection, and ships in no service.
-- The API's router, the ticket check, product keys and who a request comes from sit outside the modules and depend on none of them, so any module's HTTP part plugs into the router. A secret (a ticket, a product key, a webhook's secret) is held in one type that prints, logs and encodes redacted.
+- The API's router, the ticket check, product keys and who a request comes from sit outside the modules and depend on none of them, so any module's HTTP part plugs into the router.
 
 ## 6. API
 

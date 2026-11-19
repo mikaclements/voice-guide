@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/mikaclements/voice-guide/internal/access"
+	"github.com/mikaclements/voice-guide/internal/redacttest"
 	"github.com/mikaclements/voice-guide/internal/ticket"
 )
 
@@ -208,6 +209,7 @@ func TestATicketNeverPrintsItself(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MintTicket: %v", err)
 	}
+	redacttest.Check(t, minted, minted.Reveal(), "ticket.Ticket(redacted)")
 	held := struct{ T ticket.Ticket }{minted}
 	var logged strings.Builder
 	slog.New(slog.NewJSONHandler(&logged, nil)).Info("start", "ticket", minted, "held", held)

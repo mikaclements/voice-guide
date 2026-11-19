@@ -16,10 +16,10 @@ if [ -n "$unused" ]; then
   status=1
 fi
 
-# With only the programs as roots: a function here outside the fakes and pgtest is production
+# With only the programs as roots: a function here outside the fakes and the test helpers (pgtest, redacttest) is production
 # code kept alive by its tests alone.
 from_programs=$(go tool deadcode ./...)
-test_only=$(grep -Ev '^internal/(.+/)?fake/|^internal/pgtest/' <<<"$from_programs" || true)
+test_only=$(grep -Ev '^internal/(.+/)?fake/|^internal/pgtest/|^internal/redacttest/' <<<"$from_programs" || true)
 if [ -n "$test_only" ]; then
   echo "deadcode: production functions only tests call (delete them, or move them into a fake):" >&2
   echo "$test_only" >&2
