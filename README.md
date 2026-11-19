@@ -48,7 +48,7 @@ Conversation and speech together are voice: the part of voice-guide that gives a
 
 What you need installed:
 - Docker (Docker Desktop or OrbStack), running (`docker info`).
-- A Claude API key from the [Claude Console](https://platform.claude.com/), which pays for the replies. Without one you still get free stand-in replies.
+- A Claude API key from the [Claude Console](https://platform.claude.com/), which pays for the replies. Without one you can still run it free, with fake replies.
 
 1. Get the code:
 
@@ -66,7 +66,7 @@ What you need installed:
    scripts/up.sh
    ```
 
-   The first run asks for your Claude API key, which you paste unseen (Enter alone gives free stand-in replies instead), and saves it into `.env`. It then builds and downloads everything, which takes a while the first time. It's ready when it prints `ready: open http://127.0.0.1:5173`.
+   The first run asks for your Claude API key, which you paste unseen (Enter alone gives free fake replies instead), and saves it into `.env`. It then builds and downloads everything, which takes a while the first time. It's ready when it prints `ready: open http://127.0.0.1:5173`.
 
 3. Open http://127.0.0.1:5173 and talk to the mock interviewer, as [the next section](#sample-interviewer) describes.
 
@@ -221,7 +221,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 
 ### Run it
 
-The test embedding runs beside `scripts/run.sh`, not `scripts/up.sh`. So it needs what [Faster voice on an Apple silicon Mac](#faster) lists: Docker, Go, Node and OpenSSL. `scripts/webhook.sh` runs with Go, and `scripts/demo.sh` runs the job board's server with Node. You also add one line to `.env` by hand.
+The test embedding runs beside `scripts/run.sh`, not `scripts/up.sh`. So it needs what [Faster text-to-speech on an Apple silicon Mac](#faster) lists: Docker, Go, Node and OpenSSL. `scripts/webhook.sh` runs with Go, and `scripts/demo.sh` runs the job board's server with Node. You also add one line to `.env` by hand.
 
 1. Start voice-guide with `scripts/run.sh` and leave it running.
 2. In another terminal, set the [webhook](#webhook), the address where voice-guide tells the test embedding that a session has ended. It prints the webhook's signing secret, only once:
@@ -257,15 +257,15 @@ The test embedding exercises the contract between a product and voice-guide, end
 It doesn't test accounts, since every visitor is the same user; a real product names its logged-in user. Nor does it test a hosted deployment.
 
 <a id="faster"></a>
-## Faster voice on an Apple silicon Mac
+## Faster text-to-speech on an Apple silicon Mac
 
-`scripts/run.sh` runs the Go service, the model service and the web page on the Mac itself, with the database and speech-to-text in Docker. It's the path for developing voice-guide, and the way to the faster voice: Kokoro on the Mac's GPU through Apple's MLX. It keeps a database of its own, apart from `scripts/up.sh`'s, and uses the same ports, so stop `scripts/up.sh` first.
+`scripts/run.sh` runs the Go service, the model service and the web page on the Mac itself, with the database and speech-to-text in Docker. It's the path for developing voice-guide, and the way to faster text-to-speech: Kokoro on the Mac's GPU through Apple's MLX. It keeps a database of its own, apart from `scripts/up.sh`'s, and uses the same ports, so stop `scripts/up.sh` first.
 
 What you need installed, besides Docker:
 - [Go](https://go.dev/dl/), the version in `go.mod`, which builds the Go service (`go version`).
 - Node 26, the version in `.node-version`, for the model service and the web page (`node --version`).
 - OpenSSL, which makes the local signing keys (`openssl version`; macOS has it).
-- For the faster voice: an Apple silicon Mac (M1 or later) on macOS 14 or later, and [uv](https://docs.astral.sh/uv/) (`brew install uv`, or without Homebrew `curl -LsSf https://astral.sh/uv/install.sh | sh`).
+- For faster text-to-speech: an Apple silicon Mac (M1 or later) on macOS 14 or later, and [uv](https://docs.astral.sh/uv/) (`brew install uv`, or without Homebrew `curl -LsSf https://astral.sh/uv/install.sh | sh`).
 
 Start it with one of these:
 
@@ -275,7 +275,7 @@ Any Mac:
 scripts/run.sh
 ```
 
-Apple silicon Mac, faster voice:
+Apple silicon Mac, faster text-to-speech:
 
 ```sh
 KOKORO=mlx scripts/run.sh
@@ -287,17 +287,17 @@ The first run asks for the Claude API key as `scripts/up.sh` does, unless `.env`
 ## Choose your setup
 
 Two ways to start:
-- `scripts/up.sh` ([Quickstart](#quickstart)): everything in Docker. Replies from `claude-api` or `fake`; the voice from Kokoro in Docker.
-- `scripts/run.sh` ([Faster voice on an Apple silicon Mac](#faster)): every option below, `claude-subscription` and `mlx` included.
+- `scripts/up.sh` ([Quickstart](#quickstart)): everything in Docker. Replies from `claude-api` or `fake`; text-to-speech from Kokoro in Docker.
+- `scripts/run.sh` ([Faster text-to-speech on an Apple silicon Mac](#faster)): every option below, `claude-subscription` and `mlx` included.
 
-Two settings decide where the replies come from and where the voice is made. Times were measured on an Apple M3 Pro.
+Two settings decide where the replies come from and where text-to-speech runs. Times were measured on an Apple M3 Pro.
 
 Where replies come from, `MODEL_PROVIDER`:
 - `claude-api` (default): Claude through its API, billed to your `ANTHROPIC_API_KEY`, about a fifth of a cent a turn on Sonnet 5.5. The fastest: its first words come in about 0.7 s.
 - `claude-subscription`: Claude Code signed in on this Mac, so replies count against your Claude subscription and need no key. About 1.6 s, varying by the hour.
-- `fake`: no Claude; every reply, the greeting included, is the same stand-in line. Free, for trying everything else; Enter at the key prompt picks it.
+- `fake`: no Claude; every reply, the greeting included, is the same set line. Free, for trying everything else; Enter at the key prompt picks it.
 
-Where the voice is made, `KOKORO`:
+Where text-to-speech runs, `KOKORO`:
 - `mlx` (recommended on Apple silicon): Kokoro on this Mac's GPU through Apple's MLX. Needs uv; 0.9 GB the first time, in `~/Library/Caches/voice-guide/`, and about 0.7 GB of memory. First audio in about 0.5 s.
 - unset (any Mac): Kokoro in Docker, on the CPU. Needs nothing more; 4.5 GB the first time. First audio in about 1.2 s.
 
@@ -316,7 +316,7 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 |---|---|---|
 | `VOICE_MODEL` | `claude-sonnet-5-5` | The model that answers for agents whose file names none |
 | `MODEL_PROVIDER` | `claude-api` | Where replies come from: see [Choose your setup](#setup) |
-| `KOKORO` | unset | Where the voice is made: unset (Docker) or `mlx`; see [Choose your setup](#setup) |
+| `KOKORO` | unset | Where text-to-speech runs: unset (Docker) or `mlx`; see [Choose your setup](#setup) |
 | `VOICE_TTS_VOICE` | `af_heart` | Kokoro's voice |
 | `STT_MODEL` | `small` | Speech-to-text's model size: `tiny`, `small` or `medium` |
 | `VOICE_PAUSE` | 0.2 s | How long a pause in your speech before voice-guide checks whether you've finished |
