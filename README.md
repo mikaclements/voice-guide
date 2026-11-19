@@ -82,10 +82,8 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart LR
-    P[Product's server] -- product key: start, end --> G
-    B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
-    B <-- WebRTC audio --> G
-    P <-- signed webhook --- G
+    P[Product's server] <-- "product key: start, end<br/>signed webhook" --> G
+    B[Browser: drop-in client] <-- "ticket: turns<br/>WebRTC audio" --> G[Go service: conversation, speech,<br/>user context, agents]
     G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
     G <--> TTS["Text-to-speech<br/>Kokoro<br/>KOKORO: unset (Docker) or mlx"]
     G <--> M["Model service<br/>MODEL_PROVIDER: claude-api, claude-subscription or fake<br/>model: in the agent file, else VOICE_MODEL"]
