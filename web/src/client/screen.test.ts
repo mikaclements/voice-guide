@@ -38,11 +38,11 @@ test("after a reconnect, every change voice didn't say went with a turn is sent 
   const screen = new Screen();
   const first = channel(screen);
   screen.set([board("Cache"), notes("Read-heavy")]);
-  first.from({ type: "text", request_id: "r1", text: "So", screen_taken: 1 });
+  first.from({ type: "done", request_id: "r1", screen_taken: 1 });
   first.turns.closed();
   const second = channel(screen);
   assert.deepEqual(second.sent, [screenMessage(1, notes("Read-heavy"))]);
-  first.from({ type: "done", request_id: "r1", screen_taken: 2 }); // a connection let go late
+  first.from({ type: "done", request_id: "r2", screen_taken: 2 }); // a connection let go late
   second.turns.closed();
   assert.deepEqual(channel(screen).sent, [screenMessage(1, notes("Read-heavy"))]);
 });

@@ -100,7 +100,7 @@ export class ChannelTurns implements Turns {
       this.screenReplies?.refused(m.n, String(m.detail ?? ""));
       return;
     }
-    // The first message about a turn once voice took it says which screen messages went with it.
+    // How a turn ended, once voice saved it, says which screen messages went with it.
     if (typeof m.screen_taken === "number") this.screenReplies?.taken(m.screen_taken);
     if (m.type === "hearing") {
       const words = String(m.text ?? "");

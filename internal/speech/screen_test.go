@@ -74,8 +74,10 @@ func TestAScreenChangeGoesWithTheNextTypedTurnOnly(t *testing.T) {
 	showScreen(t, c, 1, blockJSON("board", "Cache -> Database"))
 	c.Say(turnMessage(first, "Is this right?"))
 	got := until(t, c, "spoken")
-	if taken, carrying := screenTaken(got, first.String()); got[0].Type != "text" || got[0].ScreenTaken != 1 || carrying != 1 {
-		t.Errorf("got %+v, want only the reply's first text saying screen message 1 went with the turn; %d said %d", got, carrying, taken)
+	for _, m := range got {
+		if (m.Type == "done") != (m.ScreenTaken == 1) {
+			t.Errorf("got %+v, want only done saying screen message 1 went with the turn, once it is saved", m)
+		}
 	}
 	c.Say(turnMessage(second, "And now?"))
 	if _, carrying := screenTaken(until(t, c, "spoken"), second.String()); carrying != 0 {
