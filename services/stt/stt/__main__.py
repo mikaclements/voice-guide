@@ -3,7 +3,7 @@ STT_HOST     address to listen on (127.0.0.1)
 STT_PORT     port (8092, beside the model service's 8091 on a developer's machine)
 STT_MAX_CONNECTIONS  connections held at once (64; see realtime.DEFAULT_MAX_CONNECTIONS)
 STT_MODEL    Moonshine's size: tiny, small or medium (small)
-STT_MODELS   folder holding Moonshine's sizes and Smart Turn, as stt.models writes it (models)
+STT_MODELS   folder holding Moonshine's sizes and Smart Turn, as stt.fetch_models writes it (models)
 """
 
 import json
@@ -16,7 +16,7 @@ from pathlib import Path
 from aiohttp import web
 
 from stt import realtime, turn
-from stt.models import SMART_TURN
+from stt.fetch_models import SMART_TURN
 from stt.moonshine import SIZES, MoonshineRecogniser
 
 

@@ -15,8 +15,8 @@ COPY .python-version pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev
 ARG STT_MODEL=small
 COPY models.sha256 ./
-COPY stt/models.py stt/
-RUN .venv/bin/python stt/models.py /models "$STT_MODEL"
+COPY stt/fetch_models.py stt/
+RUN .venv/bin/python stt/fetch_models.py /models "$STT_MODEL"
 COPY stt stt
 
 FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
