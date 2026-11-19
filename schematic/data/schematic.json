@@ -482,7 +482,7 @@
             {
               "nodes": ["browser", "voice"],
               "edges": ["browser-voice-webrtc"],
-              "caption": "The audio connection opens; if the agent speaks first, the page asks for its opening on the data channel, and you hear the greeting"
+              "caption": "The audio connection opens; the page holds your microphone, getting ready, until the agent's greeting sounds or voice says ready"
             }
           ]
         },
@@ -597,7 +597,7 @@
           "name": "Product's page",
           "tech": "the drop-in client · <voice-guide-session>",
           "summary": "A product's page holding <voice-guide-session>: joined with a session's ticket, it talks, types and ends.",
-          "description": "Where a product puts an agent in front of its users: a page on the product's own site, which loads the drop-in client from voice at /client/voice-guide.js and puts a <voice-guide-session> element on it. The element holds the session with the same code as the web page, without React (npm run build:client writes web/dist-client/). The page hands it the session ID and ticket its server's start answered with by join({ session, ticket }), never an attribute, which session-replay scripts copy; it never holds a product key or starts a session. It opens the session's audio connection at once, adds the microphone once allowed, asks for the agent's opening once the browser plays the agent (over HTTP if the audio connection fails), streams the transcript, offers typing, Mute and End, reconnects with the same ticket, and fires voice-guide-ended and voice-guide-error. The page sets its screenInput to what its screen shows; each block changed goes on the data channel, the newest of each name once its buffer has room, or with a typed turn over HTTP, and is sent again after a reconnect until a turn takes it (screen.ts). Its requests to voice are cross-origin, which a session's routes answer for any site; a closed shadow root keeps the product's styles and scripts out.",
+          "description": "Where a product puts an agent in front of its users: a page on the product's own site, which loads the drop-in client from voice at /client/voice-guide.js and puts a <voice-guide-session> element on it. The element holds the session with the same code as the web page, without React (npm run build:client writes web/dist-client/). The page hands it the session ID and ticket its server's start answered with by join({ session, ticket }), never an attribute, which session-replay scripts copy; it never holds a product key or starts a session. It opens the session's audio connection at once, adds the microphone once allowed, asks for the agent's opening once the browser plays the agent (over HTTP if the audio connection fails), shows Getting ready with the microphone held until the greeting's first sound or voice's ready, then fires voice-guide-ready once, streams the transcript, offers typing, Mute and End, reconnects with the same ticket, and fires voice-guide-ended and voice-guide-error. The page sets its screenInput to what its screen shows; each block changed goes on the data channel, the newest of each name once its buffer has room, or with a typed turn over HTTP, and is sent again after a reconnect until a turn takes it (screen.ts). Its requests to voice are cross-origin, which a session's routes answer for any site; a closed shadow root keeps the product's styles and scripts out.",
           "why": "The drop-in client runs in the product's own page, not a frame, so the microphone prompt names the product's site and the ticket goes through join(), never an attribute.",
           "considerations": ["any-origin", "product-keys", "api-for-products", "http-and-webrtc"],
           "path": "web/src/client/client.ts · element.ts · joined.ts · screen.ts"
@@ -702,9 +702,9 @@
           "to": "product-page",
           "protocol": "HTTP",
           "send": "the session and its ticket, for join()",
-          "detail": "The product's server starts the session with its key and hands its own page the session's ID and ticket, never the key; the page passes them to the element's join(). The element tells the page when the session is over, with the reason, and the refusal that made it unusable, never the ticket.",
+          "detail": "The product's server starts the session with its key and hands its own page the session's ID and ticket, never the key; the page passes them to the element's join(). The element tells the page once when the session can take the user's words, so the page can end its own loading screen, and when the session is over, with the reason, and the refusal that made it unusable, never the ticket.",
           "considerations": ["product-keys", "api-for-products"],
-          "back": "voice-guide-ended · voice-guide-error"
+          "back": "voice-guide-ready · voice-guide-ended · voice-guide-error"
         },
         {
           "id": "product-voice",
@@ -753,7 +753,7 @@
           "protocol": "WebRTC",
           "send": "microphone (Opus) · turn messages",
           "back": "agent audio (Opus) · hearing, text, done, spoken",
-          "detail": "Media flows straight to the server that answered the offer, on its private addresses: the microphone with echo cancellation on, decoded in Go to 16 kHz, and the agent's 20 ms Opus packets paced in real time. The data channel carries JSON both ways in order: the page sends turn, the user's words or, once the connection opens, the agent's opening; voice sends hearing, text, done, lost, refused, failed, spoken, interrupted, talking_on and closing.",
+          "detail": "Media flows straight to the server that answered the offer, on its private addresses: the microphone with echo cancellation on, decoded in Go to 16 kHz, and the agent's 20 ms Opus packets paced in real time. The data channel carries JSON both ways in order: the page sends warm as the channel opens, then turn, the user's words or the agent's opening; voice sends ready, once per connection, hearing, text, done, lost, refused, failed, spoken, interrupted, talking_on and closing.",
           "considerations": ["webrtc-in-go", "http-and-webrtc", "cut-in"]
         },
         {
@@ -2340,7 +2340,7 @@
           "name": "Service",
           "path": "service.go · turns.go · replies.go · spoken.go · heard.go",
           "summary": "Holds each session's audio connection, takes its turns, plays replies, cuts in, works out what was heard.",
-          "description": "speech's use cases. It answers audio offers, one connection per session on a server, a newer one replacing the old, at most a set number per server, each ended when the ticket that opened it expires, a reply playing cut where heard and no turn taken from then, even while it closes; reads the data channel's turns in order, at most two waiting; takes spoken turns from what the listener notices once the end-of-turn check and the final text agree; hands every turn to conversation; streams the reply's text to the page and its audio to the track in real time; and when the user cuts in, stops the audio at once and saves the reply as far as it was heard.",
+          "description": "speech's use cases. It answers audio offers, one connection per session on a server, a newer one replacing the old, at most a set number per server, each ended when the ticket that opened it expires, a reply playing cut where heard and no turn taken from then, even while it closes; reads the data channel's turns in order, at most two waiting, and answers the page's warm with ready once per connection; takes spoken turns from what the listener notices once the end-of-turn check and the final text agree; hands every turn to conversation; streams the reply's text to the page and its audio to the track in real time; and when the user cuts in, stops the audio at once and saves the reply as far as it was heard.",
           "why": "The browser removes the agent's echo only from audio arriving over WebRTC, and interrupting needs the microphone open while the agent speaks.",
           "considerations": ["webrtc-in-go", "cut-in", "heard", "talking-on", "http-and-webrtc"],
           "drill": "types-speech",
