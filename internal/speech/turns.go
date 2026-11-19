@@ -119,8 +119,8 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 		req.ScreenInput = append(req.ScreenInput, conversation.ScreenInputBlock(b))
 	}
 	// What the screen shows, sent ahead, goes with this turn, a block the turn
-	// carries itself winning; given back unless the turn is saved, it goes with
-	// the next instead, so a change is never lost nor saved twice.
+	// carries itself winning; it stays held until the turn is saved, so a turn
+	// refused or taken back leaves it for the next and no change is lost.
 	waiting, screenUpTo := r.screen.take()
 	req.ScreenInput = withNewer(waiting, req.ScreenInput)
 	text := make(chan string, textAhead)
@@ -145,9 +145,7 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 			playing.Wait()
 			if err := s.conversation.TakeBack(ctx, turn); err != nil {
 				s.log.Warn("take back a turn the user talked on after", "session", r.session, "err", err)
-				run.leftInFlight() // its blocks stay with it, saved in flight
-			} else {
-				r.screen.giveBack(waiting, screenUpTo) // for the turn that takes its place
+				run.leftInFlight()
 			}
 			return
 		}
@@ -158,7 +156,6 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 		}
 	}
 	if run.talkedOn() { // before the turn was saved: nothing to take back
-		r.screen.giveBack(waiting, screenUpTo)
 		playing.Wait()
 		return
 	}
@@ -167,9 +164,8 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 	// back after its first text: confirmed then, the page would never send a
 	// change again that the turn replacing it might not save.
 	if ending.Type == "done" || ending.Type == "lost" {
+		r.screen.saved(waiting)
 		ending.ScreenTaken = screenUpTo
-	} else {
-		r.screen.giveBack(waiting, screenUpTo)
 	}
 	s.tell(r.conn, ending)
 	playing.Wait()

@@ -8,10 +8,10 @@ import (
 )
 
 // screenWaiting holds what the page's screen shows, sent on its own on one connection's data
-// channel, until the next turn taken on that connection goes with it: the newest block of each
-// name, and the number of the last screen message whose blocks it holds. The data channel's reader
-// adds to it while a turn's goroutine takes it, so a change lands in that turn or the next, never
-// both.
+// channel, until a turn taken on that connection is saved with it: the newest block of each name,
+// and the number of the last screen message whose blocks it holds. The data channel's reader adds
+// to it while a turn's goroutine reads it; a connection's turns run one at a time, so a block a
+// turn is carrying still counts against the limit, and a turn not saved leaves it for the next.
 type screenWaiting struct {
 	mu     sync.Mutex
 	blocks []conversation.ScreenInputBlock
@@ -35,22 +35,23 @@ func (w *screenWaiting) add(blocks []conversation.ScreenInputBlock, n int, check
 	return nil
 }
 
-// take returns the blocks waiting, with the number of the last screen message they came in, and
-// lets them go.
+// take returns a copy of the blocks waiting, with the number of the last screen message they came
+// in, or nothing; they stay until saved lets them go.
 func (w *screenWaiting) take() ([]conversation.ScreenInputBlock, int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	blocks, upTo := w.blocks, w.upTo
-	w.blocks, w.upTo = nil, 0
-	return blocks, upTo
+	if len(w.blocks) == 0 {
+		return nil, 0
+	}
+	return slices.Clone(w.blocks), w.upTo
 }
 
-// giveBack keeps again the blocks a turn took but didn't save, as when it was refused or taken
-// back, unless one of the same name has come since, which is newer.
-func (w *screenWaiting) giveBack(blocks []conversation.ScreenInputBlock, upTo int) {
+// saved lets go of the blocks a turn was saved with, each unless a newer one of its name has come
+// since.
+func (w *screenWaiting) saved(blocks []conversation.ScreenInputBlock) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.blocks, w.upTo = withNewer(blocks, w.blocks), max(w.upTo, upTo)
+	w.blocks = slices.DeleteFunc(w.blocks, func(b conversation.ScreenInputBlock) bool { return slices.Contains(blocks, b) })
 }
 
 // withNewer returns the blocks of older whose name newer doesn't have, then newer's as they are,

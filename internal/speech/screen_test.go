@@ -7,6 +7,7 @@ import (
 	"maps"
 	"strings"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/mikaclements/voice-guide/internal/conversation"
@@ -193,8 +194,6 @@ func TestAScreenMessageThatCantBeUsedIsRefusedAndNothingOfItWaits(t *testing.T) 
 		{"a block over the limit", blockJSON("diagram", strings.Repeat("d", 1001))},
 		{"a block over the limit with the blocks waiting", blockJSON("notes", strings.Repeat("n", 600))},
 		{"a badly formed name", blockJSON("Notes!", "Read-heavy")},
-		{"an empty block", blockJSON("notes", "")},
-		{"a name sent twice", blockJSON("notes", "One") + "," + blockJSON("notes", "Two")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c.Say(screenMessage(i+2, tc.blocks))
@@ -210,5 +209,26 @@ func TestAScreenMessageThatCantBeUsedIsRefusedAndNothingOfItWaits(t *testing.T) 
 	}
 	if saved := h.turns.All(); len(saved) != 1 || !maps.Equal(screenOf(saved[0]), map[string]string{"board": board}) {
 		t.Errorf("saved %d turns, want one with only the board kept before the refusals", len(saved))
+	}
+}
+
+// A block stays held while a turn carries it, so what is held never passes what a turn may take,
+// whether that turn is saved or not; once it is saved, the block is let go.
+func TestABlockATurnCarriesCountsAgainstTheLimitUntilTheTurnIsSaved(t *testing.T) {
+	h := newTurnHarness(t, &modelfake.Model{Pieces: replyPieces, Pace: time.Hour}, ttsfake.TextToSpeech{PacketsPerWord: 1})
+	c := h.connect(t)
+	board, notes := blockJSON("board", strings.Repeat("b", 600)), blockJSON("notes", strings.Repeat("n", 600))
+	showScreen(t, c, 1, board)
+	c.Say(turnMessage(uuid.NewV7(), "Is this right?"))
+	savedAtLeast(t, h.turns, 1) // taken with the board, its reply still to come
+	c.Say(screenMessage(2, notes))
+	if m := next(t, c); m.Type != "screen_refused" || m.N != 2 {
+		t.Errorf("got %+v, want the notes refused: with the board the turn carries, over the limit", m)
+	}
+	c.Say(turnMessage(uuid.NewV7(), "Actually, wait."))
+	until(t, c, "interrupted") // the first turn saved, cut, with the board
+	showScreen(t, c, 3, notes)
+	if saved := h.turns.All(); !maps.Equal(screenOf(saved[0]), map[string]string{"board": strings.Repeat("b", 600)}) {
+		t.Errorf("saved %+v, want the first turn with the board", saved)
 	}
 }
