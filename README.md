@@ -108,7 +108,48 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 <a id="embedding"></a>
 ## Put an agent on a product
 
-A product's server starts each session with its product key (`POST /v1/sessions`, as `examples/job-board/server.mjs` does) and hands its page the session's `id` and `ticket`, never the key. The page loads the drop-in element from voice-guide and hands it the two:
+A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in element. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
+
+`scripts/product-key.sh` and `scripts/webhook.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s.
+
+### Start a session from the product's server
+
+The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
+
+```sh
+curl https://voice.example.com/v1/sessions \
+  -H "Authorization: Bearer <product key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
+    "request_id": "<a new UUID for each start>",
+    "user": "<your own ID for this user>",
+    "session_context": [{ "name": "resume", "content": "<resume text>" }]
+  }'
+```
+
+- `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description` and the `session_context` it needs.
+- `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new.
+- `user`: the product's own stable ID for the user, not a name or an email address. It is at most 200 printable characters, on one line. The same ID is the same user every time, so the agent remembers them.
+- `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty.
+
+The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
+
+```json
+{
+  "id": "<session ID>",
+  "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
+  "agent_version": 1,
+  "started_at": "<RFC 3339 time>",
+  "ticket": "<ticket>"
+}
+```
+
+The server hands its page `id` and `ticket`, and nothing else. A repeat whose session has ended also carries `ended_at`. A repeat past the ticket's four hours has no `ticket`. In either case, start a new session. An error comes as problem details (`application/problem+json`), and its `detail` says what to fix. A `503` means send the same request again. The server can end a session with `POST /v1/sessions/<session ID>/end` and the same key.
+
+### Hold the conversation on the product's page
+
+The page loads the drop-in element from voice-guide and hands it the session's `id` and `ticket`:
 
 ```html
 <button id="start">Practice</button>
@@ -141,6 +182,38 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 
 </details>
 
+<a id="webhook"></a>
+### Hear when a session ends
+
+`scripts/webhook.sh set <URL>` sets the product's webhook. It prints the signing secret, the only time it's shown. The URL must be https, except on this machine, where http works too. Once a session ends and its summary is written, or has failed, voice-guide posts it there as JSON. Three headers come with it: `webhook-id`, `webhook-timestamp` and `webhook-signature`.
+
+```json
+{
+  "id": "<delivery ID, the same as webhook-id>",
+  "type": "session.ended",
+  "timestamp": "<when the session ended, RFC 3339>",
+  "data": {
+    "id": "<session ID>",
+    "user": "<your own ID for this user, as sent at the start>",
+    "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
+    "agent_version": 1,
+    "started_at": "<RFC 3339 time>",
+    "ended_at": "<RFC 3339 time>",
+    "turns": [
+      { "seq": 1, "words": "", "reply": "<the agent's greeting>", "cut": false },
+      { "seq": 2, "words": "<what the user said>", "reply": "<the reply, as far as the user heard it>", "cut": true }
+    ],
+    "turns_left_out": 0,
+    "summary": "<the agent's summary, or null when none was written>"
+  }
+}
+```
+
+- The opening, the first turn when the agent speaks first, has empty `words`. `cut` says the user interrupted the reply.
+- A body holds at most 256 KiB. A longer session leaves out its earliest turns, counted in `turns_left_out`.
+- **Check the signature:** the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the secret's bytes (the base64 after `whsec_`), is the base64 after `v1,` in `webhook-signature`. This is the Standard Webhooks specification's scheme, so its libraries verify it; `verifyWebhook` in `examples/job-board/server.mjs` does it in Node, and also refuses a timestamp more than five minutes off.
+- Answer with any 2xx. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled. `410 Gone` stops deliveries until the URL is set again.
+
 <a id="embedded"></a>
 ## Try it embedded
 
@@ -151,7 +224,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 The test embedding runs beside `scripts/run.sh`, not `scripts/up.sh`. So it needs what [Faster voice on an Apple silicon Mac](#faster) lists: Docker, Go, Node and OpenSSL. `scripts/webhook.sh` runs with Go, and `scripts/demo.sh` runs the job board's server with Node. You also add one line to `.env` by hand.
 
 1. Start voice-guide with `scripts/run.sh` and leave it running.
-2. In another terminal, set the webhook, the address where voice-guide tells the test embedding that a session has ended. It prints the webhook's signing secret, only once:
+2. In another terminal, set the [webhook](#webhook), the address where voice-guide tells the test embedding that a session has ended. It prints the webhook's signing secret, only once:
 
    ```sh
    scripts/webhook.sh set http://127.0.0.1:5190/webhook
@@ -255,6 +328,7 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 | `VOICE_SESSION_IDLE` | 5 min | How long a session sits with no turn or speech before it ends |
 
 The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings block comes first:
+- `id`, `name` and `description`: which agent it is; a product's server names it by `id` when it starts a session;
 - `opens`: who speaks first, `agent` or `user`;
 - `reads`: what the agent may know about the user from earlier sessions;
 - `session_context`: what the product must send at the start, such as the resume;
