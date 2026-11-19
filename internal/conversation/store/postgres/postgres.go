@@ -24,8 +24,8 @@ type Sessions struct {
 	pool *pgxpool.Pool
 }
 
-// New returns the store on pool.
-func New(pool *pgxpool.Pool) *Sessions {
+// NewSessions returns the sessions store on pool.
+func NewSessions(pool *pgxpool.Pool) *Sessions {
 	return &Sessions{pool: pool}
 }
 

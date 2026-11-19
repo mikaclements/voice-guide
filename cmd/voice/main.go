@@ -4,19 +4,14 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -25,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
-	"github.com/mikaclements/voice-guide/internal/agents/store/postgres"
+	agentsstore "github.com/mikaclements/voice-guide/internal/agents/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/api"
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	conversationhttp "github.com/mikaclements/voice-guide/internal/conversation/http"
@@ -35,19 +30,16 @@ import (
 	"github.com/mikaclements/voice-guide/internal/jobs"
 	jobstore "github.com/mikaclements/voice-guide/internal/jobs/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/productkey"
-	productkeys "github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
+	productkeystore "github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/speech"
 	detectionfake "github.com/mikaclements/voice-guide/internal/speech/detection/fake"
 	"github.com/mikaclements/voice-guide/internal/speech/detection/silero"
-	"github.com/mikaclements/voice-guide/internal/speech/endofturn/smartturn"
 	speechhttp "github.com/mikaclements/voice-guide/internal/speech/http"
-	"github.com/mikaclements/voice-guide/internal/speech/stt/realtime"
 	webrtctransport "github.com/mikaclements/voice-guide/internal/speech/transport/webrtc"
 	ttsfake "github.com/mikaclements/voice-guide/internal/speech/tts/fake"
 	"github.com/mikaclements/voice-guide/internal/speech/tts/kokoro"
-	"github.com/mikaclements/voice-guide/internal/ticket"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
-	contextitems "github.com/mikaclements/voice-guide/internal/usercontext/store/postgres"
+	usercontextstore "github.com/mikaclements/voice-guide/internal/usercontext/store/postgres"
 )
 
 func main() {
@@ -56,41 +48,6 @@ func main() {
 		log.Error("voice stopped", "err", err)
 		os.Exit(1)
 	}
-}
-
-type config struct {
-	addr        string
-	databaseURL string
-	workspace   uuid.UUID
-	key         ticket.Key
-	// modelURL is where the model service listens.
-	modelURL string
-	// audio says where browsers' audio arrives: the addresses of this machine that take it (none
-	// means its private and loopback ones), the one UDP port every connection shares (none gives
-	// each its own), and the addresses written into answers in place of the machine's own.
-	audio webrtctransport.Addresses
-	// maxAudio bounds the audio connections this server holds at once.
-	maxAudio int
-	// tts names what speaks replies, kokoro or fake; ttsURL is where Kokoro-FastAPI listens; voice
-	// is the voice replies are spoken in; firstAudio bounds the wait for a phrase's first audio.
-	tts        string
-	ttsURL     string
-	voice      string
-	firstAudio time.Duration
-	// detection names what notices speech, silero or fake; listening sets how speech notices the
-	// user speaking, pausing and cutting in.
-	detection string
-	listening speech.Listening
-	// sttURL is where the speech-to-text service takes the realtime transcription API, and
-	// turnCheckURL where its end-of-turn check listens.
-	sttURL       string
-	turnCheckURL string
-	// clientDir is the folder voice serves the drop-in client from.
-	clientDir string
-	// settings bound, in characters, what a session loads from user context, what a product
-	// sends as session context and as screen input, and the words of a turn; bound how long a
-	// turn runs; and name the model that answers turns.
-	settings conversation.Settings
 }
 
 // defaultContextLimit is about 5,000 tokens of English: room for a two-page resume (about
@@ -240,187 +197,6 @@ const defaultClientDir = "web/dist-client"
 // one an unreachable host hangs the start instead of failing it. A round guess.
 const startupCheck = 10 * time.Second
 
-func loadConfig(getenv func(string) string) (config, error) {
-	cfg := config{addr: getenv("VOICE_ADDR"), databaseURL: getenv("DATABASE_URL")}
-	var err error
-	if cfg.settings.TurnDeadline, err = positiveDuration(getenv, "VOICE_TURN_TIMEOUT", defaultTurnTimeout); err != nil {
-		return config{}, err
-	}
-	if cfg.settings.SessionIdle, err = positiveDuration(getenv, "VOICE_SESSION_IDLE", defaultSessionIdle); err != nil {
-		return config{}, err
-	}
-	// Idle counts from a turn's start while it runs, so a session idle sooner than a turn may run
-	// could end with its user waiting on a reply.
-	if cfg.settings.SessionIdle <= cfg.settings.TurnDeadline {
-		return config{}, fmt.Errorf("VOICE_SESSION_IDLE: %s is no longer than a turn may run, %s", cfg.settings.SessionIdle, cfg.settings.TurnDeadline)
-	}
-	if cfg.settings.Model = getenv("VOICE_MODEL"); cfg.settings.Model == "" {
-		cfg.settings.Model = defaultModel
-	}
-	if cfg.modelURL = getenv("VOICE_MODEL_URL"); cfg.modelURL == "" {
-		cfg.modelURL = defaultModelURL
-	}
-	if u, err := url.Parse(cfg.modelURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return config{}, fmt.Errorf("VOICE_MODEL_URL: %q is not an http or https address", cfg.modelURL)
-	}
-	switch cfg.tts = cmp.Or(getenv("VOICE_TTS"), "kokoro"); cfg.tts {
-	case "kokoro", "fake":
-	default:
-		return config{}, fmt.Errorf("VOICE_TTS: %q is not kokoro or fake", cfg.tts)
-	}
-	cfg.ttsURL, cfg.voice = cmp.Or(getenv("VOICE_TTS_URL"), defaultTTSURL), cmp.Or(getenv("VOICE_TTS_VOICE"), defaultVoice)
-	if u, err := url.Parse(cfg.ttsURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return config{}, fmt.Errorf("VOICE_TTS_URL: %q is not an http or https address", cfg.ttsURL)
-	}
-	if cfg.firstAudio, err = positiveDuration(getenv, "VOICE_TTS_FIRST_AUDIO", kokoro.DefaultFirstAudio); err != nil {
-		return config{}, err
-	}
-	cfg.sttURL, cfg.turnCheckURL = cmp.Or(getenv("VOICE_STT_URL"), defaultSTTURL), cmp.Or(getenv("VOICE_TURN_CHECK_URL"), defaultTurnCheckURL)
-	if _, err := realtime.New(cfg.sttURL, realtime.Options{}); err != nil {
-		return config{}, fmt.Errorf("VOICE_STT_URL: %w", err)
-	}
-	if _, err := smartturn.New(cfg.turnCheckURL, 0); err != nil {
-		return config{}, fmt.Errorf("VOICE_TURN_CHECK_URL: %w", err)
-	}
-	if cfg.audio.IPs, err = ipList(getenv, "VOICE_AUDIO_IPS"); err != nil {
-		return config{}, err
-	}
-	if v := getenv("VOICE_AUDIO_UDP_PORT"); v != "" {
-		if cfg.audio.Port, err = strconv.Atoi(v); err != nil || cfg.audio.Port < 1 || cfg.audio.Port > 65535 {
-			return config{}, fmt.Errorf("VOICE_AUDIO_UDP_PORT: %q is not a port from 1 to 65535", v)
-		}
-	}
-	if cfg.audio.Announce, err = ipList(getenv, "VOICE_AUDIO_ANNOUNCE_IPS"); err != nil {
-		return config{}, err
-	}
-	// An announced address stands for every address of its family that takes audio, and an answer
-	// keeps one candidate per address and port, so on a shared port only one of them is reached: the
-	// one the forwarded audio arrives on must be the one named.
-	if len(cfg.audio.Announce) > 0 && len(cfg.audio.IPs) == 0 {
-		return config{}, errors.New("VOICE_AUDIO_ANNOUNCE_IPS: name the addresses of this machine it stands for in VOICE_AUDIO_IPS")
-	}
-	if cfg.addr == "" {
-		// Only this machine by default; a container sets an address on all interfaces.
-		cfg.addr = "127.0.0.1:8080"
-	}
-	// The default folder may not be built yet, in a fresh clone or for a check with no page, and is
-	// answered 404 until it is; a folder named on purpose must exist, so a mistyped one stops the start.
-	if cfg.clientDir = getenv("VOICE_CLIENT_DIR"); cfg.clientDir == "" {
-		cfg.clientDir = defaultClientDir
-	} else if info, err := os.Stat(cfg.clientDir); err != nil {
-		return config{}, fmt.Errorf("VOICE_CLIENT_DIR: %w", err)
-	} else if !info.IsDir() {
-		return config{}, fmt.Errorf("VOICE_CLIENT_DIR: %q is not a folder", cfg.clientDir)
-	}
-	if cfg.databaseURL == "" {
-		return config{}, errors.New("DATABASE_URL is required")
-	}
-	if cfg.workspace, err = uuid.Parse(getenv("VOICE_WORKSPACE_ID")); err != nil {
-		return config{}, fmt.Errorf("VOICE_WORKSPACE_ID: %w", err)
-	}
-	if cfg.key, err = ticket.NewKey([]byte(getenv("VOICE_TICKET_KEY"))); err != nil {
-		return config{}, fmt.Errorf("VOICE_TICKET_KEY: %w", err)
-	}
-	if cfg.settings.UserContextChars, err = positive(getenv, "VOICE_USER_CONTEXT_MAX_CHARS", defaultContextLimit); err != nil {
-		return config{}, err
-	}
-	if cfg.settings.SessionContextChars, err = positive(getenv, "VOICE_SESSION_CONTEXT_MAX_CHARS", defaultContextLimit); err != nil {
-		return config{}, err
-	}
-	if cfg.settings.ScreenInputChars, err = positive(getenv, "VOICE_SCREEN_INPUT_MAX_CHARS", defaultScreenInputLimit); err != nil {
-		return config{}, err
-	}
-	if cfg.settings.WordsChars, err = positive(getenv, "VOICE_WORDS_MAX_CHARS", defaultWordsLimit); err != nil {
-		return config{}, err
-	}
-	if cfg.maxAudio, err = positive(getenv, "VOICE_MAX_AUDIO_CONNECTIONS", defaultMaxAudio); err != nil {
-		return config{}, err
-	}
-	switch cfg.detection = cmp.Or(getenv("VOICE_SPEECH_DETECTION"), "silero"); cfg.detection {
-	case "silero", "fake":
-	default:
-		return config{}, fmt.Errorf("VOICE_SPEECH_DETECTION: %q is not silero or fake", cfg.detection)
-	}
-	cfg.listening.Threshold = defaultSpeechThreshold
-	if v := getenv("VOICE_SPEECH_THRESHOLD"); v != "" {
-		p, err := strconv.ParseFloat(v, 32)
-		if err != nil || math.IsNaN(p) || p <= 0 || p > 1 {
-			return config{}, fmt.Errorf("VOICE_SPEECH_THRESHOLD: %q is not a probability above 0, such as 0.5", v)
-		}
-		cfg.listening.Threshold = float32(p)
-	}
-	if cfg.listening.Pause, err = positiveDuration(getenv, "VOICE_PAUSE", defaultPause); err != nil {
-		return config{}, err
-	}
-	if cfg.listening.MaxWait, err = positiveDuration(getenv, "VOICE_MAX_WAIT", defaultMaxWait); err != nil {
-		return config{}, err
-	}
-	if cfg.listening.MaxWait <= cfg.listening.Pause {
-		return config{}, fmt.Errorf("VOICE_MAX_WAIT: %s is no longer than the pause, %s, which comes first", cfg.listening.MaxWait, cfg.listening.Pause)
-	}
-	// Audio that stops coming counts as at most speech.MaxMissing of silence, so a longer wait
-	// would never be up while the user's audio is lost.
-	if cfg.listening.MaxWait > speech.MaxMissing {
-		return config{}, fmt.Errorf("VOICE_MAX_WAIT: %s is longer than %s, the most silence lost audio counts as", cfg.listening.MaxWait, speech.MaxMissing)
-	}
-	if cfg.listening.InterruptSpeech, err = positiveDuration(getenv, "VOICE_INTERRUPT_SPEECH", defaultInterruptSpeech); err != nil {
-		return config{}, err
-	}
-	if cfg.listening.MaxSpeech, err = positiveDuration(getenv, "VOICE_MAX_SPEECH", defaultMaxSpeech); err != nil {
-		return config{}, err
-	}
-	// Speech over the agent cuts in once its frames judged speech add up to the interrupt speech, so
-	// a turn's speech must run longer for continuous speech to be held before it reaches its most.
-	// Scattered frames a pause apart, which take longer to add up, may reach the most first and are
-	// passed over: they are noise.
-	if cfg.listening.MaxSpeech <= cfg.listening.InterruptSpeech {
-		return config{}, fmt.Errorf("VOICE_MAX_SPEECH: %s is no longer than the interrupt speech, %s, so even continuous speech over the agent would reach it before it could cut in", cfg.listening.MaxSpeech, cfg.listening.InterruptSpeech)
-	}
-	if cfg.listening.MaxSpeech > mostSpeech {
-		return config{}, fmt.Errorf("VOICE_MAX_SPEECH: %s is longer than %s, the most audio the speech-to-text service holds in one utterance", cfg.listening.MaxSpeech, mostSpeech)
-	}
-	return cfg, nil
-}
-
-// ipList reads the setting name as IP addresses separated by commas or spaces, or none when it is unset.
-func ipList(getenv func(string) string, name string) ([]net.IP, error) {
-	var ips []net.IP
-	for _, v := range strings.FieldsFunc(getenv(name), func(r rune) bool { return r == ',' || r == ' ' }) {
-		ip := net.ParseIP(v)
-		if ip == nil {
-			return nil, fmt.Errorf("%s: %q is not an IP address", name, v)
-		}
-		ips = append(ips, ip)
-	}
-	return ips, nil
-}
-
-// positiveDuration reads the setting name as a positive duration, or def when it is unset.
-func positiveDuration(getenv func(string) string, name string, def time.Duration) (time.Duration, error) {
-	v := getenv(name)
-	if v == "" {
-		return def, nil
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil || d <= 0 {
-		return 0, fmt.Errorf("%s: %q is not a positive duration, such as %s", name, v, def)
-	}
-	return d, nil
-}
-
-// positive reads the setting name as a positive whole number, or def when it is unset.
-func positive(getenv func(string) string, name string, def int) (int, error) {
-	v := getenv(name)
-	if v == "" {
-		return def, nil
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 {
-		return 0, fmt.Errorf("%s: %q is not a positive whole number", name, v)
-	}
-	return n, nil
-}
-
 func run(ctx context.Context, getenv func(string) string, log *slog.Logger) error {
 	cfg, err := loadConfig(getenv)
 	if err != nil {
@@ -431,7 +207,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 		return fmt.Errorf("database: %w", err)
 	}
 	defer pool.Close()
-	catalog := agents.NewCatalog(postgres.New(pool))
+	catalog := agents.NewCatalog(agentsstore.New(pool))
 	// Read once before serving, so an unreachable database stops the start instead of the first request.
 	checkCtx, cancelCheck := context.WithTimeout(ctx, startupCheck)
 	offered, err := catalog.Available(checkCtx, cfg.workspace)
@@ -440,8 +216,8 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 		return fmt.Errorf("read the workspace's agents: %w", err)
 	}
 
-	userContext := usercontext.NewService(contextitems.New(pool))
-	sessions, turns := conversationstore.New(pool), conversationstore.NewTurns(pool)
+	userContext := usercontext.NewService(usercontextstore.New(pool))
+	sessions, turns := conversationstore.NewSessions(pool), conversationstore.NewTurns(pool)
 	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings)
 	deliveries := conversation.NewDeliveries(sessions, turns, conversationstore.NewWebhooks(pool), userContext, webhookhttp.New(webhookhttp.Deadline))
 	transport, err := webrtctransport.New(cfg.audio, speech.MessageLimit(svc.TurnLimit()), log)
@@ -461,14 +237,6 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 			return fmt.Errorf("speech detection: %w", err)
 		}
 	}
-	stt, err := realtime.New(cfg.sttURL, realtime.Options{})
-	if err != nil {
-		return fmt.Errorf("speech-to-text: %w", err)
-	}
-	endOfTurn, err := smartturn.New(cfg.turnCheckURL, 0)
-	if err != nil {
-		return fmt.Errorf("end-of-turn check: %w", err)
-	}
 	runners, err := jobRunners(jobstore.New(pool), jobSettings, deliverySettings, svc, deliveries, log)
 	if err != nil {
 		return err
@@ -486,11 +254,11 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	}
 	defer sweeper.Wait()
 	defer stopSweep()
-	audio := speech.NewService(svc, transport, tts, detection, stt, endOfTurn, speech.Settings{MaxConnections: cfg.maxAudio, Voice: cfg.voice, TextToSpeech: cfg.tts, Listening: cfg.listening}, log)
+	audio := speech.NewService(svc, transport, tts, detection, cfg.stt, cfg.endOfTurn, speech.Settings{MaxConnections: cfg.maxAudio, Voice: cfg.voice, TextToSpeech: cfg.tts, Listening: cfg.listening}, log)
 	// Waits, once the server has stopped taking requests, for every connection to end, so none is
 	// set up after it.
 	defer audio.Close()
-	routes := api.NewRouter(cfg.key, productkey.NewKeys(productkeys.New(pool)), time.Now, log)
+	routes := api.NewRouter(cfg.key, productkey.NewKeys(productkeystore.New(pool)), time.Now, log)
 	conversationhttp.Register(routes, svc)
 	speechhttp.Register(routes, audio)
 	routes.ServeClient(cfg.clientDir)
@@ -525,8 +293,8 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	return nil
 }
 
-// summaryJob runs a session's summary job: a summary the model service had
-// no place for is busy, let go without using a run.
+// summaryJob runs a session's summary job. When the model service has no free place for it, the
+// job waits and tries again, and the wait does not use up one of its runs.
 func summaryJob(svc *conversation.Service) func(context.Context, uuid.UUID, uuid.UUID, conversation.SummaryArgs) error {
 	return func(ctx context.Context, workspace, user uuid.UUID, args conversation.SummaryArgs) error {
 		err := svc.Summarize(ctx, workspace, user, args)
