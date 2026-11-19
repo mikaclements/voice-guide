@@ -88,6 +88,15 @@ if [ "${VOICE_SPEECH_DETECTION:-silero}" = silero ]; then
 fi
 scripts/migrate.sh
 scripts/lib/seed.sh
+if [ -n "$kokoro" ]; then
+  # Up to 20 minutes, a round guess: the first start installs about 0.6 GB of packages and downloads
+  # 0.3 GB of model before it loads the model. It ends sooner when the script exits. Waited for
+  # before publishing, which checks the agents' voices against it.
+  if ! wait_http -f -p "$kokoro" -n 6000 -i 0.2 "$kokoro_url/health"; then
+    echo "native Kokoro didn't start; its message is above" >&2
+    exit 1
+  fi
+fi
 scripts/publish.sh
 scripts/build-client.sh
 
@@ -99,12 +108,6 @@ if ! wait_http -p "$model" -n 100 -i 0.1 "http://$model_host:$MODEL_PORT/" || ! 
   exit 1
 fi
 if [ -n "$kokoro" ]; then
-  # Up to 20 minutes, a round guess: the first start installs about 0.6 GB of packages and downloads
-  # 0.3 GB of model before it loads the model. It ends sooner when the script exits.
-  if ! wait_http -f -p "$kokoro" -n 6000 -i 0.2 "$kokoro_url/health"; then
-    echo "native Kokoro didn't start; its message is above" >&2
-    exit 1
-  fi
   # Voice goes on speaking text only when Kokoro dies, so this only says why the audio stopped.
   (while kill -0 "$kokoro" 2>/dev/null; do sleep 1; done
     echo "native Kokoro stopped: replies come as text only until you restart (its log is named above)" >&2) &

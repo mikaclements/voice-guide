@@ -5,12 +5,17 @@ import (
 	"errors"
 	"log/slog"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/mikaclements/voice-guide/internal/agents"
+	voicefake "github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake"
 )
 
 func env(overrides map[string]string) func(string) string {
@@ -107,5 +112,66 @@ func TestPublishRefusesAnAgentReadingAKindUserContextDoesntHold(t *testing.T) {
 	getenv := env(map[string]string{"DATABASE_URL": "postgres://keeper@127.0.0.1:1/harbour?sslmode=disable", "VOICE_AGENTS_DIR": agentsFolder(t, "profile, diary")})
 	if err := run(context.Background(), getenv, slog.New(slog.DiscardHandler), publishTimeout); err == nil || !strings.Contains(err.Error(), `reads "diary"`) {
 		t.Errorf("run = %v, want a refusal naming the unknown kind", err)
+	}
+}
+
+func namingVoice(voice string) []agents.Agent {
+	return []agents.Agent{{Name: "Lighthouse keeper", Voice: voice}}
+}
+
+func TestPublishRefusesAnAgentNamingAVoiceTheTextToSpeechServiceLacks(t *testing.T) {
+	list := voicefake.New("af_heart")
+	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.DiscardHandler)); err == nil {
+		t.Error("checkVoices accepted a voice the service doesn't have")
+	}
+	if err := checkVoices(t.Context(), namingVoice("af_heart"), list, slog.New(slog.DiscardHandler)); err != nil {
+		t.Errorf("checkVoices with a voice it has = %v, want nil", err)
+	}
+}
+
+func TestPublishGoesAheadAndWarnsWhenTheTextToSpeechServiceCantBeAsked(t *testing.T) {
+	list := voicefake.New()
+	list.Fail(errors.New("connection refused"))
+	var out strings.Builder
+	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.NewTextHandler(&out, nil))); err != nil {
+		t.Errorf("checkVoices = %v, want nil: the agents publish unchecked", err)
+	}
+	if !strings.Contains(out.String(), "not checked") {
+		t.Errorf("log %q, want a warning that the voices were not checked", out.String())
+	}
+}
+
+func TestPublishDoesNotAskForVoicesWhenNoAgentNamesOne(t *testing.T) {
+	list := voicefake.New("af_heart")
+	if err := checkVoices(t.Context(), namingVoice(""), list, slog.New(slog.DiscardHandler)); err != nil || list.Asked() != 0 {
+		t.Errorf("checkVoices = %v with the list asked %d times, want nil and none", err, list.Asked())
+	}
+}
+
+func TestPublishAsksKokoroWhereComposePublishesItUnlessTheTextToSpeechIsTheFake(t *testing.T) {
+	if cfg, _ := loadConfig(env(nil)); cfg.ttsURL != defaultTTSURL || voiceList(cfg) == nil {
+		t.Errorf("ttsURL = %q, want %q where compose publishes Kokoro, with a list to ask", cfg.ttsURL, defaultTTSURL)
+	}
+	if cfg, _ := loadConfig(env(map[string]string{"VOICE_TTS": "fake"})); cfg.ttsURL != "" || voiceList(cfg) != nil {
+		t.Errorf("ttsURL = %q with the fake text-to-speech, want none to ask", cfg.ttsURL)
+	}
+}
+
+// Through run, with the agent file and the service's answer as a person's publish has them, and a
+// database no one listens on: the refusal comes before it is reached.
+func TestPublishRefusesAnAgentFileNamingAVoiceTheServiceLacks(t *testing.T) {
+	kokoro := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"voices":["af_heart"]}`))
+	}))
+	defer kokoro.Close()
+	dir := t.TempDir()
+	file := "---\nid: 01a1de8b-bba7-7000-bad0-0000000000a1\nname: Lighthouse keeper\nvoice: bf_emma\n---\nYou answer every call from the sea.\n"
+	if err := os.WriteFile(filepath.Join(dir, "lighthouse-keeper.md"), []byte(file), 0o600); err != nil {
+		t.Fatalf("write the agent file: %v", err)
+	}
+	getenv := env(map[string]string{"DATABASE_URL": "postgres://keeper@127.0.0.1:1/harbour?sslmode=disable", "VOICE_AGENTS_DIR": dir, "VOICE_TTS_URL": kokoro.URL})
+	err := run(context.Background(), getenv, slog.New(slog.DiscardHandler), publishTimeout)
+	if err == nil || !strings.Contains(err.Error(), "Lighthouse keeper") || !strings.Contains(err.Error(), "bf_emma") {
+		t.Errorf("run = %v, want a refusal naming the agent and its voice", err)
 	}
 }

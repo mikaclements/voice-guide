@@ -125,6 +125,18 @@ func CheckReads(defs []Agent, known []string) error {
 	return nil
 }
 
+// CheckVoices refuses an agent that names a voice outside offered, the voices the text-to-speech
+// service has, so a voice it lacks fails when the agent is published instead of failing every
+// phrase its sessions speak.
+func CheckVoices(defs []Agent, offered []string) error {
+	for _, a := range defs {
+		if a.Voice != "" && !slices.Contains(offered, a.Voice) {
+			return fmt.Errorf("agent %s names the voice %q, which the text-to-speech service doesn't offer", a.Name, a.Voice)
+		}
+	}
+	return nil
+}
+
 var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 
 // IsModelName reports whether name can name a model: the form a model
