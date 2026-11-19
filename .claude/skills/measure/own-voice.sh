@@ -8,6 +8,7 @@
 voice_addr="${VOICE_ADDR:-$2}"
 model_port="${MODEL_PORT:-$3}"
 . scripts/lib/env.sh
+. scripts/lib/net.sh
 
 db="$1"
 export DATABASE_URL="${DATABASE_URL%/*}/$db?sslmode=disable"
@@ -17,10 +18,7 @@ export MODEL_PROVIDER="${MODEL_PROVIDER:-claude-subscription}"
 # Checked first: a voice or model service already on a port, scripts/run.sh's say, would answer
 # instead, and its turns would be saved on another database.
 for port in "${VOICE_ADDR##*:}" "$MODEL_PORT"; do
-  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null; then
-    echo "port $port is taken; stop what holds it (lsof -nP -iTCP:$port -sTCP:LISTEN) or pick free ones: VOICE_ADDR=127.0.0.1:$((${VOICE_ADDR##*:} + 10000)) MODEL_PORT=$((MODEL_PORT + 10000)) .claude/skills/measure/$(basename "$0") ..." >&2
-    exit 1
-  fi
+  require_free_port "$port" "pick free ones: VOICE_ADDR=127.0.0.1:$((${VOICE_ADDR##*:} + 10000)) MODEL_PORT=$((MODEL_PORT + 10000)) .claude/skills/measure/$(basename "$0") ..."
 done
 unset voice_addr model_port port
 
@@ -64,7 +62,7 @@ start_voice() {
   "$work/voice" >"$work/voice${1:+-$1}.log" 2>&1 &
   voice=$!
   pids+=("$voice")
-  for _ in $(seq 100); do curl -s -o /dev/null "http://$VOICE_ADDR/v1/agents" && break; sleep 0.2; done
+  wait_http "http://$VOICE_ADDR/v1/agents" || true
 }
 
 # Prints the model each reply since a time was recorded as served by, from the turns' stages, so a

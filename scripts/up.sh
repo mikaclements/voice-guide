@@ -32,6 +32,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 save_given_settings=1
 . scripts/lib/env.sh
+. scripts/lib/net.sh
 
 export MODEL_PROVIDER="${MODEL_PROVIDER:-claude-api}"
 if [ "$MODEL_PROVIDER" = claude-subscription ]; then
@@ -47,7 +48,7 @@ need_api_key
 # runtime keeps a flow through it open for a minute after the containers stop, and compose names
 # the port if it can't take it.
 for port in 8080 5173; do
-  holder="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1 || true)"
+  holder="$(port_holder "$port")"
   if [ -n "$holder" ]; then
     echo "port $port is taken by $holder: stop scripts/run.sh or scripts/web.sh if one runs, or run" >&2
     echo "scripts/up.sh down for containers left from before (lsof -nP -iTCP:$port -sTCP:LISTEN shows it)" >&2
@@ -56,7 +57,7 @@ for port in 8080 5173; do
 done
 
 # Says where to go once voice and the page answer, among the containers' logs.
-(until curl -s -o /dev/null http://127.0.0.1:8080/ && curl -s -o /dev/null http://127.0.0.1:5173/; do sleep 1; done
+(wait_http -n 0 -i 1 http://127.0.0.1:8080/ && wait_http -n 0 -i 1 http://127.0.0.1:5173/
   echo "ready: open http://127.0.0.1:5173" >&2) &
 note=$!
 trap 'kill "$note" 2>/dev/null || true' EXIT
