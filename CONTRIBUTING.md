@@ -29,14 +29,14 @@ How voice-guide is built, in plain words. The complete rules, with the reasoning
 |---|---|
 | `scripts/check.sh` | Every check CI runs: formatting, docs, lint with module boundaries, dead code, generated code, Go tests with the race detector and the database, TypeScript, Python |
 | `scripts/format.sh` | Formats every Go, TypeScript, JSON and Python file (`--check` only reports) |
-| `scripts/up.sh` | Starts everything in Docker, needing nothing else installed: the database, speech-to-text, Kokoro, the model service (Claude API or `MODEL_PROVIDER=fake`), voice and the test page at http://127.0.0.1:5173, on a database of its own (`voice_app`). Makes `.env` if missing and asks for a missing key, as `scripts/run.sh` does. Ctrl-C stops it; `scripts/up.sh down` removes the containers and keeps the data |
-| `scripts/run.sh` | Starts everything with the settings in `.env`: the database, speech-to-text, Kokoro (on the Mac's GPU with `KOKORO=mlx`), the model service, the test page at http://127.0.0.1:5173 and voice. The first run saves the key and settings given in the shell into `.env`, and asks for a missing key. Ctrl-C stops it |
+| `scripts/up.sh` | Starts everything in Docker, needing nothing else installed: the database, speech-to-text, Kokoro, the model service (Claude API or `MODEL_PROVIDER=fake`), the Go service and the web page at http://127.0.0.1:5173, on a database of its own (`voice_app`). Makes `.env` if missing and asks for a missing key, as `scripts/run.sh` does. Ctrl-C stops it; `scripts/up.sh down` removes the containers and keeps the data |
+| `scripts/run.sh` | Starts everything with the settings in `.env`: the database, speech-to-text, Kokoro (on the Mac's GPU with `KOKORO=mlx`), the model service, the web page at http://127.0.0.1:5173 and the Go service. The first run saves the key and settings given in the shell into `.env`, and asks for a missing key. Ctrl-C stops it |
 | `scripts/kokoro-mlx.sh` | Runs Kokoro on the Mac's GPU through Apple's MLX at http://127.0.0.1:8882; `scripts/run.sh` starts it with `KOKORO=mlx`. Needs Apple silicon and uv; installs pinned packages and the model (about 0.9 GB) under `~/Library/Caches/voice-guide/`; delete that folder to remove it |
 | `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume |
 | `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
 | `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
 | `scripts/publish.sh` | Publishes changed files in `agents/` as new versions |
-| `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; voice serves the new build from the next load |
+| `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; the Go service serves the new build from the next load |
 | `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
 | `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
 | `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
@@ -49,7 +49,7 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 
 | Path | What lives there |
 |---|---|
-| `cmd/voice/` | The voice service's entry point; wires the modules together |
+| `cmd/voice/` | The Go service's entry point; wires the modules together |
 | `cmd/migrate/`, `cmd/publish/`, `cmd/productkey/`, `cmd/webhook/` | The migration step, publishing agents, product keys and the webhook, for the scripts above |
 | `cmd/checkspeak/` | Acts as a browser that talks to an agent, for the speed checks in `.claude/skills/measure/` |
 | `cmd/classgen/` | Writes the schematic's type views; its tests check the schematic against the code |
@@ -64,12 +64,13 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `agents/` | The agents, one Markdown file each: a settings block, then the persona |
 | `migrations/` | Database migrations (goose), numbered across modules |
 | `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |
-| `examples/job-board/` | The test embedding: a small site that puts an agent on its page, as a product would |
+| `examples/job-board/` | The test embedding: a small job board that puts an agent on its page, as a product would |
 | `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
 | `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |
 | `schematic/` | The schematic's page and its hand-written levels |
 | `seed/` | The user the test embedding and the web page start sessions for: their reference and resume |
-| `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds voice, its setup, the model service and the test page, built by `Dockerfile` |
+| `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds the Go service, its setup, the model service and the web page, built by `Dockerfile` |
+| `CLAUDE.md`, `.claude/` | The maintainer's setup for AI coding assistants: instructions, skills and hooks. The working notes they mention are kept outside the repository |
 
 ## 1. Principles
 
@@ -116,7 +117,7 @@ Every piece of work is one of four kinds:
 - Inside each, the core holds the rules and depends on nothing outside it but the modules it may call and who a request comes from; HTTP, WebRTC, speech, the model and the database plug in as adapters in subfolders, and a new one is held to its core's limits until it gets its own.
 - Ports are for I/O only (storage, the network, vendors); the rules are called directly, never through an interface. A vendor or another service gets a port only where a second real implementation is planned; the one exception so far is the poster that sends deliveries to a product's server, kept so the network stays out of conversation's tests.
 - Every port has a fake from its first day.
-- Only the programs in `cmd/` wire things together: `cmd/voice` the service, `cmd/publish`, `cmd/productkey`, `cmd/webhook` and `cmd/checkspeak` what each needs.
+- Only the programs in `cmd/` wire things together: `cmd/voice` the Go service, `cmd/publish`, `cmd/productkey`, `cmd/webhook` and `cmd/checkspeak` what each needs.
 - A vendor's package is used only by its adapter. A `cmd/` program that plays the browser for a check, `cmd/checkspeak`, may use WebRTC's (Pion) itself: it is the other side of the connection, and ships in no service.
 - The API's router, the ticket check, product keys and who a request comes from sit outside the modules and depend on none of them, so any module's HTTP part plugs into the router.
 
