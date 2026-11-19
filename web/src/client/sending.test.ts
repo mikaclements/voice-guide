@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ProblemError, type Turns } from "./api.ts";
+import { ProblemError } from "./api.ts";
 import { ChannelTurns } from "./audio.ts";
 import { Hearing } from "./hearing.ts";
 import { type Reply, Sender } from "./sending.ts";
+import type { Turns } from "./turns.ts";
 
 // A sender over a data channel's page side, with a clock, playback and page that record what
 // they're told; replies are kept by message ID, in the order added.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { failure, startTimer } from "./api.ts";
+import { failure } from "./api.ts";
 import {
   ChannelTurns,
   microphone,
@@ -9,6 +9,7 @@ import {
   sendMicrophone,
   watchForDrop,
 } from "./audio.ts";
+import { startTimer } from "./turns.ts";
 
 // A browser's media devices whose microphone prompt the test answers, or never does, recording what
 // was asked and which tracks were stopped.

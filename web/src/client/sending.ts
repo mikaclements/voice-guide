@@ -1,17 +1,11 @@
 // One send of the user's words and what the page does around it: muting the reply it interrupts,
 // timing it, keeping its request ID when it may have been taken, and what the page shows.
 
-import {
-  failure,
-  keepRequestId,
-  requestIdFor,
-  startTimer,
-  type TurnEnd,
-  type Turns,
-} from "./api.ts";
+import { failure, keepRequestId, requestIdFor } from "./api.ts";
 import type { Playback } from "./audio.ts";
 import { type Over, overBy } from "./ending.ts";
 import type { Hearing } from "./hearing.ts";
+import { startTimer, type TurnEnd, type Turns } from "./turns.ts";
 
 // A reply as the page shows it.
 export type Reply = {
