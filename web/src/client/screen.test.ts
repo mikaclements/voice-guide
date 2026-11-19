@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ChannelTurns } from "./audio.ts";
-import { Screen } from "./screen.ts";
+import { Screen, screenSendBelow } from "./screen.ts";
 import { httpTurns } from "./turns.ts";
 
 const board = (content: string) => ({ name: "board", content });
@@ -47,22 +47,44 @@ test("after a reconnect, every change voice didn't say went with a turn is sent 
   assert.deepEqual(channel(screen).sent, [screenMessage(1, notes("Read-heavy"))]);
 });
 
-test("a block voice refuses is reported, not sent again unchanged, and never counted as taken", () => {
+test("a block voice refuses is reported by name, never counted as taken, and sent again unchanged neither on its channel nor over HTTP, only on the next channel", () => {
   const refusals: string[] = [];
-  const screen = new Screen((m) => refusals.push(m));
+  const screen = new Screen((name, m) => refusals.push(`${name}: ${m}`));
   const c = channel(screen);
   screen.set([board("x".repeat(9))]);
   c.from({ type: "screen_refused", n: 1, detail: "screen input is over the limit" });
   screen.set([board("x".repeat(9)), notes("Read-heavy")]);
   c.from({ type: "done", request_id: "r1", screen_taken: 2 });
-  assert.deepEqual(refusals, ["screen input is over the limit"]);
+  assert.deepEqual(refusals, ["board: screen input is over the limit"]);
   assert.deepEqual(c.sent, [
     screenMessage(1, board("x".repeat(9))),
     screenMessage(2, notes("Read-heavy")),
   ]);
-  assert.deepEqual(screen.pending(), [board("x".repeat(9))]);
+  assert.deepEqual(screen.pending(), []);
+  c.turns.closed();
+  assert.deepEqual(channel(screen).sent, [screenMessage(1, board("x".repeat(9)))]);
   screen.set([board("Cache"), notes("Read-heavy")]);
-  assert.deepEqual(c.sent.at(-1), screenMessage(3, board("Cache")));
+  assert.deepEqual(screen.pending(), [board("Cache")]);
+});
+
+test("while the channel's buffer is full, changes wait, and only the newest of each name goes once it drains", () => {
+  const screen = new Screen();
+  const sent: object[] = [];
+  let buffered = 0;
+  const replies = screen.connect(
+    (m) => sent.push(JSON.parse(m)),
+    () => buffered,
+  );
+  screen.set([board("Cache")]);
+  buffered = screenSendBelow + 1;
+  screen.set([board("Cache -> Database")]);
+  screen.set([board("Cache -> Database -> Replica")]);
+  buffered = 0;
+  replies.drained();
+  assert.deepEqual(sent, [
+    screenMessage(1, board("Cache")),
+    screenMessage(2, board("Cache -> Database -> Replica")),
+  ]);
 });
 
 // voice's answer to a typed turn: the reply streamed, or a refusal.

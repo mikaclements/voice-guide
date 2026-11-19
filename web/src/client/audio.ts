@@ -3,7 +3,7 @@
 // WHIP (RFC 9725).
 import { authorized, problemFrom } from "./api.ts";
 import { TurnFailure } from "./retry.ts";
-import type { Screen, ScreenReplies } from "./screen.ts";
+import { type Screen, type ScreenReplies, screenSendBelow } from "./screen.ts";
 import { type Spoken, type TurnEnd, type Turns, turnBody } from "./turns.ts";
 
 // Why the connection ended: replaced by another tab (no reconnect), ended, expired (the session's
@@ -57,9 +57,15 @@ export class ChannelTurns implements Turns {
     this.screen = screen;
   }
 
-  // The data channel opened: the screen's changes go on it from now on.
-  opened(): void {
-    this.screenReplies = this.screen?.connect(this.send);
+  // The data channel opened: the screen's changes go on it from now on, while little waits in its
+  // buffer, as buffered says.
+  opened(buffered?: () => number): void {
+    this.screenReplies = this.screen?.connect(this.send, buffered);
+  }
+
+  // The data channel's buffer drained: screen changes held back go now.
+  drained(): void {
+    this.screenReplies?.drained();
   }
 
   take(
@@ -328,7 +334,9 @@ export async function openAudio(
     if (!(await until(() => dc.readyState === "open", dc, "open", openWaitMs))) {
       throw new Error("the audio connection didn't open");
     }
-    turns.opened();
+    dc.bufferedAmountLowThreshold = screenSendBelow;
+    dc.onbufferedamountlow = () => turns.drained();
+    turns.opened(() => dc.bufferedAmount);
     return {
       turns,
       stream,

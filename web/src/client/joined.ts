@@ -136,7 +136,7 @@ export type Joining = {
   giveBack(words: string): void;
   ended(reason: Over): void;
   refused(refusal: { message: string; status?: number; type?: string }): void;
-  screenRefused?(message: string): void;
+  screenRefused?(refusal: { name: string; message: string }): void;
 };
 
 // One audio connection the session holds, with its playback once the agent's stream arrives; asked
@@ -186,8 +186,8 @@ export class JoinedSession {
     this.deps = deps;
     this.open = open;
     this.play = play;
-    this.screen = new Screen((message) => {
-      if (!this.left) this.deps.screenRefused?.(message);
+    this.screen = new Screen((name, message) => {
+      if (!this.left) this.deps.screenRefused?.({ name, message });
     });
     this.turns = this.httpTurns();
     const page: Page = {

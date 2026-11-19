@@ -486,6 +486,6 @@ test("screen input set before join goes on the audio connection once it opens, a
   const told = p.el.events.at(-1);
   assert.deepEqual(
     [told?.type, told?.detail],
-    ["voice-guide-screen-refused", { message: "too large", session: "s1" }],
+    ["voice-guide-screen-refused", { name: "board", message: "too large", session: "s1" }],
   );
 });

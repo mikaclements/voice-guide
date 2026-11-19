@@ -199,7 +199,7 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
             ended: (reason) => emit("voice-guide-ended", { reason }),
             refused: ({ message, status, type }) =>
               emit("voice-guide-error", { message, status, type }),
-            screenRefused: (message) => emit("voice-guide-screen-refused", { message }),
+            screenRefused: (refusal) => emit("voice-guide-screen-refused", refusal),
           },
           open,
           play,
