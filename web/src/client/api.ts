@@ -13,7 +13,7 @@ export const expiredMessage = "This session has expired; start again";
 export class ProblemError extends Error {
   readonly status: number;
   readonly type: string;
-  // Whether voice said it, as a problem details document, and not the page's dev server or
+  // Whether voice said it, as a problem details document, and not the product's server or
   // something between: a start refused by anything else never reached voice.
   readonly fromVoice: boolean;
 
@@ -41,7 +41,7 @@ export async function problemFrom(res: Response): Promise<ProblemError> {
       p.detail ?? "",
     );
   }
-  // Plain text is the dev server's own explanation; any other body, such as a proxy's error page,
+  // Plain text is the product's server's own explanation; any other body, such as a proxy's error page,
   // isn't meant to be read by people, so only its status is told.
   const plain = res.headers.get("Content-Type")?.startsWith("text/plain");
   return new ProblemError(

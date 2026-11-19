@@ -52,7 +52,7 @@ COPY services/model/src services/model/src
 USER node
 ENTRYPOINT ["sh", "-c", "if [ \"$MODEL_PROVIDER\" = claude-subscription ]; then echo 'MODEL_PROVIDER=claude-subscription uses Claude Code signed in on this Mac, which a container cannot reach: use claude-api or fake here, or scripts/run.sh' >&2; exit 1; fi; exec node services/model/src/main.ts"]
 
-# The test page, served by its Vite dev server, which plays the product's server (web/dev/product.ts).
+# The test page, served by its Vite dev server, which plays the product's server (web/dev/product-server.ts).
 # Vite writes beside its config and its cache under web/, so the page's user owns the folder.
 FROM packages AS page
 COPY web web

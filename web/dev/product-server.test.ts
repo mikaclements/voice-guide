@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { contextBlock, defaultTimeoutMs, productRoutes, readBody } from "./product.ts";
+import { contextBlock, defaultTimeoutMs, productRoutes, readBody } from "./product-server.ts";
 import { seedFile } from "./seed.ts";
 
 async function userFolder(t: { after(fn: () => unknown): void }) {

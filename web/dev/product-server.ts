@@ -11,6 +11,9 @@ const localUser = resolve(repo, "seed/local");
 // A start's body is two UUIDs; this leaves room, and stops a page that sends more from being read.
 const startBodyLimit = 4096;
 
+// Where voice is: VOICE_ADDR, which the other scripts find it by too.
+export const voiceAddress = process.env.VOICE_ADDR ?? "127.0.0.1:8080";
+
 // What the product's server needs to call voice: where it is, and the product key it starts sessions
 // and lists agents with.
 type Product = {
@@ -64,7 +67,7 @@ export function devProduct(): Plugin {
       server.middlewares.use(
         "/product",
         productRoutes({
-          voice: `http://${process.env.VOICE_ADDR ?? "127.0.0.1:8080"}`,
+          voice: `http://${voiceAddress}`,
           key: process.env.VOICE_DEV_PRODUCT_KEY ?? "",
           user: placeholderUser,
           local: localUser,
