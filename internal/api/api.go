@@ -114,13 +114,13 @@ func (rt *Router) Ticket(c access.Caller, started time.Time) (t ticket.Ticket, o
 // the credential check does, for a route whose own clock finds it so.
 func (rt *Router) TicketExpired(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
-	rt.TypedProblem(w, r, ticketExpired, "Ticket expired", http.StatusUnauthorized, "the session's ticket has expired; start a new session")
+	rt.TypedProblem(w, r, http.StatusUnauthorized, ticketExpired, "Ticket expired", "the session's ticket has expired; start a new session")
 }
 
 // SessionEnded answers that the session has ended, for a route whose session is over: sending
 // it again never helps, which tells it from the 409 for another turn in flight.
 func (rt *Router) SessionEnded(w http.ResponseWriter, r *http.Request) {
-	rt.TypedProblem(w, r, sessionEnded, "Session ended", http.StatusConflict, "the session has ended; start a new one")
+	rt.TypedProblem(w, r, http.StatusConflict, sessionEnded, "Session ended", "the session has ended; start a new one")
 }
 
 // takes is what credentials a route takes.
@@ -346,12 +346,12 @@ type problemJSON struct {
 // Problem answers with a problem no client needs to tell apart from others
 // with its status: about:blank, titled with the status.
 func (rt *Router) Problem(w http.ResponseWriter, r *http.Request, status int, detail string) {
-	rt.TypedProblem(w, r, "about:blank", http.StatusText(status), status, detail)
+	rt.TypedProblem(w, r, status, "about:blank", http.StatusText(status), detail)
 }
 
 // TypedProblem answers with a problem of its own type, whose title sums up the
 // type rather than the status.
-func (rt *Router) TypedProblem(w http.ResponseWriter, r *http.Request, typ, title string, status int, detail string) {
+func (rt *Router) TypedProblem(w http.ResponseWriter, r *http.Request, status int, typ, title, detail string) {
 	rt.Reply(w, r, status, "application/problem+json", problemJSON{Type: typ, Title: title, Status: status, Detail: detail})
 }
 

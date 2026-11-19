@@ -136,7 +136,7 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, c access.C
 		s.api.Problem(w, r, http.StatusNotFound, "no such agent")
 		return
 	case errors.As(err, &mismatch):
-		s.api.TypedProblem(w, r, sessionContextMismatch, "Session context doesn't match the agent", http.StatusUnprocessableEntity, mismatch.Error())
+		s.api.TypedProblem(w, r, http.StatusUnprocessableEntity, sessionContextMismatch, "Session context doesn't match the agent", mismatch.Error())
 		return
 	case errors.Is(err, conversation.ErrSessionContextTooLarge):
 		s.api.Problem(w, r, http.StatusRequestEntityTooLarge, err.Error())
@@ -144,7 +144,7 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, c access.C
 	case errors.Is(err, conversation.ErrRequestReused):
 		// 422: the request can never succeed with this ID, so retrying it is pointless;
 		// 409 stays for a retry that arrives while the first is still in flight.
-		s.api.TypedProblem(w, r, requestReused, "Request ID reused for a different request", http.StatusUnprocessableEntity, err.Error())
+		s.api.TypedProblem(w, r, http.StatusUnprocessableEntity, requestReused, "Request ID reused for a different request", err.Error())
 		return
 	case errors.Is(err, conversation.ErrUserContextUnavailable):
 		// 503, so the product retries the same request; the reason stays in the log.
