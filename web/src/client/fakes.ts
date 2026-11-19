@@ -17,6 +17,9 @@ type Opened = {
   closed: number[];
   muted: boolean[];
   give(given: boolean): void;
+  // voice says the session is ready on this connection, as it does at once unless the test opened
+  // it waiting for this.
+  ready(): void;
 };
 
 const hello = () =>
@@ -30,7 +33,7 @@ export function fakeVoice() {
     closing: (why: Closing) => void;
     options?: AudioOptions;
     fail(err: unknown): void;
-    open(): Opened;
+    open(waitForReady?: boolean): Opened;
   }[] = [];
   const requests: string[] = [];
   // Each playback started, with how it tells the session the browser refused to play, and how it
@@ -62,14 +65,17 @@ export function fakeVoice() {
         closing,
         options,
         fail: reject,
-        open() {
+        open(waitForReady = false) {
           const sent: Opened["sent"] = [];
+          const ready = Promise.withResolvers<void>();
+          if (!waitForReady) ready.resolve();
           const closed: number[] = [];
           const muted: boolean[] = [];
           let give = (_given: boolean) => {};
           const audio: Audio = {
             turns: new ChannelTurns((m) => sent.push(JSON.parse(m)), undefined, options?.screen),
             stream: Promise.resolve({} as MediaStream),
+            ready: ready.promise,
             microphone: {
               stop() {},
               mute: (on) => muted.push(on),
@@ -85,7 +91,14 @@ export function fakeVoice() {
           };
           audio.turns.opened();
           resolve(audio);
-          return { audio, sent, closed, muted, give: (given: boolean) => give(given) };
+          return {
+            audio,
+            sent,
+            closed,
+            muted,
+            give: (given: boolean) => give(given),
+            ready: ready.resolve,
+          };
         },
       }),
     )) as never;

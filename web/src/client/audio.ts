@@ -182,10 +182,13 @@ export class ChannelTurns implements Turns {
 const firstAudio = (m: { first_audio_ms?: number }) =>
   m.first_audio_ms === undefined ? {} : { firstAudioMs: m.first_audio_ms };
 
+// ready settles once voice says the session can take the user's words: it has read what the
+// session was given, or tried to; never, for a connection that closes first.
 export type Audio = {
   turns: ChannelTurns;
   stream: Promise<MediaStream>;
   microphone: Microphone;
+  ready: Promise<void>;
   close(): Promise<void>;
 };
 
@@ -296,8 +299,9 @@ export async function openAudio(
   const dc = pc.createDataChannel("turns");
   const turns = new ChannelTurns((msg) => dc.send(msg), onUserSpeech, screen);
   let told = false; // voice said why it closed, or the page closed it
+  const ready = Promise.withResolvers<void>();
   dc.onmessage = (e) => {
-    told = onChannelMessage(e.data, turns, onClosing) || told;
+    told = onChannelMessage(e.data, turns, onClosing, ready.resolve) || told;
   };
   const drop = () => {
     turns.closed();
@@ -336,11 +340,14 @@ export async function openAudio(
     }
     dc.bufferedAmountLowThreshold = screenSendBelow;
     dc.onbufferedamountlow = () => turns.drained();
+    // voice reads what the session was given now, ahead of the user's first words, and says ready.
+    dc.send(JSON.stringify({ type: "warm" }));
     turns.opened(() => dc.bufferedAmount);
     return {
       turns,
       stream,
       microphone: mic,
+      ready: ready.promise,
       async close() {
         told = true;
         // Closing here fires no close event, so a turn still waiting is settled here.
@@ -357,13 +364,19 @@ export async function openAudio(
 }
 
 // Takes one message from voice; true when voice says why it closes the connection, which settles a
-// waiting turn at once, since the page's own close fires no close event.
+// waiting turn at once, since the page's own close fires no close event. onReady hears voice say the
+// session can take the user's words.
 export function onChannelMessage(
   raw: string,
   turns: ChannelTurns,
   onClosing: (why: Closing) => void,
+  onReady: () => void = () => {},
 ): boolean {
   const m = JSON.parse(raw);
+  if (m.type === "ready") {
+    onReady();
+    return false;
+  }
   if (m.type !== "closing") {
     turns.receive(raw);
     return false;

@@ -300,7 +300,7 @@ test("Mute shows once the microphone is on, and a press to hear the agent when t
   await settle();
   assert.deepEqual(
     [p.part("status").textContent, p.part("mute").textContent],
-    ["Agent is about to greet you: your microphone opens when it starts", "Mute"],
+    ["Getting ready…", "Mute"],
   );
   p.part("mute").fire("click");
   assert.deepEqual([c.muted, p.part("mute").textContent], [[true, true], "Unmute"]);
@@ -332,6 +332,20 @@ test("its events leave the shadow root and name the session, never the ticket", 
   });
   assert.equal(p.el.events[1].detail.reason, "unusable");
   assert.doesNotMatch(JSON.stringify(p.el.events.map((e) => e.detail)), /tk-secret/);
+});
+
+test("once the session can take the user's words, the element fires voice-guide-ready naming it", async () => {
+  const p = page();
+  p.put();
+  p.el.join({ session: "s1", ticket: "tk1" });
+  await settle();
+  p.f.offers[0].fail(new TypeError("Failed to fetch")); // in text, ready at once
+  await settle();
+  const ready = p.el.events.filter((e) => e.type === "voice-guide-ready");
+  assert.deepEqual(
+    ready.map((e) => [e.bubbles, e.composed, e.detail]),
+    [[true, true, { session: "s1" }]],
+  );
 });
 
 test("end() right after join ends that session, and rejects when End doesn't reach voice", async () => {

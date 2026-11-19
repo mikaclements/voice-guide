@@ -28,19 +28,21 @@ import { httpTurns, type Turns } from "./turns.ts";
 // microphone nor the random IDs every request carries.
 export const insecureMessage = "voice-guide needs this page served over https";
 
-// How long the microphone stays held for a greeting whose first sound never arrives: a round guess,
-// room for a slow first model call before the greeting sounds (over 4 s seen); to be measured once
-// the model starts with the session, which shortens it.
-const greetingHoldMs = 30_000;
+// How long the microphone stays held for a session that never gets ready, as when its greeting's
+// first sound never arrives: a round guess, room for a slow first model call before the greeting
+// sounds (over 4 s seen) or for voice reading a large session context; voice gives up waiting on
+// that read after the same time. To be measured with the largest session context allowed.
+const holdMs = 30_000;
 
 type State = {
   messages: Message[];
   notes: { error: string; audio: string; microphone: string };
   microphoneOn: boolean;
-  // Muted by the user's own press; the microphone also sends silence while the greeting holds it.
+  // Muted by the user's own press; the microphone also sends silence while the session gets ready.
   muted: boolean;
-  // The agent's greeting is still to sound, so the microphone holds muted until it starts.
-  greeting: boolean;
+  // The session isn't ready for the user's words yet: the agent's greeting is still to sound, or
+  // voice is still reading what the session was given; the microphone holds muted meanwhile.
+  gettingReady: boolean;
   // The browser refused to play the agent until the user interacts with the page.
   blocked: boolean;
   busy: boolean;
@@ -85,7 +87,7 @@ export type Shown = {
   busy: boolean;
 };
 
-export function view(s: State, interrupts: boolean, agent = "Agent"): Shown {
+export function view(s: State, interrupts: boolean): Shown {
   const answering = s.messages.some((m) => m.who === "agent" && !m.ended);
   const live = !s.over;
   const mic = s.microphoneOn && live;
@@ -109,8 +111,8 @@ export function view(s: State, interrupts: boolean, agent = "Agent"): Shown {
       ? ""
       : s.muted
         ? "Microphone muted: type, or unmute to talk"
-        : s.greeting
-          ? `${agent} is about to greet you: your microphone opens when it starts`
+        : s.gettingReady
+          ? "Getting ready…"
           : answering
             ? "Answering"
             : "Listening",
@@ -129,14 +131,14 @@ export function view(s: State, interrupts: boolean, agent = "Agent"): Shown {
 export type Joining = {
   session: string;
   ticket: string;
-  // What the status line calls the agent; "Agent" unless given.
-  agent?: string;
   fetcher: typeof fetch;
   show(shown: Shown): void;
   giveBack(words: string): void;
   ended(reason: Over): void;
   refused(refusal: { message: string; status?: number; type?: string }): void;
   screenRefused?(refusal: { name: string; message: string }): void;
+  // Once, when the session can first take the user's words, so the page can end its own loading.
+  ready?(): void;
 };
 
 // One audio connection the session holds, with its playback once the agent's stream arrives; asked
@@ -154,7 +156,7 @@ export class JoinedSession {
     notes: { error: "", audio: "", microphone: "" },
     microphoneOn: false,
     muted: false,
-    greeting: false,
+    gettingReady: false,
     blocked: false,
     busy: false,
   };
@@ -165,8 +167,10 @@ export class JoinedSession {
   private audio: HeldAudio | undefined;
   private turns: Turns;
   private reconnect: ReturnType<typeof setTimeout> | undefined;
-  // The cap on the greeting's hold of the microphone, while it lasts.
-  private greetingCap: ReturnType<typeof setTimeout> | undefined;
+  // The cap on the microphone's hold while the session gets ready, while it lasts.
+  private holdCap: ReturnType<typeof setTimeout> | undefined;
+  // Whether the page was told the session is ready; it is told once, and nothing holds after.
+  private readied = false;
   private ending: Promise<void> | undefined;
   // Reads the received audio for every connection the session has, one after another.
   private readonly clock = new ReplySoundClock();
@@ -225,40 +229,49 @@ export class JoinedSession {
   // Sends the user's words, unless a send can't go now; resolves once the turn and its audio end.
   send(words: string): Promise<void> | undefined {
     const said = words.trim();
-    if (!said || view(this.state, this.turns.interrupts, this.deps.agent).locked) return undefined;
+    if (!said || view(this.state, this.turns.interrupts).locked) return undefined;
     this.note({ error: "" });
     return this.sender.send(said, this.turns, this.audio?.playback);
   }
 
   // Mutes the microphone, or unmutes it, so the user can stop the agent hearing itself or them;
-  // muting carries over to the next connection. Unmuted before the greeting sounds, it opens then.
+  // muting carries over to the next connection. Unmuted while the session gets ready, it opens then.
   mute(): void {
     this.set({ muted: !this.state.muted });
     this.silence();
   }
 
-  // The microphone sends silence while the user muted it or the greeting holds it.
+  // The microphone sends silence while the user muted it or the session gets ready.
   private silence(): void {
-    this.audio?.connection.microphone.mute(this.state.muted || this.state.greeting);
+    this.audio?.connection.microphone.mute(this.state.muted || this.state.gettingReady);
   }
 
-  // Holds the microphone muted until the greeting's first sound, or the opening ending without one.
-  // Speech into the silence before it, while the model starts, would interrupt it at its first
-  // packet, and the user would never hear it; once it sounds, the user cuts in as on any reply.
+  // Holds the microphone muted until the session is ready: the greeting's first sound, or the
+  // opening ending without one once voice says it has read what the session was given. Speech into
+  // the silence before a greeting, while the model starts, would interrupt it at its first packet,
+  // and the user would never hear it; once it sounds, the user cuts in as on any reply.
   private hold(): void {
-    const cap = setTimeout(() => this.release(cap), greetingHoldMs);
-    this.greetingCap = cap;
-    this.set({ greeting: true });
+    const cap = setTimeout(() => this.release(cap), holdMs);
+    this.holdCap = cap;
+    this.set({ gettingReady: true });
     this.silence();
   }
 
-  // Ends the hold that cap belongs to, so an earlier hold's greeting sounding late opens nothing.
-  private release(cap: ReturnType<typeof setTimeout> | undefined): void {
-    if (cap === undefined || cap !== this.greetingCap) return;
+  // Ends the hold that cap belongs to, so an earlier hold's greeting sounding late opens nothing,
+  // and, unless the audio closed under it, tells the page the session is ready.
+  private release(cap: ReturnType<typeof setTimeout> | undefined, ready = true): void {
+    if (cap === undefined || cap !== this.holdCap) return;
     clearTimeout(cap);
-    this.greetingCap = undefined;
-    this.set({ greeting: false });
+    this.holdCap = undefined;
+    this.set({ gettingReady: false });
     this.silence();
+    if (ready) this.becameReady();
+  }
+
+  private becameReady(): void {
+    if (this.readied || this.left || this.state.over) return;
+    this.readied = true;
+    this.deps.ready?.();
   }
 
   // Plays the agent from the user's press, after the browser refused to without one.
@@ -319,7 +332,7 @@ export class JoinedSession {
   private set(change: Partial<State>): void {
     if (this.left) return;
     this.state = { ...this.state, ...change };
-    this.deps.show(view(this.state, this.turns.interrupts, this.deps.agent));
+    this.deps.show(view(this.state, this.turns.interrupts));
   }
 
   private note(change: Partial<State["notes"]>): void {
@@ -331,8 +344,9 @@ export class JoinedSession {
     this.audio?.playback?.stop();
     const closing = this.audio?.connection.close().catch(() => {});
     this.audio = undefined;
-    // After the close, so letting go of the greeting's hold can't turn the closing microphone back on.
-    this.release(this.greetingCap);
+    // After the close, so letting go of the hold can't turn the closing microphone back on; the
+    // session isn't ready for it, and the next connection holds again.
+    this.release(this.holdCap, false);
     this.set({ microphoneOn: false, blocked: false });
     return closing ?? Promise.resolve();
   }
@@ -391,9 +405,11 @@ export class JoinedSession {
       }
       const opened: HeldAudio = { connection };
       connection.stream.then((stream) => this.startPlayback(opened, stream));
-      // The session's first connection, before its opening: a reconnect once it has turns holds nothing.
-      if (!this.openedInText && !this.state.messages.length) this.hold();
-      connection.microphone.mute(this.state.muted || this.state.greeting);
+      // The session's first connection, before its opening: a reconnect once it has turns holds
+      // nothing, and is ready when voice says so.
+      if (!this.readied && !this.openedInText && !this.state.messages.length) this.hold();
+      else if (!this.readied) void connection.ready.then(() => this.becameReady());
+      connection.microphone.mute(this.state.muted || this.state.gettingReady);
       connection.microphone.given.then((given) => {
         if (this.audio === opened) this.set({ microphoneOn: given });
       });
@@ -435,12 +451,15 @@ export class JoinedSession {
     this.set({ blocked });
     // The agent's opening, once the browser plays it, at once or from the user's press: a greeting
     // sent while it refused would be lost to the user, yet saved as heard. Again on each
-    // connection, as after a drop: voice takes only the first, and refuses the rest.
+    // connection, as after a drop: voice takes only the first, and refuses the rest. The greeting's
+    // first sound ends the hold; an opening ending without one, as for an agent that waits, ends it
+    // once voice has read what the session was given.
     if (blocked || opened.asked) return;
     opened.asked = true;
-    const cap = this.greetingCap;
+    const cap = this.holdCap;
     const release = () => this.release(cap);
-    void this.sender.open(opened.connection.turns, release).finally(release);
+    const ready = opened.connection.ready;
+    void this.sender.open(opened.connection.turns, release).finally(() => ready.then(release));
   }
 
   // Opening the audio failed with err: try again while tries are left, go on in text, or show the session over.
@@ -450,6 +469,8 @@ export class JoinedSession {
     if ((next === "retry" || next === "text") && !this.openedInText) {
       this.openedInText = true;
       void this.sender.open(this.turns); // shown, not heard, rather than waiting on the tries
+      // In text the user waits on the first reply anyway, which reads what the session was given.
+      this.becameReady();
     }
     if (next === "over") this.foundOver(whyOver(err) ?? "ended", err);
     else if (next === "retry") {

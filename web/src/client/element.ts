@@ -200,6 +200,7 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
             refused: ({ message, status, type }) =>
               emit("voice-guide-error", { message, status, type }),
             screenRefused: (refusal) => emit("voice-guide-screen-refused", refusal),
+            ready: () => emit("voice-guide-ready", {}),
           },
           open,
           play,

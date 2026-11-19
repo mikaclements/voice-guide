@@ -438,3 +438,15 @@ test("a turn waiting when voice closes the connection settles, and voice's reaso
   onChannelMessage(JSON.stringify({ type: "closing", reason: "replaced" }), quiet.turns, () => {});
   await assert.rejects(unsure, (err) => failure(err) === "unsure");
 });
+
+test("voice saying the session is ready is heard, and touches no turn", () => {
+  const { turns } = channel();
+  let ready = 0;
+  const closed = onChannelMessage(
+    JSON.stringify({ type: "ready" }),
+    turns,
+    () => assert.fail("not a closing"),
+    () => ready++,
+  );
+  assert.deepEqual([closed, ready], [false, 1]);
+});

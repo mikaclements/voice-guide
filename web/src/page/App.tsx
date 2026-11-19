@@ -46,7 +46,6 @@ export function App() {
       joined.current = new JoinedSession({
         session: s.id,
         ticket,
-        agent: agent.name,
         // voice through the dev server's proxy, on the page's own origin.
         fetcher: at(""),
         show: setShown,

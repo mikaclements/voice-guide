@@ -84,9 +84,13 @@ func (s *Service) serve(c access.Caller, session uuid.UUID, voice voiceSettings,
 				r.screenChanged(m)
 				continue
 			}
+			if err == nil && m.Type == "warm" {
+				r.getReady()
+				continue
+			}
 			if err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {
 				s.tell(conn, out{Type: "refused", RequestID: requestOf(m), Reason: reasonUnreadable,
-					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content; type "screen" sends screen_input alone, numbered n`})
+					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content; type "screen" sends screen_input alone, numbered n; type "warm" asks for the session to be readied`})
 				continue
 			}
 			r.begin(ctx, m, received, nil)
