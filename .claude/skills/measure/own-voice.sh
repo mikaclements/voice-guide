@@ -18,7 +18,9 @@ export MODEL_PROVIDER="${MODEL_PROVIDER:-claude-subscription}"
 # Checked first: a voice or model service already on a port, scripts/run.sh's say, would answer
 # instead, and its turns would be saved on another database.
 for port in "${VOICE_ADDR##*:}" "$MODEL_PORT"; do
-  require_free_port "$port" "pick free ones: VOICE_ADDR=127.0.0.1:$((${VOICE_ADDR##*:} + 10000)) MODEL_PORT=$((MODEL_PORT + 10000)) .claude/skills/measure/$(basename "$0") ..."
+  if port_taken "$port"; then
+    require_free_port "$port" "pick free ones: VOICE_ADDR=127.0.0.1:$((${VOICE_ADDR##*:} + 10000)) MODEL_PORT=$((MODEL_PORT + 10000)) .claude/skills/measure/$(basename "$0") ..."
+  fi
 done
 unset voice_addr model_port port
 

@@ -26,8 +26,7 @@ require_free_port() {
 # SECONDS (default 0.2), at most TRIES times (default 100; 0 is forever). Any answer counts, or only
 # a successful one with -f. Fails early when the process PID is no longer running.
 wait_http() {
-  local curl_flags=-s pid="" tries=100 interval=0.2 opt n=0
-  OPTIND=1
+  local curl_flags=-s pid="" tries=100 interval=0.2 opt n=0 OPTIND=1
   while getopts fp:n:i: opt; do
     case "$opt" in
     f) curl_flags=-sf ;;
