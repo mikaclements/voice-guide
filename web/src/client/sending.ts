@@ -3,7 +3,7 @@
 
 import type { Playback } from "./audio.ts";
 import { type Over, overBy } from "./ending.ts";
-import type { Hearing } from "./hearing.ts";
+import type { ReplySoundClock } from "./replysound.ts";
 import { failure, keepRequestId, requestIdFor } from "./retry.ts";
 import { startTimer, type TurnEnd, type Turns } from "./turns.ts";
 
@@ -29,7 +29,7 @@ export interface Page {
   // already shown under youId moves there.
   add(youId: string, words: string, replyId: string): void;
   // The user's words as voice hears them while they speak; none takes the message away.
-  hear(youId: string, words: string): void;
+  showLiveWords(youId: string, words: string): void;
   // The agent's opening, after the messages before, with no message of the user's before it.
   open(replyId: string): void;
   update(replyId: string, change: (r: Reply) => Reply): void;
@@ -60,7 +60,7 @@ export function transcriptPage(
         { id: replyId, who: "agent", text: "" },
       ]),
     open: (replyId) => edit((ms) => [...ms, { id: replyId, who: "agent", text: "" }]),
-    hear: (youId, said) =>
+    showLiveWords: (youId, said) =>
       edit((ms) => {
         if (!said) return ms.filter((m) => m.id !== youId);
         if (!ms.some((m) => m.id === youId))
@@ -80,7 +80,7 @@ export function transcriptPage(
 }
 
 export class Sender {
-  private readonly hearing: Hearing;
+  private readonly clock: ReplySoundClock;
   private readonly page: Page;
   private readonly now: () => number;
   private readonly newId: () => string;
@@ -88,16 +88,16 @@ export class Sender {
   // box when the user sends it again repeats its own ID. A few at most: one per send that failed.
   private readonly kept = new Map<string, string>();
   // The latest reply: a press while sound plays interrupts it, unless an earlier press's stop is
-  // still being timed, which Hearing keeps with the reply that was sounding.
+  // still being timed, which ReplySoundClock keeps with the reply that was sounding.
   private lastReply = "";
 
   constructor(
-    hearing: Hearing,
+    clock: ReplySoundClock,
     page: Page,
     now: () => number = () => performance.now(),
     newId: () => string = () => crypto.randomUUID(),
   ) {
-    this.hearing = hearing;
+    this.clock = clock;
     this.page = page;
     this.now = now;
     this.newId = newId;
@@ -119,7 +119,7 @@ export class Sender {
     const replyId = this.newId();
     const before = this.lastReply;
     this.lastReply = replyId;
-    const unsend = this.hearing.sent(
+    const unsend = this.clock.sent(
       this.now(),
       () => {
         this.page.update(replyId, (r) => ({ ...r, firstSoundMs: r.firstSoundMs ?? timer.sound() }));
@@ -167,7 +167,7 @@ export class Sender {
     const replyId = this.newId();
     const before = this.lastReply;
     this.lastReply = replyId;
-    const unsend = this.hearing.sent(
+    const unsend = this.clock.sent(
       this.now(),
       () => {
         const ms = timer.sound();

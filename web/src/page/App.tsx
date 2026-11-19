@@ -79,7 +79,7 @@ export function App() {
         // A failed End shows in the session's notes, and leaves it live to press again.
         end: act(() => joined.current?.end().catch(() => {})),
         mute: act(() => joined.current?.mute()),
-        hear: act(() => joined.current?.hear()),
+        playAfterPress: act(() => joined.current?.playAfterPress()),
         words: setWords,
         send: (e) => {
           e.preventDefault();
@@ -117,7 +117,7 @@ export type SessionViewProps = {
   words: string;
   starting: boolean;
   error: string;
-  on: Record<"start" | "end" | "mute" | "hear", () => void> & {
+  on: Record<"start" | "end" | "mute" | "playAfterPress", () => void> & {
     agent(id: string): void;
     words(words: string): void;
     send(e: FormEvent): void;
@@ -157,7 +157,7 @@ export function SessionView(props: SessionViewProps) {
         </p>
       ))}
       {shown?.blocked && (
-        <button type="button" onClick={on.hear}>
+        <button type="button" onClick={on.playAfterPress}>
           Tap to hear the agent
         </button>
       )}

@@ -125,7 +125,7 @@ test("under a spoken reply the view carries how long after the user finished spe
   s.f.offers[0].open();
   await settle();
   const said = (id: string, ended: "done" | "lost", spoken: Spoken) =>
-    s.f.offers[0].options?.onHearing?.(id, "Hi", async (onText) => {
+    s.f.offers[0].options?.onUserSpeech?.(id, "Hi", async (onText) => {
       onText("Hello");
       return { ended, model: "m", spoken: Promise.resolve(spoken) };
     });
@@ -184,8 +184,8 @@ test("while the browser refuses to play the agent no opening goes, and the press
   await settle();
   s.f.played[0].blocked(true);
   assert.equal(c.sent.length, 0, "nothing before the press");
-  s.joined.hear();
-  s.joined.hear();
+  s.joined.playAfterPress();
+  s.joined.playAfterPress();
   assert.deepEqual(c.sent, [{ type: "turn", request_id: c.sent[0]?.request_id, opening: true }]);
 });
 
@@ -282,7 +282,7 @@ test("speech once the greeting sounds is sent, and cuts it as any reply", async 
   await from({ type: "text", text: "Welcome back" });
   sound();
   assert.equal(muted(), false, "the user's speech goes, not silence");
-  s.f.offers[0].options?.onHearing?.("r1", "Hello", async (onText) => {
+  s.f.offers[0].options?.onUserSpeech?.("r1", "Hello", async (onText) => {
     onText("Hi");
     return { ended: "done", spoken: Promise.resolve({ failed: false }) };
   });
@@ -395,7 +395,7 @@ test("the agent the browser won't play without a press waits for one", async () 
   await settle();
   s.f.played[0].blocked(true);
   assert.equal(s.last().blocked, true);
-  s.joined.hear();
+  s.joined.playAfterPress();
   assert.equal(s.f.played[0].plays, 1);
   assert.deepEqual([s.last().blocked, s.last().status], [false, greetingStatus]);
 });

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ProblemError } from "./api.ts";
 import { ChannelTurns } from "./audio.ts";
-import { Hearing } from "./hearing.ts";
+import { ReplySoundClock } from "./replysound.ts";
 import { type Reply, Sender } from "./sending.ts";
 import type { Turns } from "./turns.ts";
 
@@ -14,15 +14,15 @@ function harness() {
   const replies = new Map<string, Reply>();
   const givenBack: string[] = [];
   const mutes: boolean[] = [];
-  const hearing = new Hearing();
+  const clock = new ReplySoundClock();
   let now = 0;
   let ids = 0;
   const sender = new Sender(
-    hearing,
+    clock,
     {
       add: (_you, _words, reply) => replies.set(reply, { text: "" }),
       open: (reply) => replies.set(reply, { text: "" }),
-      hear: () => {},
+      showLiveWords: () => {},
       update: (reply, change) =>
         replies.has(reply) && replies.set(reply, change(replies.get(reply) as Reply)),
       giveBack: (_you, reply, words) => replies.delete(reply) && givenBack.push(words),
@@ -47,7 +47,7 @@ function harness() {
     },
     // The received audio, loud or silent, read every 10 ms from `from` to `to`.
     play: (loud: boolean, from: number, to: number) => {
-      for (now = from; now <= to; now += 10) hearing.sample(loud, now);
+      for (now = from; now <= to; now += 10) clock.sample(loud, now);
       now = to;
     },
   };
@@ -169,10 +169,10 @@ test("another send's success leaves the request ID kept for a send that may have
 test("a send refused as the session ended gives the words back and tells the page it ended", async () => {
   const givenBack: string[] = [];
   let ended = 0;
-  const sender = new Sender(new Hearing(), {
+  const sender = new Sender(new ReplySoundClock(), {
     add: () => {},
     open: () => {},
-    hear: () => {},
+    showLiveWords: () => {},
     update: () => {},
     giveBack: (_you, _reply, words) => givenBack.push(words),
     takeBack: () => {},
@@ -190,10 +190,10 @@ test("a send refused as the session ended gives the words back and tells the pag
 
 test("a turn refused as ticket-expired, or by any other 401, tells the page the session is over", async () => {
   const told: string[] = [];
-  const sender = new Sender(new Hearing(), {
+  const sender = new Sender(new ReplySoundClock(), {
     add: () => {},
     open: () => {},
-    hear: () => {},
+    showLiveWords: () => {},
     update: () => {},
     giveBack: () => {},
     takeBack: () => {},

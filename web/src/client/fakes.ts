@@ -1,9 +1,15 @@
 // voice and the browser's audio as the drop-in client's tests meet them: each audio offer waits for
 // the test to open or fail it, each request is recorded with its credential, a typed turn is
 // answered "Hello" and End with the session, unless the test answers them otherwise.
-import { type Audio, type AudioOptions, ChannelTurns, type Closing, type listen } from "./audio.ts";
+import {
+  type Audio,
+  type AudioOptions,
+  ChannelTurns,
+  type Closing,
+  type playAgent,
+} from "./audio.ts";
 
-type Level = Parameters<typeof listen>[1];
+type Level = Parameters<typeof playAgent>[1];
 
 type Opened = {
   audio: Audio;
@@ -93,6 +99,6 @@ export function fakeVoice() {
         blocked(false);
       },
     };
-  }) as typeof listen;
+  }) as typeof playAgent;
   return Object.assign(v, { fetcher, open, play });
 }

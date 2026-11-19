@@ -3,7 +3,7 @@
 // key and hands the page the session's ID and ticket, which the page passes to join(); the element
 // never holds a product key and never starts a session. A thin shell: what it does and shows comes
 // from JoinedSession, and this draws it and turns calls and presses into its calls.
-import type { listen, openAudio } from "./audio.ts";
+import type { openAudio, playAgent } from "./audio.ts";
 import { at, JoinedSession, type Shown, wanted } from "./joined.ts";
 
 // A plain default a product restyles with the custom properties and parts. The box is drawn inside,
@@ -41,7 +41,7 @@ export const ticketAttributeWarning =
 
 // Defines <voice-guide-session>, once, however often the script is loaded; open and play reach
 // the browser's audio unless a test passes its own.
-export function define(open?: typeof openAudio, play?: typeof listen): void {
+export function define(open?: typeof openAudio, play?: typeof playAgent): void {
   if (customElements.get("voice-guide-session")) return;
   // Where this script came from: voice serves it, so that is where voice is. A script with no
   // origin of its own, loaded from a data: or blob: address, calls the page's.
@@ -91,7 +91,7 @@ export function define(open?: typeof openAudio, play?: typeof listen): void {
         const input = this.#input();
         if (this.#joined?.send(input.value)) input.value = "";
       });
-      this.#part("hear").addEventListener("click", () => this.#joined?.hear());
+      this.#part("hear").addEventListener("click", () => this.#joined?.playAfterPress());
       this.#part("mute").addEventListener("click", () => this.#joined?.mute());
       this.#part("end").addEventListener("click", () => this.end().catch(() => {}));
       this.#draw(undefined);

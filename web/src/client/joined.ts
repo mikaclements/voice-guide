@@ -4,7 +4,7 @@
 // do the work; this wires them with no framework, so the script a product loads carries no React,
 // and the element itself, as voice-guide's own page, only draws what this shows.
 import { endSession as endOnVoice, ProblemError } from "./api.ts";
-import { type Audio, listen, openAudio, type Playback } from "./audio.ts";
+import { type Audio, openAudio, type Playback, playAgent } from "./audio.ts";
 import {
   afterAudioFailure,
   afterClosing,
@@ -18,7 +18,7 @@ import {
   reconnectEveryMs,
   reconnectTries,
 } from "./ending.ts";
-import { Hearing, shownReply } from "./hearing.ts";
+import { ReplySoundClock, shownReply } from "./replysound.ts";
 import { type Message, type Page, type Reply, Sender, transcriptPage } from "./sending.ts";
 import { SpokenTurns } from "./spoken.ts";
 import { httpTurns, type Turns } from "./turns.ts";
@@ -142,7 +142,7 @@ const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 export class JoinedSession {
   private readonly j: Joining;
   private readonly open: typeof openAudio;
-  private readonly play: typeof listen;
+  private readonly play: typeof playAgent;
   private state: State = {
     messages: [],
     notes: { error: "", audio: "", microphone: "" },
@@ -163,14 +163,14 @@ export class JoinedSession {
   private greetingCap: ReturnType<typeof setTimeout> | undefined;
   private ending: Promise<void> | undefined;
   // Reads the received audio for every connection the session has, one after another.
-  private readonly hearing = new Hearing();
+  private readonly clock = new ReplySoundClock();
   private readonly sender: Sender;
   private readonly spoken: SpokenTurns;
   // Whether the agent's opening was asked for over HTTP, which happens once, when the first try at
   // the audio connection fails; each connection that opens asks on its data channel.
   private openedInText = false;
 
-  constructor(j: Joining, open: typeof openAudio = openAudio, play: typeof listen = listen) {
+  constructor(j: Joining, open: typeof openAudio = openAudio, play: typeof playAgent = playAgent) {
     this.j = j;
     this.open = open;
     this.play = play;
@@ -186,8 +186,8 @@ export class JoinedSession {
       ),
       sessionEnded: (why, err) => this.learnedOver(why, err),
     };
-    this.sender = new Sender(this.hearing, page);
-    this.spoken = new SpokenTurns(page, (words, id) => this.sender.keep(words, id), this.hearing);
+    this.sender = new Sender(this.clock, page);
+    this.spoken = new SpokenTurns(page, (words, id) => this.sender.keep(words, id), this.clock);
   }
 
   // Opens the session's audio; typing works over HTTP meanwhile, and whenever audio can't. A page
@@ -242,7 +242,7 @@ export class JoinedSession {
   }
 
   // Plays the agent from the user's press, after the browser refused to without one.
-  hear(): void {
+  playAfterPress(): void {
     this.audio?.playback?.play?.();
   }
 
@@ -366,7 +366,8 @@ export class JoinedSession {
         {
           fetcher: this.j.fetcher,
           onRefused: () => this.note({ microphone: microphoneRefused }),
-          onHearing: (id, words, follow, lost) => this.spoken.heard(id, words, follow, lost),
+          onUserSpeech: (id, words, follow, lost) =>
+            this.spoken.userSpeech(id, words, follow, lost),
         },
       );
       mine = connection;
@@ -379,7 +380,7 @@ export class JoinedSession {
         if (this.audio !== opened) return;
         opened.playback = this.play(
           stream,
-          (loud, now) => this.hearing.sample(loud, now),
+          (loud, now) => this.clock.sample(loud, now),
           (blocked) => {
             if (this.audio !== opened) return;
             this.set({ blocked });
