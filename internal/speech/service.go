@@ -131,8 +131,8 @@ type Service struct {
 	clock        clock
 
 	mu        sync.Mutex
-	conns     map[uuid.UUID]held // by session
-	answering map[uuid.UUID]int  // offers being answered, by session
+	conns     map[uuid.UUID]liveConn // by session
+	answering map[uuid.UUID]int      // offers being answered, by session
 	stopping  bool
 	watchers  sync.WaitGroup // one per connection held, until it ends, and one per replaced one closing
 }
@@ -149,7 +149,8 @@ type Settings struct {
 	Listening Listening
 }
 
-type held struct {
+// liveConn is an audio connection this server holds, with what ends it.
+type liveConn struct {
 	id   uuid.UUID
 	conn Connection
 	// hangup, closed once, asks the connection's turns to end it as its caller asked.
@@ -166,7 +167,7 @@ type held struct {
 // their words with speech-to-text, and asking the end-of-turn check whether
 // they have finished.
 func NewService(c *conversation.Service, t Transport, tts TextToSpeech, d SpeechDetection, stt SpeechToText, eot EndOfTurn, s Settings, log *slog.Logger) *Service {
-	return &Service{conversation: c, transport: t, tts: tts, detection: d, stt: stt, endOfTurn: eot, settings: s, log: log, clock: systemClock{}, conns: make(map[uuid.UUID]held), answering: make(map[uuid.UUID]int)}
+	return &Service{conversation: c, transport: t, tts: tts, detection: d, stt: stt, endOfTurn: eot, settings: s, log: log, clock: systemClock{}, conns: make(map[uuid.UUID]liveConn), answering: make(map[uuid.UUID]int)}
 }
 
 // Connect answers the browser's offer for one of the caller's sessions and
@@ -205,7 +206,7 @@ func (s *Service) Connect(ctx context.Context, c access.Caller, session uuid.UUI
 		return uuid.Nil(), "", ErrStopping
 	}
 	old, replacing := s.conns[session]
-	h := held{id: id, conn: conn, hangup: make(chan struct{}), hangupOnce: &sync.Once{}, served: make(chan struct{})}
+	h := liveConn{id: id, conn: conn, hangup: make(chan struct{}), hangupOnce: &sync.Once{}, served: make(chan struct{})}
 	s.conns[session] = h
 	s.watchers.Add(1)
 	if replacing {
@@ -264,16 +265,16 @@ func (s *Service) release(session uuid.UUID) {
 
 // placed says whether the session holds a place. The caller holds mu.
 func (s *Service) placed(session uuid.UUID) bool {
-	_, held := s.conns[session]
+	_, connected := s.conns[session]
 	_, answering := s.answering[session]
-	return held || answering
+	return connected || answering
 }
 
 // places counts the sessions holding a place. The caller holds mu.
 func (s *Service) places() int {
 	n := len(s.conns)
 	for session := range s.answering {
-		if _, held := s.conns[session]; !held {
+		if _, connected := s.conns[session]; !connected {
 			n++
 		}
 	}
@@ -320,7 +321,7 @@ func (s *Service) Hangup(ctx context.Context, c access.Caller, session, id uuid.
 func (s *Service) Close() {
 	s.mu.Lock()
 	s.stopping = true
-	all := make([]held, 0, len(s.conns))
+	all := make([]liveConn, 0, len(s.conns))
 	for _, h := range s.conns {
 		all = append(all, h)
 	}

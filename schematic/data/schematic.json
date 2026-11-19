@@ -2308,7 +2308,7 @@
           "kind": "core",
           "parent": "core",
           "name": "Service",
-          "path": "audio.go · turns.go · spoken.go · heard.go",
+          "path": "service.go · turns.go · spoken.go · heard.go",
           "summary": "Holds each session's audio connection, takes its turns, plays replies, cuts in, works out what was heard.",
           "description": "speech's use cases. It answers audio offers, one connection per session on a server, a newer one replacing the old, at most a set number per server, each ended when the ticket that opened it expires, a reply playing cut where heard and no turn taken from then, even while it closes; reads the data channel's turns in order, at most two waiting; takes spoken turns from what the listener notices once the end-of-turn check and the final text agree; hands every turn to conversation; streams the reply's text to the page and its audio to the track in real time; and when the user cuts in, stops the audio at once and saves the reply as far as it was heard.",
           "why": "The browser removes the agent's echo only from audio arriving over WebRTC, and interrupting needs the microphone open while the agent speaks.",
@@ -2334,7 +2334,7 @@
           "kind": "port",
           "parent": "core",
           "name": "Transport",
-          "path": "audio.go",
+          "path": "service.go",
           "summary": "Sets up audio connections.",
           "members": [
             "Answer(offer) → Connection, answer",
