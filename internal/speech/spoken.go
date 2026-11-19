@@ -60,7 +60,7 @@ type spokenTurns struct {
 	conn    Connection
 	session uuid.UUID
 	replies *replies
-	hand    func(context.Context, heardTurn) // begins a turn before it returns: replies.hand
+	begin   func(context.Context, heardTurn) // begins a turn before it returns: replies.beginSpoken
 	l       *listener
 
 	// audio goes to speech-to-text and texts come back, from the user's first speech on; next is
@@ -88,7 +88,7 @@ type spokenTurns struct {
 	// asked numbers the end-of-turn checks, whose answers come on checks; cancel stops the check
 	// in flight, if any, and checking waits for every one.
 	asked    int
-	checks   chan checked
+	checks   chan checkAnswer
 	cancel   context.CancelFunc
 	checking sync.WaitGroup
 }
@@ -117,15 +117,15 @@ type spokenTurn struct {
 	checked    time.Time
 }
 
-// checked is the end-of-turn check's answer to check n.
-type checked struct {
+// checkAnswer is the end-of-turn check's answer to check n.
+type checkAnswer struct {
 	n        int
 	finished bool
 	err      error
 }
 
 func newSpokenTurns(s *Service, conn Connection, session uuid.UUID, r *replies) *spokenTurns {
-	return &spokenTurns{s: s, conn: conn, session: session, replies: r, hand: r.hand, checks: make(chan checked)}
+	return &spokenTurns{s: s, conn: conn, session: session, replies: r, begin: r.beginSpoken, checks: make(chan checkAnswer)}
 }
 
 // listen hears the connection's microphone until ctx ends, handing each turn the user speaks to r,
@@ -137,14 +137,14 @@ func (s *Service) listen(ctx context.Context, conn Connection, session uuid.UUID
 	for {
 		// The oldest end or drop held back goes as soon as speech-to-text has room.
 		var behind chan<- UtteranceAudio
-		var held UtteranceAudio
+		var head UtteranceAudio
 		if len(st.backlog) > 0 {
-			behind, held = st.audio, st.backlog[0]
+			behind, head = st.audio, st.backlog[0]
 		}
 		select {
 		case <-ctx.Done():
 			return
-		case behind <- held:
+		case behind <- head:
 			st.backlog = st.backlog[1:]
 		case a := <-conn.Listen():
 			st.hear(ctx, a)
@@ -155,7 +155,7 @@ func (s *Service) listen(ctx context.Context, conn Connection, session uuid.UUID
 			}
 			st.text(ctx, t)
 		case c := <-st.checks:
-			st.checked(ctx, c)
+			st.receiveCheck(ctx, c)
 		}
 	}
 }
@@ -192,7 +192,7 @@ func (st *spokenTurns) hear(ctx context.Context, a UserAudio) {
 		case noticedWait:
 			st.wait(ctx)
 		case noticedHeld:
-			st.cutIn(e)
+			st.interruptOnHeld(e)
 		}
 	}
 	t := st.turn
@@ -228,7 +228,7 @@ func (st *spokenTurns) speech(ctx context.Context, e event) {
 	over := st.overAgent(began)
 	st.sent, st.dropping = max(e.sample-samples(prefixAudio), st.sent), false
 	if st.turn == nil && !over {
-		st.turn = st.talkOn(e, began)
+		st.turn = st.reopenTaken(e, began)
 	}
 	st.taken = nil
 	if st.turn == nil {
@@ -260,7 +260,7 @@ func (st *spokenTurns) pause(ctx context.Context, e event) {
 	// A dropped utterance has had its drop, which ended it for speech-to-text; any other ends now,
 	// or once speech-to-text has room.
 	if rest := st.rest(); !st.dropping {
-		st.hold(UtteranceAudio{Samples: rest, End: true})
+		st.sendOrBacklog(UtteranceAudio{Samples: rest, End: true})
 	}
 	st.next++
 	if t.undecided {
@@ -271,7 +271,7 @@ func (st *spokenTurns) pause(ctx context.Context, e event) {
 	}
 	t.ended = ended
 	if t.failed() {
-		st.take(ctx, t) // nothing to ask: it can't be taken
+		st.handOverWhenReady(ctx, t) // nothing to ask: it can't be taken
 		return
 	}
 	st.asked++
@@ -289,7 +289,7 @@ func (t *spokenTurn) failed() bool { return len(t.lost) > 0 }
 func (st *spokenTurns) passOver(end int64) {
 	t := st.turn
 	if !st.dropping {
-		st.hold(UtteranceAudio{Drop: true})
+		st.sendOrBacklog(UtteranceAudio{Drop: true})
 	}
 	st.next++
 	st.turn = nil
@@ -299,11 +299,12 @@ func (st *spokenTurns) passOver(end int64) {
 	st.s.log.Info("speech over the agent passed over", "session", st.session, "utterances", len(t.utterances))
 }
 
-// cutIn makes the turn being spoken one to take, however it began, and cuts in on the reply if it
-// is reaching the user: the reply stops at once and is saved as far as it was heard then, before
-// this turn is taken with the rest of what the user says. The page, not told of speech over the
-// agent until now, gets the words heard so far.
-func (st *spokenTurns) cutIn(e event) {
+// interruptOnHeld runs when the turn being spoken has been held: its speech lasted the interrupt
+// speech. The turn is now one to hand over, however it began. If the agent's reply is reaching
+// the user, it stops at once and is saved as far as it was heard, before this turn is handed over
+// with the rest of what the user says. The page was not told of speech over the agent until now,
+// so it gets the words heard so far.
+func (st *spokenTurns) interruptOnHeld(e event) {
 	t := st.turn
 	if t == nil || !t.speaking {
 		return
@@ -332,12 +333,12 @@ func (st *spokenTurns) most(ctx context.Context, end int64) {
 	rest = rest[:max(len(rest)-int(st.l.heard-end), 0)]
 	t.speaking, t.capped = false, true
 	if !st.dropping {
-		st.hold(UtteranceAudio{Samples: rest, End: true})
+		st.sendOrBacklog(UtteranceAudio{Samples: rest, End: true})
 	}
 	st.next++
 	t.ended = st.s.clock.Now().Add(-audioTime(st.l.heard - end))
 	st.turn, st.closed = nil, append(st.closed, t)
-	st.take(ctx, t)
+	st.handOverWhenReady(ctx, t)
 }
 
 // wait takes the turn once the user has stayed quiet for the maximum wait, whatever the check
@@ -345,7 +346,7 @@ func (st *spokenTurns) most(ctx context.Context, end int64) {
 func (st *spokenTurns) wait(ctx context.Context) {
 	if t := st.turn; t != nil && !t.speaking {
 		t.waited = true
-		st.take(ctx, t)
+		st.handOverWhenReady(ctx, t)
 	}
 }
 
@@ -364,12 +365,12 @@ func (st *spokenTurns) put(a UtteranceAudio) {
 		return
 	}
 	st.dropping = true
-	st.hold(UtteranceAudio{Drop: true})
+	st.sendOrBacklog(UtteranceAudio{Drop: true})
 	st.lose(st.next, errBehind)
 }
 
-// hold queues an end or a drop for speech-to-text, holding it back until there is room.
-func (st *spokenTurns) hold(a UtteranceAudio) {
+// sendOrBacklog queues an end or a drop for speech-to-text, holding it back until there is room.
+func (st *spokenTurns) sendOrBacklog(a UtteranceAudio) {
 	if !st.send(a) {
 		st.backlog = append(st.backlog, a)
 	}
@@ -410,7 +411,7 @@ func (st *spokenTurns) ask(ctx context.Context, n int, audio []int16) {
 	st.checking.Go(func() {
 		finished, err := st.s.endOfTurn.Finished(ctx, audio)
 		select {
-		case st.checks <- checked{n: n, finished: finished, err: err}:
+		case st.checks <- checkAnswer{n: n, finished: finished, err: err}:
 		case <-ctx.Done():
 		}
 	})
@@ -423,9 +424,9 @@ func (st *spokenTurns) stopCheck() {
 	}
 }
 
-// checked takes the end-of-turn check's answer, unless the user has spoken since it was asked
+// receiveCheck takes the end-of-turn check's answer, unless the user has spoken since it was asked
 // or the turn was taken without it.
-func (st *spokenTurns) checked(ctx context.Context, c checked) {
+func (st *spokenTurns) receiveCheck(ctx context.Context, c checkAnswer) {
 	t := st.turn
 	if t == nil || c.n != t.check {
 		return
@@ -436,7 +437,7 @@ func (st *spokenTurns) checked(ctx context.Context, c checked) {
 		return
 	}
 	t.checked, t.finished = st.s.clock.Now(), c.finished
-	st.take(ctx, t)
+	st.handOverWhenReady(ctx, t)
 }
 
 // text takes what speech-to-text heard of one of a turn's utterances, and tells the page.
@@ -456,7 +457,7 @@ func (st *spokenTurns) text(ctx context.Context, u UtteranceText) {
 		t.texts[u.Utterance] = u.Text
 	}
 	st.tellWords(t)
-	st.take(ctx, t)
+	st.handOverWhenReady(ctx, t)
 }
 
 // owner returns the turn utterance n belongs to, if any.
@@ -488,11 +489,11 @@ func (st *spokenTurns) lose(n int, err error) {
 	}
 }
 
-// take hands turn t over once every utterance has its final text and either the check said the
+// handOverWhenReady hands turn t over once every utterance has its final text and either the check said the
 // user has finished, the maximum wait is up, or its speech ran to the most a turn's may; a turn
 // closed at that most goes before the one spoken after it. Speech over the agent not yet held is
 // never taken.
-func (st *spokenTurns) take(ctx context.Context, t *spokenTurn) {
+func (st *spokenTurns) handOverWhenReady(ctx context.Context, t *spokenTurn) {
 	if t == nil || t.undecided || t.speaking || t.waiting > 0 || !t.failed() && !t.finished && !t.waited && !t.capped {
 		return
 	}
@@ -501,12 +502,12 @@ func (st *spokenTurns) take(ctx context.Context, t *spokenTurn) {
 			return
 		}
 		st.closed = st.closed[1:]
-		st.settle(ctx, t)
+		st.handOver(ctx, t)
 		// The turn spoken after it may be ready already.
 		if len(st.closed) > 0 {
-			st.take(ctx, st.closed[0])
+			st.handOverWhenReady(ctx, st.closed[0])
 		} else {
-			st.take(ctx, st.turn)
+			st.handOverWhenReady(ctx, st.turn)
 		}
 		return
 	}
@@ -515,20 +516,20 @@ func (st *spokenTurns) take(ctx context.Context, t *spokenTurn) {
 	}
 	st.turn = nil
 	st.stopCheck()
-	st.settle(ctx, t)
+	st.handOver(ctx, t)
 }
 
-// talkOn reopens the turn last handed over when the user, beginning to speak at began, talks on
+// reopenTaken reopens the turn last handed over when the user, beginning to speak at began, talks on
 // before its reply has reached them: the reply stops, the turn is taken back, and the page is told,
 // then shown the turn's words again, which what the user says now joins. A turn whose speech ran to
 // the most one may hold isn't reopened: speaking again after it is a new turn.
-func (st *spokenTurns) talkOn(e event, began time.Time) *spokenTurn {
+func (st *spokenTurns) reopenTaken(e event, began time.Time) *spokenTurn {
 	t := st.taken
 	if t == nil || t.capped {
 		return nil
 	}
 	run := st.replies.begun(t.request)
-	if run == nil || !run.talkOn(began, st.conn.RoundTrip(), func() {
+	if run == nil || !run.stopForTalkOn(began, st.conn.RoundTrip(), func() {
 		st.s.tell(st.conn, out{Type: "talking_on", RequestID: t.request.String()})
 	}) {
 		return nil
@@ -540,11 +541,11 @@ func (st *spokenTurns) talkOn(e event, began time.Time) *spokenTurn {
 	return t
 }
 
-// settle tells the page the words turn t is taken with and hands it over. A turn with none, as when
+// handOver tells the page the words turn t is taken with and hands it over. A turn with none, as when
 // only a cough was heard, isn't taken, and a page shown rough text is told so. A turn
 // speech-to-text couldn't hear in full isn't taken either, and ends as soon as the user pauses: the
 // page gets the words heard so far, for the user to send or say again.
-func (st *spokenTurns) settle(ctx context.Context, t *spokenTurn) {
+func (st *spokenTurns) handOver(ctx context.Context, t *spokenTurn) {
 	words := t.words()
 	if t.failed() {
 		st.s.tell(st.conn, out{Type: "hearing", RequestID: t.request.String(), Text: words, Final: true, Failed: true})
@@ -563,7 +564,7 @@ func (st *spokenTurns) settle(ctx context.Context, t *spokenTurn) {
 	case t.finished:
 		by = endedByCheck
 	}
-	st.hand(ctx, heardTurn{request: t.request, words: words, ended: t.ended, finalText: t.finalText, checked: t.checked, by: by, talkedOn: t.talkedOn, continues: t.continues})
+	st.begin(ctx, heardTurn{request: t.request, words: words, ended: t.ended, finalText: t.finalText, checked: t.checked, by: by, talkedOn: t.talkedOn, continues: t.continues})
 	st.taken = t
 }
 
