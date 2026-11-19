@@ -25,11 +25,26 @@ type server struct {
 func Register(rt *api.Router, svc *conversation.Service) {
 	s := &server{svc: svc, api: rt, log: rt.Log()}
 	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, s.listAgents)
+	rt.HandleProduct("GET /v1/voices", api.RequestTimeout, s.listVoices)
 	rt.HandleProduct("POST /v1/sessions", api.RequestTimeout, s.startSession)
 	rt.HandleTicket("POST /v1/sessions/{id}/turns", svc.TurnDeadline(), s.takeTurn)
 	rt.HandleProduct("GET /v1/users/{user}/sessions", api.RequestTimeout, s.listPastSessions)
 	rt.HandleProduct("GET /v1/sessions/{id}", api.RequestTimeout, s.readPastSession)
 	rt.HandleSessionEnd("POST /v1/sessions/{id}/end", api.RequestTimeout, s.endSession)
+}
+
+// listVoices answers the voices a session may speak in, as the text-to-speech
+// service names them.
+func (s *server) listVoices(w http.ResponseWriter, r *http.Request, _ access.Caller) {
+	voices, err := s.svc.Voices(r.Context())
+	if err != nil {
+		s.log.ErrorContext(r.Context(), "list voices", "err", err)
+		s.api.Problem(w, r, http.StatusServiceUnavailable, "the voices couldn't be listed; retry")
+		return
+	}
+	s.api.Reply(w, r, http.StatusOK, "application/json", struct {
+		Voices []string `json:"voices"`
+	}{Voices: append([]string{}, voices...)})
 }
 
 type agentJSON struct {
@@ -91,6 +106,10 @@ type sessionJSON struct {
 	AgentID      string    `json:"agent_id"`
 	AgentVersion int       `json:"agent_version"`
 	StartedAt    time.Time `json:"started_at"`
+	// What every reply in the session is spoken in; a repeat of a start with another voice sees
+	// here that it got the first start's.
+	Voice string  `json:"voice"`
+	Speed float64 `json:"speed"`
 	// Left out while the session is live.
 	EndedAt *time.Time `json:"ended_at,omitempty"`
 }
@@ -104,10 +123,11 @@ type startedJSON struct {
 	Ticket string `json:"ticket,omitempty"`
 }
 
-func sessionReply(s conversation.Session) sessionJSON {
-	out := sessionJSON{ID: s.ID.String(), AgentID: s.Agent.String(), AgentVersion: s.AgentVersion, StartedAt: s.StartedAt.UTC()}
-	if s.Ended() {
-		ended := s.EndedAt.UTC()
+func (s *server) sessionReply(session conversation.Session) sessionJSON {
+	voice, speed := s.svc.Speaking(session)
+	out := sessionJSON{ID: session.ID.String(), AgentID: session.Agent.String(), AgentVersion: session.AgentVersion, StartedAt: session.StartedAt.UTC(), Voice: voice, Speed: speed}
+	if session.Ended() {
+		ended := session.EndedAt.UTC()
 		out.EndedAt = &ended
 	}
 	return out
@@ -140,6 +160,14 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, c access.C
 		return
 	case errors.Is(err, conversation.ErrVoiceSettings):
 		s.api.TypedProblem(w, r, http.StatusUnprocessableEntity, voiceSettings, "Voice or speed refused", err.Error())
+		return
+	case errors.Is(err, conversation.ErrUnknownVoice):
+		s.api.TypedProblem(w, r, http.StatusUnprocessableEntity, unknownVoice, "Unknown voice", err.Error())
+		return
+	case errors.Is(err, conversation.ErrVoicesUnavailable):
+		// 503, so the product retries the same request; the reason stays in the log.
+		s.log.ErrorContext(r.Context(), "start a session", "err", err)
+		s.api.Problem(w, r, http.StatusServiceUnavailable, "the voices couldn't be listed to check the voice; retry the same request")
 		return
 	case errors.Is(err, conversation.ErrNoSuchAgent):
 		s.api.Problem(w, r, http.StatusNotFound, "no such agent")
@@ -176,7 +204,7 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, c access.C
 		s.api.Problem(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	reply := startedJSON{sessionJSON: sessionReply(started)}
+	reply := startedJSON{sessionJSON: s.sessionReply(started)}
 	if ok {
 		reply.Ticket = ticket.Reveal()
 	}
@@ -210,7 +238,7 @@ func (s *server) endSession(w http.ResponseWriter, r *http.Request, c access.Cal
 		s.api.Problem(w, r, http.StatusInternalServerError, "")
 		return
 	}
-	s.api.Reply(w, r, http.StatusOK, "application/json", sessionReply(ended))
+	s.api.Reply(w, r, http.StatusOK, "application/json", s.sessionReply(ended))
 }
 
 // The problem types, for errors a client must tell apart from another with
@@ -220,6 +248,7 @@ const (
 	sessionContextMismatch = "/v1/problems/session-context-mismatch"
 	requestReused          = "/v1/problems/request-reused"
 	voiceSettings          = "/v1/problems/voice-settings"
+	unknownVoice           = "/v1/problems/unknown-voice"
 	// A repeat of a turn, told apart from the 409 for another turn in flight, which a client
 	// may send again once that turn ends.
 	turnRepeated = "/v1/problems/turn-repeated"

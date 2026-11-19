@@ -61,7 +61,8 @@ func speakingSession(t *testing.T, agent agents.Agent, start conversation.StartR
 	sessions, turns := sessionsfake.New(), sessionsfake.NewTurns()
 	model := &modelfake.Model{Pieces: replyPieces}
 	conv := conversation.NewService(agents.NewCatalog(versions), sessions, turns, model, usercontext.NewService(itemsfake.New()),
-		conversation.Settings{UserContextChars: 1000, SessionContextChars: 1000, ScreenInputChars: 1000, WordsChars: 1000, TurnDeadline: time.Minute, Model: "claude-test", Voice: "af_heart", Speed: 1})
+		conversation.Settings{UserContextChars: 1000, SessionContextChars: 1000, ScreenInputChars: 1000, WordsChars: 1000, TurnDeadline: time.Minute, Model: "claude-test", Voice: "af_heart", Speed: 1},
+		conversation.WithVoices(ttsfake.TextToSpeech{}))
 	start.Agent, start.RequestID, start.User = keeperID, uuid.NewV7(), "aiko-42"
 	s, _, err := conv.StartSession(context.Background(), product, start)
 	if err != nil {

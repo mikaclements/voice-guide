@@ -41,6 +41,7 @@ linters:
             - "!**/internal/conversation/model/fake/**"
             - "!**/internal/conversation/model/http/**"
             - "!**/internal/conversation/webhook/fake/**"
+            - "!**/internal/conversation/voicelist/fake/**"
             - "!**/internal/conversation/webhook/http/**"
             - "!**/internal/conversation/*_test.go"
           allow:
@@ -50,7 +51,7 @@ linters:
             - github.com/mikaclements/voice-guide/internal/agents$
             # User context's service only, never its store: its tables are user context's alone.
             - github.com/mikaclements/voice-guide/internal/usercontext$
-        # The core's tests run on the fake stores, agents', user context's and its own, the fake model
+        # The core's tests run on the fake stores, agents', user context's and its own, the fake model, the fake voice list
         # and the fake products' servers.
         conversation-tests:
           list-mode: strict
@@ -63,6 +64,7 @@ linters:
             - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
             - github.com/mikaclements/voice-guide/internal/conversation/model/fake$
             - github.com/mikaclements/voice-guide/internal/conversation/webhook/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake$
             - github.com/mikaclements/voice-guide/internal/agents$
             - github.com/mikaclements/voice-guide/internal/agents/store/fake$
             - github.com/mikaclements/voice-guide/internal/usercontext$
@@ -89,6 +91,13 @@ linters:
           allow:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/conversation$
+        # The voice list's fake needs nothing of conversation: the port is one method.
+        conversation-voicelist-fake:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/voicelist/fake/**"
+          allow:
+            - $gostd
         # Deliveries to products' servers are plain HTTP, signed with the standard library's HMAC:
         # the standard library and conversation's port only.
         conversation-webhook-http:
@@ -369,6 +378,7 @@ linters:
             - github.com/mikaclements/voice-guide/internal/agents/store/fake$
             - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
             - github.com/mikaclements/voice-guide/internal/conversation/model/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake$
             - github.com/mikaclements/voice-guide/internal/usercontext$
             - github.com/mikaclements/voice-guide/internal/usercontext/store/fake$
         # The model service's client speaks plain HTTP: the standard library and conversation's port only.

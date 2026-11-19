@@ -131,7 +131,7 @@ curl https://voice.example.com/v1/sessions \
 - `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description` and the `session_context` it needs.
 - `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new. A repeat must carry the same `agent_id` and `session_context`, or it is refused with `422` and the problem type `/v1/problems/request-reused`.
 - `user`: the product's own stable ID for the user, not a name or an email address. It is at most 200 printable characters, on one line. The same ID is the same user every time, so the agent remembers them.
-- `voice` and `speed` (optional): the voice the agent speaks in, such as `bf_emma`, and how fast, from `0.5` to `2` with `1` the voice's own pace. They override the agent file's, which override the server's. A voice that isn't a language and a style (`af_heart`), or a speed out of range, is refused with `422` and the problem type `/v1/problems/voice-settings`. A repeat keeps the first start's voice and speed.
+- `voice` and `speed` (optional): the voice the agent speaks in, such as `bf_emma`, and how fast, from `0.5` to `2` with `1` the voice's own pace. They override the agent file's, which override the server's. `GET /v1/voices` with the same key lists the voices on offer as `{"voices": [...]}`. A voice that isn't a language and a style (`af_heart`), or a speed out of range, is refused with `422` and the problem type `/v1/problems/voice-settings`; a voice not on the list, with `422` and `/v1/problems/unknown-voice`. A start naming a voice while the text-to-speech service can't be reached is refused with `503`; a start naming none never asks it. A repeat keeps the first start's voice and speed, which the reply names.
 - `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty. Its blocks hold at most 20,000 characters in all (`VOICE_SESSION_CONTEXT_MAX_CHARS`); more is refused with `413`.
 
 The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
@@ -141,6 +141,8 @@ The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
   "id": "<session ID>",
   "agent_id": "01a1de84-fbfc-7758-9af4-3ced6d8a90cc",
   "agent_version": 1,
+  "voice": "bf_emma",
+  "speed": 1.1,
   "started_at": "<RFC 3339 time>",
   "ticket": "<ticket>"
 }

@@ -1405,7 +1405,7 @@
       "id": "conversation",
       "title": "conversation",
       "level": 3,
-      "lead": "Hexagonal: the core holds the rules and declares its ports, Sessions, Turns, Model, Webhooks and Poster, as small interfaces. The HTTP adapter and speech call the core; the stores, the model client and the webhook poster implement its ports. cmd/voice wires the PostgreSQL stores, the HTTP model client and the HTTP poster in.",
+      "lead": "Hexagonal: the core holds the rules and declares its ports, Sessions, Turns, Model, VoiceList, Webhooks and Poster, as small interfaces. The HTTP adapter and speech call the core; the stores, the model client and the webhook poster implement its ports. cmd/voice wires the PostgreSQL stores, the HTTP model client and the HTTP poster in.",
       "considerations": [
         "hexagonal",
         "layered-prompt",
@@ -1739,6 +1739,20 @@
           "focus": "internal/conversation"
         },
         {
+          "id": "p-voices",
+          "kind": "port",
+          "parent": "core",
+          "name": "VoiceList",
+          "path": "voices.go",
+          "summary": "The voices the text-to-speech service offers, to check a voice a start names.",
+          "members": ["Voices() → []string"],
+          "description": "The port for the voices on offer: a start naming a voice is checked against it, and GET /v1/voices lists it. A start naming no voice never asks, so a session in text doesn't depend on the text-to-speech service. Conversation stays text-only: it keeps a session's voice and speed as settings, and the Kokoro adapter of speech's text-to-speech, wired in by cmd/voice, answers the list. The list is waited for 2 s at most, and names a start would refuse are left out.",
+          "why": "Only a voice named at a start is checked, so a text-only session never depends on the text-to-speech service.",
+          "considerations": ["kokoro"],
+          "drill": "types-conversation",
+          "focus": "internal/conversation"
+        },
+        {
           "id": "http",
           "kind": "adapter",
           "tag": "inbound",
@@ -1921,6 +1935,21 @@
           "protocol": "port",
           "send": "Reply(prompt)",
           "back": "text …, then report or failure"
+        },
+        {
+          "id": "service-voices",
+          "from": "service",
+          "to": "p-voices",
+          "protocol": "port",
+          "send": "Voices()",
+          "back": "voice names, or the service unreachable"
+        },
+        {
+          "id": "speech-voices",
+          "from": "x-speech",
+          "to": "p-voices",
+          "style": "implements",
+          "detail": "cmd/voice hands conversation the Kokoro adapter of speech's text-to-speech, which also lists the voices; speech's own core never asks for them."
         },
         {
           "id": "pg-sessions",
@@ -2656,6 +2685,14 @@
           "protocol": "HTTP",
           "send": "POST /v1/audio/speech, with voice and speed",
           "back": "Ogg Opus"
+        },
+        {
+          "id": "kokoro-voices",
+          "from": "kokoro",
+          "to": "x-kokoro",
+          "protocol": "HTTP",
+          "send": "GET /v1/audio/voices",
+          "back": "voice names"
         }
       ]
     },
@@ -3637,6 +3674,7 @@
     "internal/conversation/model/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/conversation/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/conversation/webhook/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
+    "internal/conversation/voicelist/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/jobs/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/productkey/store/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",
     "internal/speech/detection/fake": "A fake: every port has one, which takes a shortcut such as set replies at a set pace, for the core's tests and load tests; cmd/voice chooses it by setting. Fakes are left off the levels, which show what runs.",

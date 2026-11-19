@@ -416,3 +416,43 @@ func TestEachPhraseIsAskedForInTheSessionsVoiceAtItsSpeed(t *testing.T) {
 		}
 	}
 }
+
+func TestVoicesAreListedFromKokorosVoicesRoute(t *testing.T) {
+	tts := serving(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/audio/voices" {
+			t.Errorf("request %s %s, want GET /v1/audio/voices", r.Method, r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"voices":["af_heart","bf_emma"]}`))
+	})
+	if got, err := tts.Voices(t.Context()); err != nil || !reflect.DeepEqual(got, []string{"af_heart", "bf_emma"}) {
+		t.Errorf("Voices = %v, %v; want af_heart and bf_emma", got, err)
+	}
+}
+
+func TestVoicesFailWhenKokoroIsDownOrAnswersWithoutAList(t *testing.T) {
+	for name, h := range map[string]http.HandlerFunc{
+		"refusing":    func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusInternalServerError) },
+		"not JSON":    func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("<html>")) },
+		"not a list":  func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":"af_heart"}`)) },
+		"no list":     func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) },
+		"a null list": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":null}`)) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, err := serving(t, h).Voices(t.Context()); err == nil {
+				t.Errorf("Voices = %v, want an error", got)
+			}
+		})
+	}
+	srv := httptest.NewServer(nil)
+	srv.Close()
+	if _, err := kokoro.New(srv.URL, kokoro.Options{}).Voices(t.Context()); err == nil {
+		t.Error("Voices with nothing listening, want an error")
+	}
+}
+
+func TestAnEmptyListOfVoicesIsAnswered(t *testing.T) {
+	tts := serving(t, func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":[]}`)) })
+	if got, err := tts.Voices(t.Context()); err != nil || len(got) != 0 {
+		t.Errorf("Voices = %v, %v; want an empty list and no error", got, err)
+	}
+}

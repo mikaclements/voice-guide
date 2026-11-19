@@ -2,15 +2,44 @@ package conversation
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"time"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
 )
 
+// VoiceList is the voices the text-to-speech service offers. Conversation stays
+// text-only: it holds a session's voice and speed as settings, and asks this
+// only to check a voice a start names.
+type VoiceList interface {
+	// Voices returns the names of the voices that can speak a reply.
+	Voices(ctx context.Context) ([]string, error)
+}
+
+// Option changes how NewService builds the service.
+type Option func(*Service)
+
+// WithVoices sets the list a voice named at a session's start is checked
+// against. Without it, a start naming a voice can't be checked and is refused
+// as ErrVoicesUnavailable, while a start naming none never asks.
+func WithVoices(v VoiceList) Option {
+	return func(s *Service) { s.voices = v }
+}
+
 // ErrVoiceSettings reports a start naming a voice that isn't shaped like a
 // voice's name, or a speed outside the range a voice may speak at.
 var ErrVoiceSettings = errors.New("bad voice or speed")
+
+// ErrUnknownVoice reports a start naming a voice the text-to-speech service
+// doesn't offer.
+var ErrUnknownVoice = errors.New("no such voice")
+
+// ErrVoicesUnavailable reports a start naming a voice when the voices on offer
+// couldn't be read. Nothing was saved, so the same request can be retried.
+var ErrVoicesUnavailable = errors.New("the voices couldn't be listed")
 
 // checkVoiceSettings refuses a voice named at a start whose form isn't a
 // voice's name, and a speed outside the bounds, before either reaches a
@@ -23,6 +52,45 @@ func checkVoiceSettings(r StartRequest) error {
 		return fmt.Errorf("%w: speed must be from %v to %v", ErrVoiceSettings, agents.MinSpeed, agents.MaxSpeed)
 	}
 	return nil
+}
+
+// defaultVoicesTimeout is how long the voice list is waited for: a list is a few hundred bytes
+// from a service on the same network, answered in milliseconds, so 2s is a wide margin that still
+// answers 503 well inside a start's 10s when the text-to-speech service stalls. A round guess, to
+// be measured against Kokoro-FastAPI under load.
+const defaultVoicesTimeout = 2 * time.Second
+
+// checkVoiceOffered refuses a voice the text-to-speech service doesn't offer.
+// A start naming none doesn't ask, so a text-only session never depends on it.
+func (s *Service) checkVoiceOffered(ctx context.Context, voice string) error {
+	if voice == "" {
+		return nil
+	}
+	offered, err := s.Voices(ctx)
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(offered, voice) {
+		return fmt.Errorf("%w: %q isn't one of the text-to-speech service's voices", ErrUnknownVoice, voice)
+	}
+	return nil
+}
+
+// Voices lists the voices a session may speak in, for a product's server to
+// choose from: the text-to-speech service's, less any whose name a start would
+// refuse, so a listed voice can always be named. A service that stalls or
+// fails is ErrVoicesUnavailable.
+func (s *Service) Voices(ctx context.Context) ([]string, error) {
+	if s.voices == nil {
+		return nil, fmt.Errorf("%w: no text-to-speech service to ask", ErrVoicesUnavailable)
+	}
+	ctx, cancel := context.WithTimeout(ctx, cmp.Or(s.settings.VoicesTimeout, defaultVoicesTimeout))
+	defer cancel()
+	offered, err := s.voices.Voices(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrVoicesUnavailable, err)
+	}
+	return slices.DeleteFunc(slices.Clone(offered), func(name string) bool { return !agents.IsVoiceName(name) }), nil
 }
 
 // voiceOf is the voice and speed a session speaks in: the start's, else the

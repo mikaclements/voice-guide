@@ -16,6 +16,7 @@ type Service struct {
 	sessions    Sessions
 	turns       Turns
 	model       Model
+	voices      VoiceList
 	userContext *usercontext.Service
 	settings    Settings
 	// now is the clock a turn's stages are timed by: the system's, or a
@@ -48,13 +49,19 @@ type Settings struct {
 	Voice string
 	// Speed is how fast that voice speaks, 1 its own pace, when neither names one.
 	Speed float64
+	// VoicesTimeout is how long the voice list is waited for; a default when zero.
+	VoicesTimeout time.Duration
 }
 
 // NewService returns the service over the agents the catalog offers, the
 // stores of sessions and their turns, the model that answers turns, and user
 // context, which holds what voice-guide has learned about each user.
-func NewService(catalog *agents.Catalog, sessions Sessions, turns Turns, model Model, userContext *usercontext.Service, settings Settings) *Service {
-	return &Service{catalog: catalog, sessions: sessions, turns: turns, model: model, userContext: userContext, settings: settings, now: time.Now}
+func NewService(catalog *agents.Catalog, sessions Sessions, turns Turns, model Model, userContext *usercontext.Service, settings Settings, opts ...Option) *Service {
+	s := &Service{catalog: catalog, sessions: sessions, turns: turns, model: model, userContext: userContext, settings: settings, now: time.Now}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
 
 // modelOf is the model that answers for an agent version: its own when its
