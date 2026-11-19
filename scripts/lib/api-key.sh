@@ -14,7 +14,7 @@ need_api_key() {
     echo "replies${1:+, $1}" >&2
     exit 1
   fi
-  read -rsp "Claude API key (from the Claude Console; Enter for free stand-in replies): " ANTHROPIC_API_KEY
+  read -rsp "Claude API key (from the Claude Console; Enter for free fake replies): " ANTHROPIC_API_KEY
   echo >&2
   if [ -n "$ANTHROPIC_API_KEY" ]; then
     env_save ANTHROPIC_API_KEY
