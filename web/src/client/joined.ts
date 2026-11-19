@@ -3,7 +3,7 @@
 // same ticket, its transcript, typed turns, End, and the states it ends in. The page's own modules
 // do the work; this wires them with no framework, so the script a product loads carries no React,
 // and the element itself, as voice-guide's own page, only draws what this shows.
-import { endSession as endOnVoice, httpTurns, ProblemError, type Turns } from "./api.ts";
+import { endSession as endOnVoice, ProblemError } from "./api.ts";
 import { type Audio, listen, openAudio, type Playback } from "./audio.ts";
 import {
   afterAudioFailure,
@@ -21,6 +21,7 @@ import {
 import { Hearing, shownReply } from "./hearing.ts";
 import { type Message, type Page, type Reply, Sender, transcriptPage } from "./sending.ts";
 import { SpokenTurns } from "./spoken.ts";
+import { httpTurns, type Turns } from "./turns.ts";
 
 // What a session says on a page served over plain http, where the browser offers neither the
 // microphone nor the random IDs every request carries.

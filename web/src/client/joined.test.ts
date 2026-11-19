@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, type TestContext, test } from "node:test";
-import { expiredMessage, ProblemError, type Spoken } from "./api.ts";
+import { expiredMessage, ProblemError } from "./api.ts";
 import { closings, microphoneRefused, reconnectTries, unusableMessage } from "./ending.ts";
 import { fakeVoice } from "./fakes.ts";
 import { at, insecureMessage, JoinedSession, type Shown, wanted } from "./joined.ts";
+import type { Spoken } from "./turns.ts";
 
 // Lets the callbacks of promises already settled run; setImmediate, since tests mock setTimeout.
 const settle = () => new Promise((resolve) => setImmediate(resolve));
