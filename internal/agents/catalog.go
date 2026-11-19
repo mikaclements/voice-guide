@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode/utf8"
 	"uuid"
 )
 
@@ -26,6 +27,12 @@ type Agent struct {
 	// Summary is what to note about a session once it ends, for the
 	// agent's next session with the user; empty, no summary is written.
 	Summary string
+	// SummaryModel names the model that writes the agent's summaries; empty,
+	// the model that answers its turns writes them.
+	SummaryModel string
+	// Grading is what the agent's sessions are graded on once they end; the
+	// zero value grades nothing.
+	Grading Grading
 	// Opens says the agent speaks first in its sessions, rather than waiting
 	// for the user.
 	Opens bool
@@ -41,6 +48,33 @@ type Agent struct {
 	// another, which then wins.
 	Speed float64
 }
+
+// Grading is how an agent's sessions are graded once they end: each
+// criterion scored on the scale from Lowest to Highest. Its author's text,
+// published with the agent like the persona.
+type Grading struct {
+	Lowest, Highest int
+	// Levels say what some of the scores mean, in order of score; there may
+	// be none.
+	Levels   []Level
+	Criteria []Criterion
+}
+
+// Level says what one score on a grading's scale means.
+type Level struct {
+	Score int
+	Means string
+}
+
+// Criterion is one thing a session is graded on.
+type Criterion struct {
+	Name     string
+	LooksFor string
+}
+
+// IsSet reports whether the grading grades anything: a scale comes only with
+// criteria.
+func (g Grading) IsSet() bool { return len(g.Criteria) > 0 }
 
 // Catalog is how the other modules see agents: the newest versions a
 // workspace offers, and any exact version a session started on.
@@ -137,6 +171,17 @@ func CheckVoices(defs []Agent, offered []string) error {
 	return nil
 }
 
+// Limits on a grading, round guesses at what an author needs: a scorecard of a
+// dozen criteria is long already, and each text is a sentence or a short
+// paragraph. To be revisited when an agent's grading presses against one.
+const (
+	MaxCriteria      = 20
+	MaxLooksForChars = 1000
+	MaxLevelChars    = 500
+	// A scale wider than 0 to 100 adds nothing a grader can tell apart.
+	MaxScaleSpan = 100
+)
+
 var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 
 // IsModelName reports whether name can name a model: the form a model
@@ -191,6 +236,15 @@ func validate(a Agent) error {
 	if a.Speed != 0 && !IsSpeed(a.Speed) {
 		return fmt.Errorf("agent %s: speed %v must be from %v to %v", a.ID, a.Speed, MinSpeed, MaxSpeed)
 	}
+	if a.SummaryModel != "" && !IsModelName(a.SummaryModel) {
+		return fmt.Errorf("agent %s: summary model %q must be lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", a.ID, a.SummaryModel)
+	}
+	if a.Summary == "" && (a.SummaryModel != "" || a.Grading.IsSet()) {
+		return fmt.Errorf("agent %s: a summary model or grading needs a summary instruction", a.ID)
+	}
+	if err := validateGrading(a.Grading); err != nil {
+		return fmt.Errorf("agent %s: %w", a.ID, err)
+	}
 	switch {
 	case a.ID == uuid.Nil():
 		return errors.New("agent without an ID")
@@ -204,10 +258,48 @@ func validate(a Agent) error {
 	return nil
 }
 
-// copy returns the agent with its own Reads, so no caller can change which
-// context kinds the catalog gives later sessions.
+func validateGrading(g Grading) error {
+	if !g.IsSet() {
+		if g.Lowest != 0 || g.Highest != 0 || len(g.Levels) > 0 {
+			return errors.New("a grading scale needs criteria")
+		}
+		return nil
+	}
+	if g.Lowest >= g.Highest || g.Highest-g.Lowest > MaxScaleSpan {
+		return fmt.Errorf("grading scale %d to %d must have its lowest below its highest, at most %d apart", g.Lowest, g.Highest, MaxScaleSpan)
+	}
+	for i, l := range g.Levels {
+		switch {
+		case l.Score < g.Lowest || l.Score > g.Highest:
+			return fmt.Errorf("grading level %d is outside the scale %d to %d", l.Score, g.Lowest, g.Highest)
+		case i > 0 && l.Score <= g.Levels[i-1].Score:
+			return fmt.Errorf("grading level %d must come after level %d, once", l.Score, g.Levels[i-1].Score)
+		case strings.TrimSpace(l.Means) == "" || utf8.RuneCountInString(l.Means) > MaxLevelChars:
+			return fmt.Errorf("grading level %d must say what it means in at most %d characters", l.Score, MaxLevelChars)
+		}
+	}
+	if len(g.Criteria) > MaxCriteria {
+		return fmt.Errorf("grading has %d criteria, at most %d", len(g.Criteria), MaxCriteria)
+	}
+	for i, c := range g.Criteria {
+		switch {
+		case !IsBlockName(c.Name):
+			return fmt.Errorf("grading criterion %q must be lower-case letters, digits and _, at most 32", c.Name)
+		case slices.ContainsFunc(g.Criteria[:i], func(o Criterion) bool { return o.Name == c.Name }):
+			return fmt.Errorf("grading criterion %q listed twice", c.Name)
+		case strings.TrimSpace(c.LooksFor) == "" || utf8.RuneCountInString(c.LooksFor) > MaxLooksForChars:
+			return fmt.Errorf("grading criterion %q must say what it looks for in at most %d characters", c.Name, MaxLooksForChars)
+		}
+	}
+	return nil
+}
+
+// copy returns the agent with its own slices, so no caller can change which
+// context kinds or criteria the catalog gives later sessions.
 func (a Agent) copy() Agent {
 	a.Reads = slices.Clone(a.Reads)
 	a.SessionContext = slices.Clone(a.SessionContext)
+	a.Grading.Levels = slices.Clone(a.Grading.Levels)
+	a.Grading.Criteria = slices.Clone(a.Grading.Criteria)
 	return a
 }

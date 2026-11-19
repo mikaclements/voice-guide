@@ -5,6 +5,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -36,7 +37,12 @@ func (s *Versions) Newest(ctx context.Context, workspace uuid.UUID) ([]agents.Ve
 	}
 	out := make([]agents.Version, len(rows))
 	for i, r := range rows {
+		grading, err := decodeGrading(r.Grading)
+		if err != nil {
+			return nil, fmt.Errorf("read the grading of agent %s version %d: %w", r.AgentID, r.Version, err)
+		}
 		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
+		out[i].SummaryModel, out[i].Grading = r.SummaryModel, grading
 	}
 	return out, nil
 }
@@ -53,7 +59,13 @@ func (s *Versions) Version(ctx context.Context, workspace, agent uuid.UUID, numb
 	if err != nil {
 		return agents.Version{}, fmt.Errorf("read agent version: %w", err)
 	}
-	return version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed), nil
+	grading, err := decodeGrading(r.Grading)
+	if err != nil {
+		return agents.Version{}, fmt.Errorf("read the agent version's grading: %w", err)
+	}
+	v := version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
+	v.SummaryModel, v.Grading = r.SummaryModel, grading
+	return v, nil
 }
 
 // Save stores a as its next version unless the newest version has the same
@@ -89,12 +101,16 @@ func (s *Versions) Save(ctx context.Context, workspace uuid.UUID, a agents.Agent
 		return int(newest.Version), false, nil
 	}
 	// The columns hold an empty list, never NULL, and pgx sends a nil slice as NULL.
+	grading, err := json.Marshal(gradingJSONOf(a.Grading))
+	if err != nil {
+		return 0, false, fmt.Errorf("encode the agent's grading: %w", err)
+	}
 	reads := append([]string{}, a.Reads...)
 	sessionContext := append([]string{}, a.SessionContext...)
 	next := newest.Version + 1
 	if err := q.AddVersion(ctx, db.AddVersionParams{
 		WorkspaceID: workspace, AgentID: a.ID, Version: next,
-		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
+		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, SummaryModel: a.SummaryModel, Grading: grading, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
 	}); err != nil {
 		return 0, false, fmt.Errorf("save the agent version: %w", err)
 	}
@@ -111,4 +127,49 @@ func version(id uuid.UUID, number int32, name, description string, reads, sessio
 		},
 		Number: int(number),
 	}
+}
+
+// gradingJSON is how a grading is kept in its column: an empty object when the
+// agent grades nothing.
+type gradingJSON struct {
+	Lowest   int             `json:"lowest,omitempty"`
+	Highest  int             `json:"highest,omitempty"`
+	Levels   []levelJSON     `json:"levels,omitempty"`
+	Criteria []criterionJSON `json:"criteria,omitempty"`
+}
+
+type levelJSON struct {
+	Score int    `json:"score"`
+	Means string `json:"means"`
+}
+
+type criterionJSON struct {
+	Name     string `json:"name"`
+	LooksFor string `json:"looks_for"`
+}
+
+func gradingJSONOf(g agents.Grading) gradingJSON {
+	out := gradingJSON{Lowest: g.Lowest, Highest: g.Highest}
+	for _, l := range g.Levels {
+		out.Levels = append(out.Levels, levelJSON(l))
+	}
+	for _, c := range g.Criteria {
+		out.Criteria = append(out.Criteria, criterionJSON(c))
+	}
+	return out
+}
+
+func decodeGrading(kept []byte) (agents.Grading, error) {
+	var stored gradingJSON
+	if err := json.Unmarshal(kept, &stored); err != nil {
+		return agents.Grading{}, err
+	}
+	g := agents.Grading{Lowest: stored.Lowest, Highest: stored.Highest}
+	for _, l := range stored.Levels {
+		g.Levels = append(g.Levels, agents.Level(l))
+	}
+	for _, c := range stored.Criteria {
+		g.Criteria = append(g.Criteria, agents.Criterion(c))
+	}
+	return g, nil
 }

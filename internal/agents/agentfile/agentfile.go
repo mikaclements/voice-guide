@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
+	"slices"
 	"strings"
 	"uuid"
 
@@ -25,8 +27,8 @@ type settings struct {
 	Reads       []string `yaml:"reads"`
 	// What the product must send when a session starts, by name.
 	SessionContext []string `yaml:"session_context"`
-	// What to note about a session once it ends.
-	Summary string `yaml:"summary"`
+	// What to note about a session once it ends, and what to grade it on.
+	Summary summarySettings `yaml:"summary"`
 	// Who speaks first: agent or user, user unless set.
 	Opens string `yaml:"opens"`
 	// The model that answers this agent's turns, the server's unless set.
@@ -36,6 +38,72 @@ type settings struct {
 	// written out is refused instead of read as unset.
 	Voice string   `yaml:"voice"`
 	Speed *float64 `yaml:"speed"`
+}
+
+// summarySettings is the summary section: a plain string is the instruction
+// alone, as agent files written before grading say it; a mapping adds the
+// model that writes the summary and what the session is graded on.
+type summarySettings struct {
+	Instruction string
+	Model       string
+	Scale       []int
+	Levels      map[int]string
+	Criteria    []criterionSettings
+}
+
+type summaryMapping struct {
+	Instruction string              `yaml:"instruction"`
+	Model       string              `yaml:"model"`
+	Scale       []int               `yaml:"scale"`
+	Levels      map[int]string      `yaml:"levels"`
+	Criteria    []criterionSettings `yaml:"criteria"`
+}
+
+type criterionSettings struct {
+	Name     string `yaml:"name"`
+	LooksFor string `yaml:"looks_for"`
+}
+
+// UnmarshalYAML reads the section as a string, else as a mapping. It takes
+// the decoding function rather than the node, since that decodes with the
+// file's own decoder, which refuses an unknown key inside the mapping too.
+func (s *summarySettings) UnmarshalYAML(decode func(any) error) error {
+	if err := decode(&s.Instruction); err == nil {
+		return nil
+	}
+	var m summaryMapping
+	if err := decode(&m); err != nil {
+		return err
+	}
+	if m.Instruction == "" {
+		return errors.New("summary: a summary mapping needs an instruction")
+	}
+	*s = summarySettings(m)
+	return nil
+}
+
+// grading turns the section's scale, levels and criteria into the agent's
+// grading, checking what only the file's form shows: the scale's two ends,
+// and a scale and criteria given together. Publishing checks the rest.
+func (s summarySettings) grading() (agents.Grading, error) {
+	if (len(s.Scale) > 0 || len(s.Levels) > 0) != (len(s.Criteria) > 0) {
+		return agents.Grading{}, errors.New("summary: scale and criteria come together, or neither")
+	}
+	if len(s.Criteria) == 0 {
+		return agents.Grading{}, nil
+	}
+	if len(s.Scale) != 2 {
+		return agents.Grading{}, fmt.Errorf("summary: scale %v: expected [lowest, highest]", s.Scale)
+	}
+	g := agents.Grading{Lowest: s.Scale[0], Highest: s.Scale[1]}
+	// A map has no order; the levels render in score order, so every publish gives the same bytes.
+	for _, score := range slices.Sorted(maps.Keys(s.Levels)) {
+		g.Levels = append(g.Levels, agents.Level{Score: score, Means: strings.TrimSpace(s.Levels[score])})
+	}
+	for _, c := range s.Criteria {
+		g.Criteria = append(g.Criteria, agents.Criterion{Name: c.Name, LooksFor: strings.TrimSpace(c.LooksFor)})
+	}
+	return g, nil
 }
 
 // Load reads every agent in fsys. It refuses anything it doesn't recognise,
@@ -107,6 +175,13 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 	if s.Voice != "" && !agents.IsVoiceName(s.Voice) {
 		return agents.Agent{}, fmt.Errorf("%s: voice %q: expected a language and a style, such as af_heart: two lower-case letters, an underscore, then lower-case letters and digits", name, s.Voice)
 	}
+	if s.Summary.Model != "" && !agents.IsModelName(s.Summary.Model) {
+		return agents.Agent{}, fmt.Errorf("%s: summary model %q: expected lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", name, s.Summary.Model)
+	}
+	grading, err := s.Summary.grading()
+	if err != nil {
+		return agents.Agent{}, fmt.Errorf("%s: %w", name, err)
+	}
 	var speed float64
 	if s.Speed != nil {
 		if speed = *s.Speed; !agents.IsSpeed(speed) {
@@ -121,11 +196,13 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 		SessionContext: s.SessionContext,
 		Persona:        string(persona),
 		// A block's last line break is the YAML's, not the instruction's.
-		Summary: strings.TrimSpace(s.Summary),
-		Opens:   s.Opens == "agent",
-		Model:   s.Model,
-		Voice:   s.Voice,
-		Speed:   speed,
+		Summary:      strings.TrimSpace(s.Summary.Instruction),
+		SummaryModel: s.Summary.Model,
+		Grading:      grading,
+		Opens:        s.Opens == "agent",
+		Model:        s.Model,
+		Voice:        s.Voice,
+		Speed:        speed,
 	}, nil
 }
 

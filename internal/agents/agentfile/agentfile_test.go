@@ -182,3 +182,89 @@ func TestLoadReadsTheVoiceAndSpeedAndRefusesAVoiceOutOfFormOrASpeedOutOfRange(t 
 		}
 	}
 }
+
+// gradedSummary is a summary section in its mapping form, with a model, a scale, levels and criteria.
+const gradedSummary = `summary:
+  instruction: |
+    Note the ships you guided.
+  model: claude-opus-5-5
+  scale: [1, 5]
+  levels:
+    5: Guided every ship home.
+    1: Lost a ship.
+  criteria:
+    - name: fog_calls
+      looks_for: Answers every call in the fog.
+    - name: lamp_care
+      looks_for: |
+        Keeps the lamp lit all night.
+`
+
+func TestLoadReadsTheSummaryMappingWithItsModelScaleAndCriteria(t *testing.T) {
+	got, err := agentfile.Load(context.Background(), fstest.MapFS{
+		"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+gradedSummary, "You answer every call from the sea.\n"),
+	})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Load = %d agents, %v; want 1", len(got), err)
+	}
+	a := got[0]
+	want := agents.Grading{
+		Lowest: 1, Highest: 5,
+		Levels:   []agents.Level{{Score: 1, Means: "Lost a ship."}, {Score: 5, Means: "Guided every ship home."}},
+		Criteria: []agents.Criterion{{Name: "fog_calls", LooksFor: "Answers every call in the fog."}, {Name: "lamp_care", LooksFor: "Keeps the lamp lit all night."}},
+	}
+	if a.Summary != "Note the ships you guided." || a.SummaryModel != "claude-opus-5-5" || a.Model != "" {
+		t.Errorf("summary %q, summary model %q, model %q", a.Summary, a.SummaryModel, a.Model)
+	}
+	if a.Grading.Lowest != want.Lowest || a.Grading.Highest != want.Highest ||
+		!slices.Equal(a.Grading.Levels, want.Levels) || !slices.Equal(a.Grading.Criteria, want.Criteria) {
+		t.Errorf("grading = %+v, want %+v (levels in score order)", a.Grading, want)
+	}
+	if err := agents.Check(got); err != nil {
+		t.Errorf("Check = %v, want the loaded agent accepted", err)
+	}
+}
+
+func TestLoadReadsASummaryMappingWithTheInstructionAloneAsAPlainString(t *testing.T) {
+	load := func(summary string) agents.Agent {
+		t.Helper()
+		got, err := agentfile.Load(context.Background(), fstest.MapFS{
+			"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+summary, "You answer every call from the sea.\n"),
+		})
+		if err != nil || len(got) != 1 {
+			t.Fatalf("Load with %q = %+v, %v", summary, got, err)
+		}
+		return got[0]
+	}
+	plain := load("summary: Note the ships you guided.\n")
+	mapped := load("summary:\n  instruction: Note the ships you guided.\n")
+	if plain.Summary != mapped.Summary || mapped.SummaryModel != "" || mapped.Grading.IsSet() {
+		t.Errorf("plain %+v, mapping %+v; want the same instruction and nothing else", plain, mapped)
+	}
+}
+
+func TestLoadRefusesASummaryMappingOutOfForm(t *testing.T) {
+	const criteria = "  criteria:\n    - name: fog_calls\n      looks_for: Answers every call.\n"
+	for name, summary := range map[string]string{
+		"no instruction":           "summary:\n  model: claude-opus-5-5\n",
+		"an unknown key":           "summary:\n  instruction: Note it.\n  temperature: 0.2\n",
+		"an unknown criterion key": "summary:\n  instruction: Note it.\n  scale: [1, 5]\n  criteria:\n    - name: fog_calls\n      weight: 2\n      looks_for: Answers.\n",
+		"a summary model's name":   "summary:\n  instruction: Note it.\n  model: Claude Opus\n",
+		"a scale without criteria": "summary:\n  instruction: Note it.\n  scale: [1, 5]\n",
+		"levels without criteria":  "summary:\n  instruction: Note it.\n  levels:\n    1: Lost.\n",
+		"criteria without a scale": "summary:\n  instruction: Note it.\n" + criteria,
+		"a scale of one end":       "summary:\n  instruction: Note it.\n  scale: [5]\n" + criteria,
+		"a scale of three":         "summary:\n  instruction: Note it.\n  scale: [1, 3, 5]\n" + criteria,
+		"a scale of words":         "summary:\n  instruction: Note it.\n  scale: [low, high]\n" + criteria,
+		"a list":                   "summary: [Note it.]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := agentfile.Load(context.Background(), fstest.MapFS{
+				"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+summary, "p"),
+			})
+			if err == nil || !strings.Contains(err.Error(), "lighthouse-keeper.md: ") {
+				t.Errorf("Load = %v; want an error naming the file", err)
+			}
+		})
+	}
+}
