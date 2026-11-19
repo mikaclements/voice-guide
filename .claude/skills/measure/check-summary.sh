@@ -8,7 +8,7 @@
 #   .claude/skills/measure/check-summary.sh [MODEL]    default: claude-haiku-5-5
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-. scripts/lib/own-voice.sh check_summary 127.0.0.1:18082 18093
+. .claude/skills/measure/own-voice.sh check_summary 127.0.0.1:18082 18093
 export VOICE_MODEL="${1:-claude-haiku-5-5}"
 own_voice_setup
 since=$(date -u +%Y-%m-%dT%H:%M:%SZ)

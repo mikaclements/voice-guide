@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sourced, in place of scripts/lib/env.sh, by the check scripts that run their own database, model
 # service and voice, so a running scripts/run.sh is left alone:
-#   . scripts/lib/own-voice.sh DATABASE VOICE_ADDR MODEL_PORT
+#   . .claude/skills/measure/own-voice.sh DATABASE VOICE_ADDR MODEL_PORT
 # The addresses are the script's own defaults, never .env's, which are scripts/run.sh's; ones given
 # in the environment win. Refuses a taken port, then the script calls own_voice_setup and
 # start_voice; everything started is stopped, and the database dropped, when the script exits.
