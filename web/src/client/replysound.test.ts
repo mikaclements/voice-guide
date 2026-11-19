@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Hearing, quietMs, shownReply } from "./hearing.ts";
+import { quietMs, ReplySoundClock, shownReply } from "./replysound.ts";
 
-// Feeds the hearing a reading every 10 ms from `from` up to `to`, loud or silent.
-function play(h: Hearing, loud: boolean, from: number, to: number) {
+// Feeds the clock a reading every 10 ms from `from` up to `to`, loud or silent.
+function play(h: ReplySoundClock, loud: boolean, from: number, to: number) {
   for (let now = from; now <= to; now += 10) h.sample(loud, now);
 }
 
 test("a send in a pause of the reply counts as stopped at once", () => {
-  const h = new Hearing();
+  const h = new ReplySoundClock();
   play(h, true, 0, 40);
   const stops: number[] = [];
   h.sent(

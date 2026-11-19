@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ChannelTurns } from "./audio.ts";
-import { Hearing } from "./hearing.ts";
+import { ReplySoundClock } from "./replysound.ts";
 import { type Page, type Reply, Sender } from "./sending.ts";
 import { SpokenTurns } from "./spoken.ts";
 
@@ -17,7 +17,7 @@ function harness() {
       shown.set(reply, { text: "" });
     },
     open: (reply) => shown.set(reply, { text: "" }),
-    hear: (you, words) => (words ? shown.set(you, { text: words }) : shown.delete(you)),
+    showLiveWords: (you, words) => (words ? shown.set(you, { text: words }) : shown.delete(you)),
     update: (id, change) => shown.has(id) && shown.set(id, change(shown.get(id) as Reply)),
     takeBack: (you, reply) => {
       shown.delete(reply);
@@ -30,28 +30,24 @@ function harness() {
       why.push(reason);
     },
   };
-  // Typed sends share the page and the hearing of the agent's sound, as on the page itself; their
+  // Typed sends share the page and the clock of the agent's sound, as on the page itself; their
   // messages are t1, t2 and on.
-  const hearing = new Hearing();
+  const clock = new ReplySoundClock();
   let ids = 0;
   const sender = new Sender(
-    hearing,
+    clock,
     page,
     () => 0,
     () => `t${++ids}`,
   );
-  const spoken = new SpokenTurns(
-    page,
-    (words, requestId) => sender.keep(words, requestId),
-    hearing,
-  );
+  const spoken = new SpokenTurns(page, (words, requestId) => sender.keep(words, requestId), clock);
   const sent: { request_id: string }[] = [];
   const turns = new ChannelTurns(
     (m) => sent.push(JSON.parse(m)),
-    (id, words, follow, lost) => spoken.heard(id, words, follow, lost),
+    (id, words, follow, lost) => spoken.onUserSpeech(id, words, follow, lost),
   );
   const say = (m: object) => turns.receive(JSON.stringify({ request_id: "v1", ...m }));
-  return { shown, givenBack, why, say, turns, sender, sent, hearing };
+  return { shown, givenBack, why, say, turns, sender, sent, clock };
 }
 
 const flush = () => new Promise((r) => setImmediate(r));
@@ -171,10 +167,10 @@ test("a spoken turn that may have been taken goes again with its request ID", as
 });
 
 test("a spoken turn taken before a typed send's first sound has that sound, not the typed send", () => {
-  const { shown, say, turns, sender, hearing } = harness();
+  const { shown, say, turns, sender, clock } = harness();
   sender.send("Hi.", turns, undefined);
   say({ type: "hearing", text: "Hold on.", final: true });
-  for (let now = 0; now <= 50; now += 10) hearing.sample(true, now);
+  for (let now = 0; now <= 50; now += 10) clock.sample(true, now);
   assert.equal(shown.get("t2")?.firstSoundMs, undefined, "the typed reply, cut before it sounded");
 });
 
@@ -192,11 +188,11 @@ test("a spoken turn's request ID never replaces a typed send's, each kept with i
 });
 
 test("a spoken turn voice refuses leaves the typed reply's first sound to be timed", async () => {
-  const { shown, say, turns, sender, hearing } = harness();
+  const { shown, say, turns, sender, clock } = harness();
   sender.send("Hi.", turns, undefined);
   say({ type: "hearing", text: "Hold on.", final: true });
   say({ type: "refused", reason: "busy", detail: "too many turns are waiting" });
   await flush();
-  for (let now = 0; now <= 50; now += 10) hearing.sample(true, now);
+  for (let now = 0; now <= 50; now += 10) clock.sample(true, now);
   assert.equal(shown.get("t2")?.firstSoundMs, 0, "the typed reply, which still plays");
 });

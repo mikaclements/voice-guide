@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { endSession, endsSession, ProblemError, problemFrom } from "./api.ts";
+import { at, endSession, endsSession, ProblemError, problemFrom } from "./api.ts";
 
 const ticket = "tok";
 
@@ -68,4 +68,15 @@ test("a problem document from voice says so, and any other refusal doesn't", asy
   assert.equal(html.fromVoice, false);
   assert.equal(html.message, "Error (502)", "a page's body is never shown");
   assert.match(plain.message, /no such context/);
+});
+
+test("every path the element sends goes to voice's base, the audio connection's own address too", async () => {
+  const reached: string[] = [];
+  const fetcher = at("https://voice.example", (async (url: string) => {
+    reached.push(url);
+    return new Response();
+  }) as typeof fetch);
+  // The address voice's answer to an offer names, which hanging up sends DELETE to.
+  await fetcher("/v1/sessions/s1/audio/c1", { method: "DELETE" });
+  assert.deepEqual(reached, ["https://voice.example/v1/sessions/s1/audio/c1"]);
 });

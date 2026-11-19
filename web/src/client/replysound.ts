@@ -7,7 +7,7 @@
 // measured.
 export const quietMs = 500;
 
-export class Hearing {
+export class ReplySoundClock {
   private loudAt = Number.NEGATIVE_INFINITY; // the last reading with sound
   private sounding = false;
   private firstSound: (() => void) | undefined;

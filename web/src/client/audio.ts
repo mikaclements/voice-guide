@@ -32,7 +32,7 @@ export type Follow = (onText: (text: string) => void) => Promise<TurnEnd>;
 // voice takes the turn with them, follows its reply. No words, once final, means nothing was heard;
 // lost, that voice couldn't hear it all and took no turn, so the words heard are the user's to send
 // or say again.
-type OnHearing = (requestId: string, words: string, follow?: Follow, lost?: boolean) => void;
+type OnUserSpeech = (requestId: string, words: string, follow?: Follow, lost?: boolean) => void;
 
 // Turns on the data channel: text as it arrives, the ending, then spoken, or interrupted when a turn
 // sent meanwhile cut the reply short; the interrupted turn's last messages may come after the new
@@ -42,14 +42,14 @@ type OnHearing = (requestId: string, words: string, follow?: Follow, lost?: bool
 export class ChannelTurns implements Turns {
   readonly interrupts = true;
   private readonly send: (msg: string) => void;
-  private readonly onHearing: OnHearing;
+  private readonly onUserSpeech: OnUserSpeech;
   private readonly turns = new Map<string, Pending>();
   // The words of each spoken turn voice is still hearing, by request ID.
-  private readonly hearing = new Map<string, string>();
+  private readonly userWords = new Map<string, string>();
 
-  constructor(send: (msg: string) => void, onHearing: OnHearing = () => {}) {
+  constructor(send: (msg: string) => void, onUserSpeech: OnUserSpeech = () => {}) {
     this.send = send;
-    this.onHearing = onHearing;
+    this.onUserSpeech = onUserSpeech;
   }
 
   take(
@@ -92,9 +92,9 @@ export class ChannelTurns implements Turns {
       const follow: Follow | undefined = taken
         ? (onText) => this.follow(m.request_id, onText)
         : undefined;
-      if (m.final) this.hearing.delete(m.request_id);
-      else this.hearing.set(m.request_id, words);
-      this.onHearing(m.request_id, words, follow, Boolean(m.failed));
+      if (m.final) this.userWords.delete(m.request_id);
+      else this.userWords.set(m.request_id, words);
+      this.onUserSpeech(m.request_id, words, follow, Boolean(m.failed));
       return;
     }
     const t = this.turns.get(m.request_id);
@@ -138,9 +138,9 @@ export class ChannelTurns implements Turns {
   // The data channel closed: a reply that had started is lost; one that hadn't may have been taken.
   // Words still being heard are the user's to send or say again: no turn was taken with them.
   closed(): void {
-    for (const [requestId, words] of this.hearing)
-      this.onHearing(requestId, words, undefined, true);
-    this.hearing.clear();
+    for (const [requestId, words] of this.userWords)
+      this.onUserSpeech(requestId, words, undefined, true);
+    this.userWords.clear();
     for (const t of this.turns.values()) {
       if (t.started) t.ended?.({ ended: "lost" });
       else t.failed?.(new TurnFailure("unsure", "the audio connection closed"));
@@ -200,7 +200,7 @@ export type AudioOptions = {
   fetcher?: typeof fetch;
   media?: Pick<MediaDevices, "getUserMedia">;
   onRefused?: () => void;
-  onHearing?: OnHearing;
+  onUserSpeech?: OnUserSpeech;
 };
 
 // The microphone on an audio connection, stopped with it: at once, or as soon as the user gives it.
@@ -253,7 +253,7 @@ export async function openAudio(
   sessionId: string,
   ticket: string,
   onClosing: (why: Closing) => void,
-  { fetcher = fetch, media = navigator.mediaDevices, onRefused, onHearing }: AudioOptions = {},
+  { fetcher = fetch, media = navigator.mediaDevices, onRefused, onUserSpeech }: AudioOptions = {},
 ): Promise<Audio> {
   const pc = new RTCPeerConnection();
   const mic = sendMicrophone(pc, microphone(media, onRefused));
@@ -264,7 +264,7 @@ export async function openAudio(
   };
   // Made before the offer, since an offer without a data channel gets none.
   const dc = pc.createDataChannel("turns");
-  const turns = new ChannelTurns((msg) => dc.send(msg), onHearing);
+  const turns = new ChannelTurns((msg) => dc.send(msg), onUserSpeech);
   let told = false; // voice said why it closed, or the page closed it
   dc.onmessage = (e) => {
     told = onChannelMessage(e.data, turns, onClosing) || told;
@@ -379,15 +379,15 @@ function until(
 // speech and above the near-silence between words and at a reply's start.
 const soundLevel = 0.01;
 // How often the page looks for sound: 10 ms, half a packet, so first sound is timed to within it.
-const listenEveryMs = 10;
+const levelEveryMs = 10;
 
 // The page's playback of the agent's audio; muting it leaves the readings, taken from the track.
 // play starts it again, from a press, after the browser refused it.
 export type Playback = { stop(): void; mute(on: boolean): void; play?(): void };
 
-// Plays the agent's audio and passes on a reading of its level every listenEveryMs. onBlocked hears
+// Plays the agent's audio and passes on a reading of its level every levelEveryMs. onBlocked hears
 // whether the browser refuses to play it until the user has interacted with the page.
-export function listen(
+export function playAgent(
   stream: MediaStream,
   onLevel: (loud: boolean, now: number) => void,
   onBlocked: (blocked: boolean) => void = () => {},
@@ -412,7 +412,7 @@ export function listen(
     analyser.getFloatTimeDomainData(samples);
     const loud = samples.some((s) => Math.abs(s) > soundLevel);
     onLevel(loud, performance.now());
-  }, listenEveryMs);
+  }, levelEveryMs);
   return {
     stop() {
       clearInterval(timer);

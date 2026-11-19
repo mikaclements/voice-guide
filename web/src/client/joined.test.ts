@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { afterEach, type TestContext, test } from "node:test";
-import { expiredMessage, ProblemError } from "./api.ts";
+import { at, expiredMessage, ProblemError } from "./api.ts";
 import { closings, microphoneRefused, reconnectTries, unusableMessage } from "./ending.ts";
 import { fakeVoice } from "./fakes.ts";
-import { at, insecureMessage, JoinedSession, type Shown, wanted } from "./joined.ts";
+import { insecureMessage, JoinedSession, type Shown } from "./joined.ts";
 import type { Spoken } from "./turns.ts";
 
 // Lets the callbacks of promises already settled run; setImmediate, since tests mock setTimeout.
@@ -125,7 +125,7 @@ test("under a spoken reply the view carries how long after the user finished spe
   s.f.offers[0].open();
   await settle();
   const said = (id: string, ended: "done" | "lost", spoken: Spoken) =>
-    s.f.offers[0].options?.onHearing?.(id, "Hi", async (onText) => {
+    s.f.offers[0].options?.onUserSpeech?.(id, "Hi", async (onText) => {
       onText("Hello");
       return { ended, model: "m", spoken: Promise.resolve(spoken) };
     });
@@ -184,8 +184,8 @@ test("while the browser refuses to play the agent no opening goes, and the press
   await settle();
   s.f.played[0].blocked(true);
   assert.equal(c.sent.length, 0, "nothing before the press");
-  s.joined.hear();
-  s.joined.hear();
+  s.joined.playAfterPress();
+  s.joined.playAfterPress();
   assert.deepEqual(c.sent, [{ type: "turn", request_id: c.sent[0]?.request_id, opening: true }]);
 });
 
@@ -282,7 +282,7 @@ test("speech once the greeting sounds is sent, and cuts it as any reply", async 
   await from({ type: "text", text: "Welcome back" });
   sound();
   assert.equal(muted(), false, "the user's speech goes, not silence");
-  s.f.offers[0].options?.onHearing?.("r1", "Hello", async (onText) => {
+  s.f.offers[0].options?.onUserSpeech?.("r1", "Hello", async (onText) => {
     onText("Hi");
     return { ended: "done", spoken: Promise.resolve({ failed: false }) };
   });
@@ -395,7 +395,7 @@ test("the agent the browser won't play without a press waits for one", async () 
   await settle();
   s.f.played[0].blocked(true);
   assert.equal(s.last().blocked, true);
-  s.joined.hear();
+  s.joined.playAfterPress();
   assert.equal(s.f.played[0].plays, 1);
   assert.deepEqual([s.last().blocked, s.last().status], [false, greetingStatus]);
 });
@@ -601,29 +601,4 @@ test("a page on plain http holds no session, and says why", () => {
   assert.equal(s.f.offers.length, 0);
   assert.deepEqual(s.told, [`refused - ${insecureMessage}`, "ended unusable"]);
   assert.deepEqual([s.last().notes, s.last().over], [[insecureMessage], unusableMessage]);
-});
-
-test("the element joins what it was given once it is on the page, voice at api, else its script's origin", () => {
-  const from = "https://voice.example";
-  const given = { session: "s1", ticket: "tk1" };
-  assert.equal(wanted(false, given, null, from), undefined, "off the page");
-  assert.equal(wanted(true, undefined, null, from), undefined, "nothing given yet");
-  assert.equal(wanted(true, { session: " ", ticket: "tk1" }, null, from), undefined);
-  const join = wanted(true, given, null, from);
-  assert.deepEqual(join, { ...given, api: from, key: `${from} s1 tk1` });
-  const other = wanted(true, { session: "s1", ticket: "tk2" }, "https://v.example/", from);
-  assert.equal(other?.api, "https://v.example");
-  assert.notEqual(other?.key, join?.key, "a new ticket joins again");
-  assert.equal(wanted(true, given, null, "")?.api, "", "the page's own origin");
-});
-
-test("every path the element sends goes to voice's base, the audio connection's own address too", async () => {
-  const reached: string[] = [];
-  const fetcher = at("https://voice.example", (async (url: string) => {
-    reached.push(url);
-    return new Response();
-  }) as typeof fetch);
-  // The address voice's answer to an offer names, which hanging up sends DELETE to.
-  await fetcher("/v1/sessions/s1/audio/c1", { method: "DELETE" });
-  assert.deepEqual(reached, ["https://voice.example/v1/sessions/s1/audio/c1"]);
 });

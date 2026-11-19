@@ -3,36 +3,36 @@
 // first sound went out.
 
 import type { Follow } from "./audio.ts";
-import type { Hearing } from "./hearing.ts";
+import type { ReplySoundClock } from "./replysound.ts";
 import { failure, keepRequestId } from "./retry.ts";
-import type { Page } from "./sending.ts";
+import { type Page, showEnd, showSpoken } from "./sending.ts";
 
 export class SpokenTurns {
   private readonly page: Page;
   private readonly keep: (words: string, requestId: string) => void;
-  private readonly hearing: Hearing | undefined;
+  private readonly clock: ReplySoundClock | undefined;
 
   // keep holds on to the request ID of a turn that may have been taken, for the words' next send;
-  // hearing times the typed sends' sound, which a spoken turn taken cuts.
+  // clock times the typed sends' sound, which a spoken turn taken cuts.
   constructor(
     page: Page,
     keep: (words: string, requestId: string) => void = () => {},
-    hearing?: Hearing,
+    clock?: ReplySoundClock,
   ) {
     this.page = page;
     this.keep = keep;
-    this.hearing = hearing;
+    this.clock = clock;
   }
 
   // voice heard words of the turn requestId; follow is set once it took the turn with them, and lost
   // once it couldn't hear them all and took none.
-  heard(requestId: string, words: string, follow?: Follow, lost?: boolean): void {
+  onUserSpeech(requestId: string, words: string, follow?: Follow, lost?: boolean): void {
     const youId = `${requestId}:you`;
     if (follow) {
-      const unspoke = this.hearing?.spoke();
+      const unspoke = this.clock?.spoke();
       this.answer(requestId, youId, `${requestId}:reply`, words, follow, unspoke);
     } else if (lost) this.page.giveBack(youId, `${requestId}:reply`, words, notCaught(words));
-    else this.page.hear(youId, words);
+    else this.page.showLiveWords(youId, words);
   }
 
   private async answer(
@@ -48,7 +48,7 @@ export class SpokenTurns {
       const end = await follow((text) =>
         this.page.update(replyId, (r) => ({ ...r, text: r.text + text })),
       );
-      this.page.update(replyId, (r) => ({ ...r, ended: end.ended, model: end.model }));
+      showEnd(this.page, replyId, end);
       const spoken = await end.spoken;
       if (spoken?.talkedOn) {
         // Nothing of it sounded, and the turn is taken again with all the words.
@@ -56,12 +56,7 @@ export class SpokenTurns {
         this.page.takeBack(youId, replyId);
         return;
       }
-      this.page.update(replyId, (r) => ({
-        ...r,
-        ...(spoken?.failed && { audioFailed: true }),
-        ...(spoken?.heard !== undefined && { heard: spoken.heard }),
-        ...(spoken?.firstAudioMs !== undefined && { finishedToSoundMs: spoken.firstAudioMs }),
-      }));
+      showSpoken(this.page, replyId, spoken, true);
     } catch (err) {
       // Nothing of it plays, so a typed reply before it is still the one heard and timed.
       unspoke?.();

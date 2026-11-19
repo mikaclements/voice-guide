@@ -28,7 +28,15 @@ const page = (lines: Shown["lines"], rest: Partial<Shown> = {}) =>
       words: "",
       starting: false,
       error: "",
-      on: { agent: none, start: none, end: none, mute: none, hear: none, words: none, send: none },
+      on: {
+        agent: none,
+        start: none,
+        end: none,
+        mute: none,
+        playAfterPress: none,
+        words: none,
+        send: none,
+      },
     }),
   );
 
