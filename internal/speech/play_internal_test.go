@@ -140,14 +140,14 @@ func TestTalkingOnSettlingAndTheReplysFirstPacketExcludeEachOther(t *testing.T) 
 	if !talked.stopForTalkOn(now, 0, func() { told = true }) || !told {
 		t.Fatal("talking on before any packet didn't stop the reply and tell the page")
 	}
-	if talked.sound(now) || talked.commit() {
+	if talked.sound(now) || talked.settle() {
 		t.Error("a packet may go out, or the turn be settled, once the user talked on; want neither")
 	}
 	if talked.show(func() { t.Error("text told the page once the user talked on") }) {
 		t.Error("show said the text went, want it held back")
 	}
 	settled := newTestRun()
-	if !settled.commit() || settled.stopForTalkOn(now, 0, func() { t.Error("the page told of talking on after settling") }) {
+	if !settled.settle() || settled.stopForTalkOn(now, 0, func() { t.Error("the page told of talking on after settling") }) {
 		t.Error("talking on stopped a reply once its turn was settled, want it left to the interrupt")
 	}
 }
@@ -223,7 +223,7 @@ func TestSpeechBegunJustBeforeTheReplyIsHeardTalksOnThoughNoticedLater(t *testin
 }
 
 // A reply whose first audio never comes is settled by its turn's deadline, so its turn ends in time.
-func TestAReplyThatNeverSoundsIsCommittedByTheTurnsDeadline(t *testing.T) {
+func TestAReplyThatNeverSoundsIsSettledByTheTurnsDeadline(t *testing.T) {
 	s := &Service{clock: systemClock{}}
 	settled := make(chan bool, 1)
 	go func() {

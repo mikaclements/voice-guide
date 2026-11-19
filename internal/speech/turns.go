@@ -261,28 +261,29 @@ type turnRun struct {
 	freeOnce      sync.Once
 
 	// mu orders the reply's first packet, its text reaching the page, the
-	// user talking on and the turn being committed to be saved.
+	// user talking on and the turn being settled.
 	// firstAt is when the first packet went, and sounding closes then.
 	// talked says the user talked on before the reply reached them.
-	// committed says the turn is to be saved: the user hadn't talked on, or
-	// the reply stopped with none. unremoved says the turn couldn't be taken back.
-	mu                           sync.Mutex
-	firstAt                      time.Time
-	sounding                     chan struct{}
-	talked, committed, unremoved bool
+	// settled says the reply reached them, or stopped with none, before they
+	// talked on: the turn is to be saved.
+	// unremoved says the turn couldn't be taken back.
+	mu                         sync.Mutex
+	firstAt                    time.Time
+	sounding                   chan struct{}
+	talked, settled, unremoved bool
 }
 
 // stopForTalkOn stops the reply as the user talks on after their spoken turn was
 // taken, having begun to speak at began, before they could hear any of it:
 // unless its first packet had been heard by then, by the same estimate as the
-// part of a reply heard, the turn has been committed or let the next start, or
+// part of a reply heard, the turn has been settled or let the next start, or
 // the user cut in otherwise. tell tells the page, before any more of the
 // reply's text can reach it. It says whether it stopped the reply.
 func (r *turnRun) stopForTalkOn(began time.Time, roundTrip time.Duration, tell func()) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	heardFirst := !r.firstAt.IsZero() && !heardBy(began.Add(-captureDelay), roundTrip).Before(r.firstAt)
-	if _, cut := r.interruptedAt(); heardFirst || r.talked || r.committed || cut || r.released() {
+	if _, cut := r.interruptedAt(); heardFirst || r.talked || r.settled || cut || r.released() {
 		return false
 	}
 	r.talked = true
@@ -298,13 +299,13 @@ func (r *turnRun) talkedOn() bool {
 	return r.talked
 }
 
-// commit says the turn is to be saved, unless the user talked on first.
+// settle says the turn is to be saved, unless the user talked on first.
 // After it says yes, talking on no longer stops the reply.
-func (r *turnRun) commit() bool {
+func (r *turnRun) settle() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.committed = !r.talked
-	return r.committed
+	r.settled = !r.talked
+	return r.settled
 }
 
 // leftInFlight records that the turn couldn't be taken back, or took the
@@ -468,10 +469,10 @@ func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c acce
 			}
 			return
 		}
-		if committed, settleErr := s.conversation.Settle(ctx, turn); settleErr != nil {
+		if settled, settleErr := s.conversation.Settle(ctx, turn); settleErr != nil {
 			turn, err = conversation.Turn{}, settleErr
 		} else {
-			turn = committed
+			turn = settled
 		}
 	}
 	if run.talkedOn() { // before the turn was saved: nothing to take back
@@ -559,7 +560,7 @@ func (s *Service) reached(speaking context.Context, conn Connection, run *turnRu
 		s.clock.Until(ctx, first.Add(conn.RoundTrip()+browserDelay+captureDelay+noticeLag))
 	default:
 	}
-	return run.commit()
+	return run.settle()
 }
 
 // forward returns what TakeTurn calls with each piece of the reply: it goes

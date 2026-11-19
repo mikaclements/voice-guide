@@ -206,14 +206,14 @@ func (s *Service) Connect(ctx context.Context, c access.Caller, session uuid.UUI
 		return uuid.Nil(), "", ErrStopping
 	}
 	old, replacing := s.conns[session]
-	h := liveConn{id: id, conn: conn, hangup: make(chan struct{}), hangupOnce: &sync.Once{}, served: make(chan struct{})}
-	s.conns[session] = h
+	lc := liveConn{id: id, conn: conn, hangup: make(chan struct{}), hangupOnce: &sync.Once{}, served: make(chan struct{})}
+	s.conns[session] = lc
 	s.watchers.Add(1)
 	if replacing {
 		s.watchers.Add(1)
 	}
 	s.mu.Unlock()
-	go s.serve(c, session, id, conn, h.hangup, h.served)
+	go s.serve(c, session, id, conn, lc.hangup, lc.served)
 	if replacing {
 		// Not waited for here: the old browser's acknowledgement shouldn't hold up the new one.
 		go func() {
@@ -302,14 +302,14 @@ func (s *Service) Hangup(ctx context.Context, c access.Caller, session, id uuid.
 		return err
 	}
 	s.mu.Lock()
-	h, ok := s.conns[session]
+	lc, ok := s.conns[session]
 	s.mu.Unlock()
-	if !ok || h.id != id || ended(h.conn) {
+	if !ok || lc.id != id || ended(lc.conn) {
 		return ErrNoConnection
 	}
-	h.hangupOnce.Do(func() { close(h.hangup) })
+	lc.hangupOnce.Do(func() { close(lc.hangup) })
 	select {
-	case <-h.served:
+	case <-lc.served:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -322,13 +322,13 @@ func (s *Service) Close() {
 	s.mu.Lock()
 	s.stopping = true
 	all := make([]liveConn, 0, len(s.conns))
-	for _, h := range s.conns {
-		all = append(all, h)
+	for _, lc := range s.conns {
+		all = append(all, lc)
 	}
 	s.mu.Unlock()
 	var closing sync.WaitGroup
-	for _, h := range all {
-		closing.Go(func() { h.conn.Close(Stopping) })
+	for _, lc := range all {
+		closing.Go(func() { lc.conn.Close(Stopping) })
 	}
 	closing.Wait()
 	s.watchers.Wait()
