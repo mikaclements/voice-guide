@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs Kokoro natively on this Mac's GPU through Apple's MLX (scripts/lib/kokoro-mlx/server.py), as
+# Runs Kokoro natively on this Mac's GPU through Apple's MLX (services/kokoro-mlx/server.py), as
 # a stand-in for a dedicated text-to-speech server with a GPU. Unlike PyTorch on the Apple GPU, MLX
 # takes no extra time the first time it meets a phrase of a new length, and its memory stays flat.
 # The same model and voice (af_heart) behind the part of Kokoro-FastAPI's API voice uses, Ogg Opus
@@ -13,7 +13,9 @@
 #   scripts/kokoro-mlx.sh
 # Needs macOS on Apple silicon and uv (https://docs.astral.sh/uv/).
 set -euo pipefail
-cd "$(dirname "$0")/lib/kokoro-mlx"
+cd "$(dirname "$0")/.."
+. scripts/lib/net.sh
+cd services/kokoro-mlx
 
 # The model's commit on Hugging Face, so every install gets the same weights and voices.
 MODEL=mlx-community/Kokoro-82M-bf16
@@ -29,24 +31,11 @@ server=""
 trap '[ -z "$server" ] || { kill "$server" 2>/dev/null || true; for _ in $(seq 50); do kill -0 "$server" 2>/dev/null || break; sleep 0.2; done; wait "$server" 2>/dev/null || true; }' EXIT
 trap 'exit 130' INT TERM
 
-# uname -m says x86_64 for a shell running under Rosetta, even on Apple silicon.
-if [ "$(uname -s)" != Darwin ] || [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" != 1 ]; then
-  echo "Kokoro on MLX needs macOS on Apple silicon; use the container (docker compose --profile tts up kokoro)" >&2
-  exit 1
-fi
-# The oldest macOS MLX's packages are built for.
-if [ "$(sw_vers -productVersion | cut -d. -f1)" -lt 14 ]; then
-  echo "Kokoro on MLX needs macOS 14 or later; use the container (docker compose --profile tts up kokoro)" >&2
-  exit 1
-fi
-if ! command -v uv >/dev/null; then
-  echo "uv isn't installed; install it first (brew install uv)" >&2
-  exit 1
-fi
-if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null; then
-  echo "port $port is taken; stop what holds it (lsof -nP -iTCP:$port -sTCP:LISTEN) or set KOKORO_MLX_PORT" >&2
-  exit 1
-fi
+require_mlx_host \
+  "Kokoro on MLX needs macOS on Apple silicon; use the container (docker compose --profile tts up kokoro)" \
+  "Kokoro on MLX needs macOS 14 or later; use the container (docker compose --profile tts up kokoro)" \
+  "uv isn't installed; install it first (brew install uv)"
+require_free_port "$port" "set KOKORO_MLX_PORT"
 
 # Exactly the packages in requirements.txt, each checked against its hash, wheels only so nothing
 # builds from source; the Python is the one in .python-version here, for Apple silicon even when
@@ -82,16 +71,12 @@ server=$!
 
 # Only the model load and one phrase spoken are timed now that the downloads are done: 60 s, a round
 # guess (about 2 s here).
-for _ in $(seq 300); do
-  kill -0 "$server" 2>/dev/null || break
-  if curl -sf -o /dev/null "http://127.0.0.1:$port/health"; then
-    echo "Kokoro is ready at http://127.0.0.1:$port"
-    wait "$server" || true
-    echo "Kokoro stopped; its log: $log" >&2
-    exit 1
-  fi
-  sleep 0.2
-done
+if wait_http -f -p "$server" -n 300 -i 0.2 "http://127.0.0.1:$port/health"; then
+  echo "Kokoro is ready at http://127.0.0.1:$port"
+  wait "$server" || true
+  echo "Kokoro stopped; its log: $log" >&2
+  exit 1
+fi
 echo "Kokoro didn't start; the end of its log:" >&2
 tail -n 20 "$log" >&2
 exit 1

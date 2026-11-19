@@ -6,7 +6,7 @@ description: Run this project's full verification (format, lint with module boun
 Run `scripts/check.sh`. It starts the compose database (Docker must be running) and runs, in order, stopping at the first failure, the checks CI runs. Run `npm ci` first if `node_modules` is missing; install sqlc if `scripts/sqlc.sh` asks for it.
 
 1. `.githooks/pre-commit`: no committed file that git ignores, and the formatting of what is staged (Go, TypeScript, JSON). If formatting fails, run `scripts/format.sh` once, stage the result and re-check.
-2. `python3 .claude/skills/doc-audit/check_docs.py`: links, labels, the decision index.
+2. `python3 scripts/lib/check_docs.py`: links, labels, the decision index.
 3. `golangci-lint run ./...`: static checks and module boundaries (depguard).
 4. `scripts/sqlc.sh diff`: the generated code matches the queries and migrations. If not, run `scripts/sqlc.sh generate`.
 5. `go test -race ./...` with `TEST_DATABASE_URL` set: unit tests and the store adapters' tests against PostgreSQL, under the race detector.

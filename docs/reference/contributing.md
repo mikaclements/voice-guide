@@ -142,7 +142,7 @@ Rules for every kind:
 - An item's spec is agreed before its code starts. Specs live in the working notes.
 - A decision goes into its home doc, and every doc it affects, in the same change (the `sync` skill).
 - A task that isn't one plain command gets a script: one people run in `scripts/`, plumbing other scripts, the hooks or CI run in `scripts/lib/`, an agent-only task in its skill's folder (`.claude/skills/<name>/`); docs show the script, not the commands.
-- Text-to-speech runs in compose by default, on the CPU. `KOKORO=mlx` in `.env` makes `scripts/run.sh` run Kokoro natively through `scripts/kokoro-mlx.sh` instead, on Apple's MLX: it needs macOS 14 or later on Apple silicon and `uv`, and runs a small server of ours (`scripts/lib/kokoro-mlx/`) with the API voice uses, its Python packages at fixed versions and hashes (wheels only, so nothing builds from source) and the model at a fixed revision, about 0.9 GB under the user's cache folder on first run (uv's own cache grows too; the code runs on the Mac, outside a container); deleting the folder removes it. It runs offline, on port 8882 (`KOKORO_MLX_PORT`), beside the container's 8880; it is linted with the other Python but not installed or run in CI, since MLX needs Apple silicon. `TEST_KOKORO_URL` points `check-tts.sh` at either, so one script compares them.
+- Text-to-speech runs in compose by default, on the CPU. `KOKORO=mlx` in `.env` makes `scripts/run.sh` run Kokoro natively through `scripts/kokoro-mlx.sh` instead, on Apple's MLX: it needs macOS 14 or later on Apple silicon and `uv`, and runs a small server of ours (`services/kokoro-mlx/`) with the API voice uses, its Python packages at fixed versions and hashes (wheels only, so nothing builds from source) and the model at a fixed revision, about 0.9 GB under the user's cache folder on first run (uv's own cache grows too; the code runs on the Mac, outside a container); deleting the folder removes it. It runs offline, on port 8882 (`KOKORO_MLX_PORT`), beside the container's 8880; it is linted with the other Python but not installed or run in CI, since MLX needs Apple silicon. `TEST_KOKORO_URL` points `check-tts.sh` at either, so one script compares them.
 - Every gate is seen failing once before it is trusted ([E12](#e12)).
 - What lives in the database is tested against a real PostgreSQL, a fresh database per test ([E13](#e13)).
 - A pull request that adds, changes or removes a service, a package, a port or its methods, an adapter, a connection between parts or a design decision updates the schematic in the same pull request (the `schematic` skill says how); `go test` fails on a package, an import between the parts of voice or a port's method that it doesn't show ([E14](#e14)).
@@ -220,7 +220,7 @@ The choices behind the rules above, in a shorter form than the design's decision
 
 <a id="e8"></a>
 #### E8. One home per version
-- Decision: Go's version lives in `go.mod`; golangci-lint's in `.golangci-lint-version`; Node's in `.node-version`; sqlc's in `.sqlc-version`; the JavaScript tools' in the root `package.json` and its lockfile; Python's in `services/stt/.python-version`, uv's in that service's `pyproject.toml` (`required-version`, which uv checks wherever it runs, the image's build included), and the Python packages' in `pyproject.toml` and `uv.lock`; Kokoro on MLX's Python and packages in `scripts/lib/kokoro-mlx/` (`.python-version`, `requirements.in` and the `requirements.txt` compiled from it). CI and the README read them from there.
+- Decision: Go's version lives in `go.mod`; golangci-lint's in `.golangci-lint-version`; Node's in `.node-version`; sqlc's in `.sqlc-version`; the JavaScript tools' in the root `package.json` and its lockfile; Python's in `services/stt/.python-version`, uv's in that service's `pyproject.toml` (`required-version`, which uv checks wherever it runs, the image's build included), and the Python packages' in `pyproject.toml` and `uv.lock`; Kokoro on MLX's Python and packages in `services/kokoro-mlx/` (`.python-version`, `requirements.in` and the `requirements.txt` compiled from it). CI and the README read them from there.
 - Needed by: [section 11](#dependencies).
 - Why: a version written in two places drifts once one of them is updated.
 - Rejected: versions repeated in the workflow and the README.
@@ -247,7 +247,7 @@ The choices behind the rules above, in a shorter form than the design's decision
 
 <a id="e11"></a>
 #### E11. A docs check on every push
-- Decision: `.claude/skills/doc-audit/check_docs.py` checks links, labels, decision boxes, the decision index, coverage, the doc pairs and plain ASCII, on push and in CI. Labels are never renumbered; `--fix-index` rebuilds the index in reading order.
+- Decision: `scripts/lib/check_docs.py` checks links, labels, decision boxes, the decision index, coverage, the doc pairs and plain ASCII, on push and in CI. Labels are never renumbered; `--fix-index` rebuilds the index in reading order.
 - Needed by: [section 13](#workflow).
 - Why: docs that drift mislead every agent that reads them; stable labels keep links and history intact.
 - Rejected: renumbering labels in reading order, which broke links and lost the history of reversed decisions.

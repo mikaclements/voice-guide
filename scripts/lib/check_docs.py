@@ -6,7 +6,7 @@ coverage, quality targets) and docs/reference/contributing.md (engineering decis
 each with its pair for people (ARCHITECTURE.md, CONTRIBUTING.md), every relative link in the tracked
 docs, the labels those docs cite, and plain ASCII.
 
-Run it from any folder: python3 .claude/skills/doc-audit/check_docs.py
+Run it from any folder: python3 scripts/lib/check_docs.py
 Exits with status 1 and lists every problem found.
 With --fix-index, first rebuilds the decision index (Appendix C) from the decisions, in reading order.
 Labels are never renumbered: each keeps the number it was created with.
@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Every path below is relative to the repository root, found from this file's own place in it, so
 # the check reads the same docs whatever folder it is run from.
-os.chdir(Path(__file__).resolve().parents[3])
+os.chdir(Path(__file__).resolve().parents[2])
 
 DESIGN = Path("docs/reference/architecture.md")
 STANDARDS = Path("docs/reference/contributing.md")

@@ -18,7 +18,7 @@
 #   [GREETINGS=10] .claude/skills/measure/check-speak.sh [TURNS] [MODEL...]    defaults: 3, claude-sonnet-5-5 claude-haiku-5-5
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-. scripts/lib/own-voice.sh check_speak 127.0.0.1:18080 18091
+. .claude/skills/measure/own-voice.sh check_speak 127.0.0.1:18080 18091
 
 turns="${1:-3}"
 greetings="${GREETINGS:-10}"

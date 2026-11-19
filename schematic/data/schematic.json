@@ -655,7 +655,7 @@
           "id": "kokoro",
           "kind": "service",
           "name": "Text-to-speech service",
-          "path": "compose.yaml · kokoro",
+          "path": "compose.yaml · kokoro · services/kokoro-mlx",
           "tech": "Kokoro · CPU container by default",
           "setting": "KOKORO: unset (Docker) · mlx",
           "summary": "Text-to-speech: speaks each phrase of the reply as streamed Ogg Opus.",

@@ -10,16 +10,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 . scripts/lib/env.sh
+. scripts/lib/net.sh
 
 model="${1:-claude-sonnet-5-5}"
 provider="${2:-claude-subscription}"
 turns="${3:-3}"
 port="${MODEL_PORT:-8091}"
 
-if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null; then
-  echo "port $port is taken; stop what holds it (lsof -nP -iTCP:$port -sTCP:LISTEN) or pick a free one: MODEL_PORT=18092 .claude/skills/measure/check-model.sh ..." >&2
-  exit 1
-fi
+require_free_port "$port" "pick a free one: MODEL_PORT=18092 .claude/skills/measure/check-model.sh ..."
 
 work=$(mktemp -d)
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" MODEL_PROVIDER="$provider" MODEL_PORT="$port" \

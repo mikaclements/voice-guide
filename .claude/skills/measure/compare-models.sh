@@ -8,7 +8,7 @@
 #   .claude/skills/measure/compare-models.sh [TURNS] [MODEL...]    defaults: 5, claude-sonnet-5-5 claude-haiku-5-5
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
-. scripts/lib/own-voice.sh compare_models 127.0.0.1:18080 18091
+. .claude/skills/measure/own-voice.sh compare_models 127.0.0.1:18080 18091
 
 turns="${1:-5}"
 shift || true

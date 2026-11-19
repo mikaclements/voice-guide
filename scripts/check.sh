@@ -11,7 +11,7 @@ case "$(git config core.hooksPath)" in
   *) echo "check: the git hooks are off in this clone; turn them on with: git config core.hooksPath .githooks" >&2 ;;
 esac
 echo "== commit checks" && .githooks/pre-commit
-echo "== docs" && python3 .claude/skills/doc-audit/check_docs.py
+echo "== docs" && python3 scripts/lib/check_docs.py
 echo "== lint" && golangci-lint run ./...
 echo "== dead code" && scripts/lib/deadcode.sh
 echo "== generated code is current" && scripts/sqlc.sh diff

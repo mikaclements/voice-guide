@@ -11,6 +11,17 @@
 # MODEL_PROVIDER=claude-subscription uses Claude Code signed in on this Mac instead: the model service
 # runs on this Mac, not in a container, so Claude Code finds the login in the macOS keychain.
 # MODEL_PROVIDER=fake costs nothing.
+#
+# Use this to work on voice-guide: it runs voice, the model service and the page from this checkout,
+# so a change shows on a restart, and it is the way to the faster Kokoro on Apple silicon. Use
+# scripts/up.sh to try voice-guide without installing anything but Docker.
+#
+# Settings it reads, from the shell or .env (the shell wins; the first run keeps ANTHROPIC_API_KEY,
+# KOKORO and MODEL_PROVIDER given in the shell): MODEL_PROVIDER (claude-api, claude-subscription or
+# fake), ANTHROPIC_API_KEY, MODEL_HOST, MODEL_PORT (8091), VOICE_MODEL_URL, VOICE_TTS (kokoro, the
+# default, starts Kokoro; fake starts none), KOKORO (unset for Docker, or mlx), KOKORO_MLX_PORT
+# (8882), VOICE_SPEECH_DETECTION (silero, the default, starts the speech-to-text service; fake
+# starts none), VOICE_ADDR (127.0.0.1:8080); voice and the steps it runs (migrate, seed, publish) read the rest of .env.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 save_given_settings=1
@@ -19,6 +30,7 @@ save_given_settings=1
 [ -d node_modules ] || npm ci
 
 export MODEL_PROVIDER="${MODEL_PROVIDER:-claude-api}"
+. scripts/lib/net.sh
 . scripts/lib/api-key.sh
 need_api_key "or MODEL_PROVIDER=claude-subscription to use Claude Code signed in on this Mac"
 
@@ -26,10 +38,7 @@ export MODEL_PORT="${MODEL_PORT:-8091}"
 export VOICE_MODEL_URL="${VOICE_MODEL_URL:-http://$model_host:$MODEL_PORT}"
 # Checked first: voice would otherwise talk to whatever already holds the port, an older model
 # service on another provider say.
-if lsof -nP -iTCP:"$MODEL_PORT" -sTCP:LISTEN >/dev/null; then
-  echo "port $MODEL_PORT is taken; stop what holds it (lsof -nP -iTCP:$MODEL_PORT -sTCP:LISTEN) or set MODEL_PORT" >&2
-  exit 1
-fi
+require_free_port "$MODEL_PORT" "set MODEL_PORT"
 
 # Stops what this script started: native Kokoro, the model service and the page. Waits for each too,
 # so their ports are free once this script ends. Each step may fail, as on a process that already
@@ -54,31 +63,16 @@ if [ "${VOICE_TTS:-kokoro}" = kokoro ]; then
     # Refused before anything slow starts, Docker included; the script repeats the checks for people
     # running it alone. Checked here, not only in the script, which runs in the background and would
     # report late.
-    if [ "$(uname -s)" != Darwin ] || [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" != 1 ]; then
-      echo "KOKORO=mlx needs macOS on Apple silicon; leave KOKORO unset (remove it from .env) to use Docker" >&2
-      exit 1
-    fi
-    if [ "$(sw_vers -productVersion | cut -d. -f1)" -lt 14 ]; then
-      echo "KOKORO=mlx needs macOS 14 or later; leave KOKORO unset (remove it from .env) to use Docker" >&2
-      exit 1
-    fi
-    if ! command -v uv >/dev/null; then
-      echo "KOKORO=mlx needs uv; install it (brew install uv) or leave KOKORO unset (remove it from .env) to use Docker" >&2
-      exit 1
-    fi
-    if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null; then
-      echo "port $port is taken; stop what holds it (lsof -nP -iTCP:$port -sTCP:LISTEN) or set KOKORO_MLX_PORT" >&2
-      exit 1
-    fi
+    require_mlx_host \
+      "KOKORO=mlx needs macOS on Apple silicon; leave KOKORO unset (remove it from .env) to use Docker" \
+      "KOKORO=mlx needs macOS 14 or later; leave KOKORO unset (remove it from .env) to use Docker" \
+      "KOKORO=mlx needs uv; install it (brew install uv) or leave KOKORO unset (remove it from .env) to use Docker"
+    require_free_port "$port" "set KOKORO_MLX_PORT"
     # Started now and waited for before voice: the first start downloads packages and the model.
     scripts/kokoro-mlx.sh &
     kokoro=$!
     kokoro_url="http://127.0.0.1:$port"
     export VOICE_TTS_URL="$kokoro_url"
-    ;;
-  mac)
-    echo "KOKORO=mac was removed; use KOKORO=mlx (Apple's MLX, faster) or leave KOKORO unset (remove it from .env) for Docker" >&2
-    exit 1
     ;;
   *)
     echo "KOKORO must be unset (Docker) or mlx, not ${KOKORO}" >&2
@@ -100,26 +94,14 @@ scripts/build-client.sh
 ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" node services/model/src/main.ts &
 model=$!
 # Voice starts once the model service answers, and only if the process started here is alive.
-ready=""
-for _ in $(seq 100); do
-  kill -0 "$model" 2>/dev/null || break
-  curl -s -o /dev/null "http://$model_host:$MODEL_PORT/" && ready=1 && break
-  sleep 0.1
-done
-if [ -z "$ready" ] || ! kill -0 "$model" 2>/dev/null; then
+if ! wait_http -p "$model" -n 100 -i 0.1 "http://$model_host:$MODEL_PORT/" || ! kill -0 "$model" 2>/dev/null; then
   echo "the model service didn't start on port $MODEL_PORT; its log is above" >&2
   exit 1
 fi
 if [ -n "$kokoro" ]; then
-  ready=""
   # Up to 20 minutes, a round guess: the first start installs about 0.6 GB of packages and downloads
   # 0.3 GB of model before it loads the model. It ends sooner when the script exits.
-  for _ in $(seq 6000); do
-    kill -0 "$kokoro" 2>/dev/null || break
-    curl -sf -o /dev/null "$kokoro_url/health" && ready=1 && break
-    sleep 0.2
-  done
-  if [ -z "$ready" ]; then
+  if ! wait_http -f -p "$kokoro" -n 6000 -i 0.2 "$kokoro_url/health"; then
     echo "native Kokoro didn't start; its message is above" >&2
     exit 1
   fi
@@ -131,14 +113,14 @@ fi
 # The page, so this one command starts everything; left alone when something already holds its port,
 # as scripts/web.sh started first does.
 ready_note="ready: open http://127.0.0.1:5173"
-if lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null; then
+if port_taken 5173; then
   ready_note="voice is ready; the page at :5173 is someone else's: stop it, or run scripts/web.sh after"
 else
   npm run --silent dev --workspace web &
   web=$!
 fi
 # Says where to go once voice answers, after its own start-up lines.
-(until curl -s -o /dev/null "http://${VOICE_ADDR:-127.0.0.1:8080}/"; do sleep 0.5; done
+(wait_http -n 0 -i 0.5 "http://${VOICE_ADDR:-127.0.0.1:8080}/"
   echo "$ready_note" >&2) &
 note=$!
 go run ./cmd/voice

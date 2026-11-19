@@ -5,8 +5,8 @@ import socket
 
 import pytest
 
-from stt import models
-from stt.models import CHECKSUMS, check, wanted
+from stt import fetch_models as models
+from stt.fetch_models import CHECKSUMS, check, wanted
 
 
 def test_each_size_lists_every_file_moonshine_loads():

@@ -1,6 +1,6 @@
 """Fetches one size of Moonshine's models and Smart Turn, each file checked against its SHA-256
 (Moonshine's in models.sha256), so a build gets the files that were measured or fails.
-  python -m stt.models DEST SIZE    writes DEST/SIZE/<file> and DEST/smart-turn-v3.2-cpu.onnx
+  python -m stt.fetch_models DEST SIZE    writes DEST/SIZE/<file> and DEST/smart-turn-v3.2-cpu.onnx
 """
 
 import hashlib
