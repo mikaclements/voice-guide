@@ -491,6 +491,69 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 	return i, err
 }
 
+const sessionsOfUser = `-- name: SessionsOfUser :many
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+WHERE workspace_id = $1 AND user_id = $2 AND id < $3
+ORDER BY id DESC
+LIMIT $4
+`
+
+type SessionsOfUserParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	Before      uuid.UUID
+	PageSize    int32
+}
+
+type SessionsOfUserRow struct {
+	ID             uuid.UUID
+	WorkspaceID    uuid.UUID
+	UserID         uuid.UUID
+	AgentID        uuid.UUID
+	AgentVersion   int32
+	ContextItemIds []uuid.UUID
+	SessionContext []byte
+	StartedAt      time.Time
+	EndedAt        pgtype.Timestamptz
+}
+
+// A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
+// @before, the last id of the page before, is where this one starts.
+func (q *Queries) SessionsOfUser(ctx context.Context, arg SessionsOfUserParams) ([]SessionsOfUserRow, error) {
+	rows, err := q.db.Query(ctx, sessionsOfUser,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.Before,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SessionsOfUserRow
+	for rows.Next() {
+		var i SessionsOfUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.UserID,
+			&i.AgentID,
+			&i.AgentVersion,
+			&i.ContextItemIds,
+			&i.SessionContext,
+			&i.StartedAt,
+			&i.EndedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setWebhookURL = `-- name: SetWebhookURL :one
 INSERT INTO webhooks (workspace_id, url, secret) VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id) DO UPDATE SET url = EXCLUDED.url, stopped_at = NULL

@@ -155,6 +155,28 @@ func (st *Sessions) InWorkspace(ctx context.Context, workspace, id uuid.UUID) (c
 	return s, err == nil, err
 }
 
+// ListForUser returns up to limit of the user's sessions in the workspace,
+// newest first, those started before the session before, or from the newest
+// for the nil UUID.
+func (st *Sessions) ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]conversation.Session, error) {
+	if before == uuid.Nil() {
+		before = uuid.Max()
+	}
+	rows, err := db.New(st.pool).SessionsOfUser(ctx, db.SessionsOfUserParams{WorkspaceID: workspace, UserID: user, Before: before, PageSize: int32(limit)})
+	if err != nil {
+		return nil, fmt.Errorf("list the user's sessions: %w", err)
+	}
+	list := make([]conversation.Session, 0, len(rows))
+	for _, r := range rows {
+		s, err := sessionFrom(db.SessionForRequestRow(r))
+		if err != nil {
+			return nil, err
+		}
+		list = append(list, s)
+	}
+	return list, nil
+}
+
 // End marks the user's session with id ended, unless it already is,
 // queuing its summary job in the same statement, then reads it back: a
 // statement of its own sees an end another call committed meanwhile.

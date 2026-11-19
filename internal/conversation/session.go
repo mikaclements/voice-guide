@@ -95,6 +95,11 @@ type Sessions interface {
 	// InWorkspace returns the session with id in the workspace, whichever
 	// user's it is, if any: for a product's server, which names no user.
 	InWorkspace(ctx context.Context, workspace, id uuid.UUID) (Session, bool, error)
+	// ListForUser returns up to limit of the user's sessions in the workspace,
+	// newest first, those started before the session before, or from the
+	// newest for the nil UUID: session IDs are UUIDv7, so their order is the
+	// order the sessions started in.
+	ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]Session, error)
 	// End marks the user's session with id in the workspace ended, unless it
 	// already is, and in the same write queues the job that writes its
 	// summary and, when the workspace has a webhook not stopped, the job that

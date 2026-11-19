@@ -548,6 +548,10 @@ func (brokenSessions) Reference(context.Context, uuid.UUID, uuid.UUID) (string, 
 	return "", false, errors.New("connection refused by 10.0.0.7:5432")
 }
 
+func (brokenSessions) ListForUser(context.Context, uuid.UUID, uuid.UUID, uuid.UUID, int) ([]conversation.Session, error) {
+	return nil, errors.New("connection refused by 10.0.0.7:5432")
+}
+
 func (brokenSessions) EndIdle(context.Context, time.Duration) ([]uuid.UUID, error) {
 	return nil, errors.New("connection refused by 10.0.0.7:5432")
 }

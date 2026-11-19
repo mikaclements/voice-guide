@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -370,5 +371,75 @@ func TestAUserHasOneReferenceInAWorkspace(t *testing.T) {
 	pgtest.Exec(t, pool, "INSERT INTO user_references (workspace_id, reference, user_id) VALUES ($1, 'aiko-42', $2)", workspace, user)
 	if _, err := pool.Exec(context.Background(), "INSERT INTO user_references (workspace_id, reference, user_id) VALUES ($1, 'aiko', $2)", workspace, user); err == nil {
 		t.Error("a second reference for the same user was saved")
+	}
+}
+
+func TestAUsersSessionsListNewestFirstFromTheCursorAndOnlyTheirOwnInTheirWorkspace(t *testing.T) {
+	s, _ := storeWithTwoWorkspaces(t)
+	ctx := context.Background()
+	var mine []uuid.UUID
+	for range 5 {
+		got, _ := start(t, s, sessionOn(workspace, user), uuid.NewV7())
+		mine = append(mine, got.ID)
+	}
+	start(t, s, sessionOn(workspace, uuid.NewV7()), uuid.NewV7()) // another user's
+	start(t, s, sessionOn(elsewhere, user), uuid.NewV7())         // the same user ID in another workspace
+	newest := []uuid.UUID{mine[4], mine[3], mine[2], mine[1], mine[0]}
+
+	ids := func(before uuid.UUID, limit int, ws uuid.UUID) []uuid.UUID {
+		t.Helper()
+		list, err := s.ListForUser(ctx, ws, user, before, limit)
+		if err != nil {
+			t.Fatalf("ListForUser: %v", err)
+		}
+		got := []uuid.UUID{}
+		for _, session := range list {
+			got = append(got, session.ID)
+		}
+		return got
+	}
+	if got := ids(uuid.Nil(), 10, workspace); !slices.Equal(got, newest) {
+		t.Errorf("list = %v, want the user's five newest first: %v", got, newest)
+	}
+	if got := ids(uuid.Nil(), 2, workspace); !slices.Equal(got, newest[:2]) {
+		t.Errorf("first page = %v, want %v", got, newest[:2])
+	}
+	if got := ids(newest[1], 2, workspace); !slices.Equal(got, newest[2:4]) {
+		t.Errorf("page after the second = %v, want %v", got, newest[2:4])
+	}
+	if got := ids(newest[4], 2, workspace); len(got) != 0 {
+		t.Errorf("page after the oldest = %v, want none", got)
+	}
+	if got := ids(uuid.Nil(), 10, elsewhere); len(got) != 1 || slices.Contains(newest, got[0]) {
+		t.Errorf("the other workspace's list = %v, want only its own one session", got)
+	}
+}
+
+// A product's server may read a session only in its own workspace: another's is
+// ErrNoSuchSession, as one that never existed, whatever it is asked through.
+func TestAnotherWorkspacesProductCannotReadASessionOrListItsUser(t *testing.T) {
+	s, pool := storeWithTwoWorkspaces(t)
+	ctx := context.Background()
+	got, _, err := s.Start(ctx, sessionOn(workspace, user), uuid.NewV7(), "aiko-42")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	// The session is live, so no summary is read and the service needs no user context.
+	svc := conversation.NewService(nil, s, postgres.NewTurns(pool), nil, nil, conversation.Settings{})
+
+	if past, _, err := svc.PastSession(ctx, access.Caller{Workspace: workspace, Product: true}, got.ID); err != nil || past.Reference != "aiko-42" {
+		t.Errorf("PastSession in its own workspace = %+v, %v; want the session with the product's reference", past, err)
+	}
+	if _, _, err := svc.PastSession(ctx, access.Caller{Workspace: elsewhere, Product: true}, got.ID); !errors.Is(err, conversation.ErrNoSuchSession) {
+		t.Errorf("PastSession in another workspace = %v, want ErrNoSuchSession", err)
+	}
+	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: elsewhere, Product: true}, "aiko-42", uuid.Nil(), conversation.PastDefaultLimit); err != nil || len(list) != 0 {
+		t.Errorf("PastSessions for the same reference in another workspace = %v, %v; want none", list, err)
+	}
+	if list, err := svc.PastSessions(ctx, access.Caller{Workspace: workspace, Product: true}, "aiko-42", uuid.Nil(), conversation.PastDefaultLimit); err != nil || len(list) != 1 {
+		t.Errorf("PastSessions in its own workspace = %v, %v; want the one session", list, err)
+	}
+	if _, _, err := svc.PastSession(ctx, access.Caller{Workspace: workspace, User: user, Session: got.ID}, got.ID); !errors.Is(err, conversation.ErrNoSuchSession) {
+		t.Errorf("PastSession for a caller that isn't a product = %v, want ErrNoSuchSession", err)
 	}
 }

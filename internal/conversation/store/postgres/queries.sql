@@ -39,6 +39,14 @@ WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id;
 SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
 WHERE workspace_id = @workspace_id AND id = @id;
 
+-- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
+-- @before, the last id of the page before, is where this one starts.
+-- name: SessionsOfUser :many
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, started_at, ended_at FROM sessions
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
+ORDER BY id DESC
+LIMIT @page_size;
+
 -- Ending queues the job that writes the session's summary in the same statement, so the job exists
 -- exactly when the end does, and, when the workspace has a webhook not stopped, the job that delivers
 -- the session to it, run once the summary's job is done or failed, with a delivery ID kept on every

@@ -35,12 +35,13 @@ How voice-guide is built, in plain words. Setting up, the commands and where thi
 | `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume |
 | `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
 | `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
-| `scripts/publish.sh` | Publishes changed files in `agents/` as new versions |
+| `scripts/publish.sh` | Publishes changed files in `agents/` as new versions; `VOICE_AGENTS_DIR` names another folder, and `VOICE_WORKSPACE_ID` another workspace, for a product's own agents |
 | `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; the Go service serves the new build from the next load |
 | `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
 | `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
 | `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
 | `scripts/webhook.sh set URL\|rotate\|show` | The workspace's webhook. `set` prints the signing secret the first time, the only time it's shown; `rotate` replaces it |
+| `scripts/workspace.sh create NAME` | A new workspace besides the seeded one, so each product has its own agents, keys and webhook. Prints its ID and its first product key, the only time the key is shown; the other scripts take the workspace in `VOICE_WORKSPACE_ID` |
 
 The hooks check and never rewrite. A commit checks the formatting of what is staged and refuses files git ignores. A push runs the docs check, lint, the dead-code check and the tests. CI runs the same on every pull request, with the race detector and the database. The speed numbers in the docs come from the scripts in `.claude/skills/measure/`.
 
