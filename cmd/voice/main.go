@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
-	postgres "github.com/mikaclements/voice-guide/internal/agents/store/postgres"
+	agentsstore "github.com/mikaclements/voice-guide/internal/agents/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/api"
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	conversationhttp "github.com/mikaclements/voice-guide/internal/conversation/http"
@@ -30,7 +30,7 @@ import (
 	"github.com/mikaclements/voice-guide/internal/jobs"
 	jobstore "github.com/mikaclements/voice-guide/internal/jobs/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/productkey"
-	productkeys "github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
+	productkeystore "github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
 	"github.com/mikaclements/voice-guide/internal/speech"
 	detectionfake "github.com/mikaclements/voice-guide/internal/speech/detection/fake"
 	"github.com/mikaclements/voice-guide/internal/speech/detection/silero"
@@ -39,7 +39,7 @@ import (
 	ttsfake "github.com/mikaclements/voice-guide/internal/speech/tts/fake"
 	"github.com/mikaclements/voice-guide/internal/speech/tts/kokoro"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
-	contextitems "github.com/mikaclements/voice-guide/internal/usercontext/store/postgres"
+	usercontextstore "github.com/mikaclements/voice-guide/internal/usercontext/store/postgres"
 )
 
 func main() {
@@ -205,7 +205,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 		return fmt.Errorf("database: %w", err)
 	}
 	defer pool.Close()
-	catalog := agents.NewCatalog(postgres.New(pool))
+	catalog := agents.NewCatalog(agentsstore.New(pool))
 	// Read once before serving, so an unreachable database stops the start instead of the first request.
 	checkCtx, cancelCheck := context.WithTimeout(ctx, startupCheck)
 	offered, err := catalog.Available(checkCtx, cfg.workspace)
@@ -214,7 +214,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 		return fmt.Errorf("read the workspace's agents: %w", err)
 	}
 
-	userContext := usercontext.NewService(contextitems.New(pool))
+	userContext := usercontext.NewService(usercontextstore.New(pool))
 	sessions, turns := conversationstore.NewSessions(pool), conversationstore.NewTurns(pool)
 	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings)
 	deliveries := conversation.NewDeliveries(sessions, turns, conversationstore.NewWebhooks(pool), userContext, webhookhttp.New(webhookhttp.Deadline))
@@ -256,7 +256,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	// Waits, once the server has stopped taking requests, for every connection to end, so none is
 	// set up after it.
 	defer audio.Close()
-	routes := api.NewRouter(cfg.key, productkey.NewKeys(productkeys.New(pool)), time.Now, log)
+	routes := api.NewRouter(cfg.key, productkey.NewKeys(productkeystore.New(pool)), time.Now, log)
 	conversationhttp.Register(routes, svc)
 	speechhttp.Register(routes, audio)
 	routes.ServeClient(cfg.clientDir)
