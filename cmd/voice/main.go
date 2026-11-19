@@ -55,9 +55,12 @@ func main() {
 // tuned once turns are timed. Both limits start here.
 const defaultContextLimit = 20_000
 
-// defaultScreenInputLimit is about 2,000 tokens of English with each turn: a page of what the
-// user is looking at, without making every turn slow to read.
-const defaultScreenInputLimit = 8_000
+// defaultScreenInputLimit is about 10,000 tokens of English with a turn: room for a whiteboard of
+// boxes and arrows, or a document the user is reading, turned into text. Only the newest block of
+// each name is read fresh each turn, the earlier ones standing as one line in the cached
+// conversation. A round guess, checked against the time to first word with a board of about 1,000
+// tokens.
+const defaultScreenInputLimit = 40_000
 
 // defaultWordsLimit is about 700 words of English in one turn: room for a long answer, while one
 // pasted document can't make a turn slow or costly.

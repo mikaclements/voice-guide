@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/mikaclements/voice-guide/internal/conversation"
 	"github.com/mikaclements/voice-guide/internal/speech"
 )
 
@@ -54,11 +55,34 @@ func TestTheModelIsSonnetUnlessSet(t *testing.T) {
 	}
 }
 
-func TestTheScreenInputLimitIs8000UnlessSet(t *testing.T) {
+func TestTheScreenInputLimitIs40000UnlessSet(t *testing.T) {
 	unset, _ := loadConfig(env(nil))
 	set, err := loadConfig(env(map[string]string{"VOICE_SCREEN_INPUT_MAX_CHARS": "500"}))
-	if unset.settings.ScreenInputChars != 8000 || err != nil || set.settings.ScreenInputChars != 500 {
-		t.Errorf("limit = %d unset, %d set (%v); want 8000, then 500", unset.settings.ScreenInputChars, set.settings.ScreenInputChars, err)
+	if unset.settings.ScreenInputChars != 40000 || err != nil || set.settings.ScreenInputChars != 500 {
+		t.Errorf("limit = %d unset, %d set (%v); want 40000, then 500", unset.settings.ScreenInputChars, set.settings.ScreenInputChars, err)
+	}
+}
+
+func TestABoardAtTheDefaultLimitIsTakenAndFitsADataChannelMessageAndOneCharacterMoreIsRefused(t *testing.T) {
+	cfg, err := loadConfig(env(nil))
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	svc := conversation.NewService(nil, nil, nil, nil, nil, cfg.settings)
+	board := func(chars int) []conversation.ScreenInputBlock {
+		return []conversation.ScreenInputBlock{{Name: "board", Content: strings.Repeat("😀", chars)}}
+	}
+	if err := svc.CheckScreenInput(board(40_000)); err != nil {
+		t.Errorf("a board of 40,000 characters: %v, want it taken", err)
+	}
+	if err := svc.CheckScreenInput(board(40_001)); !errors.Is(err, conversation.ErrScreenInputTooLarge) {
+		t.Errorf("a board of 40,001 characters: %v, want it refused as over the limit", err)
+	}
+	// A turn at both limits, each character escaped at its longest, still fits one message.
+	turn := `{"type":"turn","request_id":"01a1de8b-bba7-7000-bad0-e92247a30f0f","words":"` + strings.Repeat(`\ud83d\ude00`, defaultWordsLimit) +
+		`","screen_input":[{"name":"board","content":"` + strings.Repeat(`\ud83d\ude00`, 40_000) + `"}]}`
+	if limit := speech.MessageLimit(svc.TurnLimit()); len(turn) > limit {
+		t.Errorf("a turn at both limits takes %d bytes, over the data channel's limit of %d", len(turn), limit)
 	}
 }
 
