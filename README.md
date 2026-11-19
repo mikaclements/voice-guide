@@ -11,7 +11,7 @@ A product, such as a job site, puts an agent on its own page in a few lines of H
 - **Talk, don't type.** The agent's reply is spoken as it streams, and typing works throughout.
 - **Natural turn-taking.** The agent knows when you've finished, you can interrupt it mid-sentence, and it can open the conversation itself.
 - **Agents remember.** When a session ends, the agent writes a summary, and the next session with that user opens with it.
-- **Embeds in a product.** A drop-in `<voice-guide-session>` element on the page, and a signed webhook to the product's server with the transcript and summary when a session ends.
+- **Embeds in a product.** The drop-in client puts a `<voice-guide-session>` element on the page, and a signed webhook goes to the product's server with the transcript and summary when a session ends.
 - **Agents are Markdown files.** Each holds the agent's persona, the context it needs and how it sums up a session.
 
 <a id="how-it-works"></a>
@@ -21,7 +21,7 @@ A product, such as a job site, puts an agent on its own page in a few lines of H
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart LR
     P[Product's server] -- product key: start, end --> G
-    B[Browser: drop-in element] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
+    B[Browser: drop-in client] -- ticket: turns --> G[Go service: conversation, speech,<br/>user context, agents]
     B <-- WebRTC audio --> G
     G -- signed webhook --> P
     G <--> STT["Speech-to-text<br/>Moonshine, Smart Turn<br/>STT_MODEL: tiny, small or medium"]
@@ -108,7 +108,7 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 <a id="embedding"></a>
 ## Put an agent on a product
 
-A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in element. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
+A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in client. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
 
 `scripts/product-key.sh` and `scripts/webhook.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s. So start `scripts/run.sh` before using them: under `scripts/up.sh`, a key `scripts/product-key.sh` made is refused with `401`.
 
@@ -153,7 +153,7 @@ The server ends a session with `POST /v1/sessions/<session ID>/end` and the same
 
 ### Hold the conversation on the product's page
 
-The page loads the drop-in element from voice-guide and hands it the session's `id` and `ticket`:
+The page loads the drop-in client from voice-guide. The client defines the `<voice-guide-session>` element, and the page hands the element the session's `id` and `ticket`:
 
 ```html
 <button id="start">Practice</button>
@@ -222,7 +222,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 <a id="embedded"></a>
 ## Try it embedded
 
-`examples/job-board/` is the test embedding: a small job board with its own server that puts the mock interviewer on its page through the drop-in element, the way a real product would. Unlike the web page, it also checks the webhook a product receives when a session ends.
+`examples/job-board/` is the test embedding: a small job board with its own server that puts the mock interviewer on its page through the drop-in client, the way a real product would. Unlike the web page, it also checks the webhook a product receives when a session ends.
 
 ### Run it
 
@@ -253,7 +253,7 @@ The test embedding exercises the contract between a product and voice-guide, end
 1. **The key stays on the product's server.** The test embedding's server holds the product key and starts the session. The page receives only the session's ID and its ticket.
 2. **The product sends what it already knows.** The server names the user by its own ID and sends their resume. voice-guide checks the resume against what the agent's file asks for, and the interviewer asks about it.
 3. **A ticket works for one session.** It stops when the session ends, or after four hours.
-4. **The embedding is a few lines.** The page loads the drop-in element from voice-guide and hands it the session and ticket.
+4. **The embedding is a few lines.** The page loads the drop-in client from voice-guide and hands its element the session and ticket.
 5. **The agent opens the conversation.** The microphone stays muted until the greeting starts, so a "hello" into the silence can't cut it off. From then on, the user can interrupt.
 6. **The conversation is spoken.** You speak, pause, and the interviewer answers out loud; the transcript follows the newest line.
 7. **The product hears the end.** When the session ends, voice-guide posts the transcript and the summary to the test embedding's webhook, signed, and the page shows the interview feedback.
