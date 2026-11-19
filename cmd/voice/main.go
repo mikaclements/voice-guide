@@ -441,7 +441,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	}
 
 	userContext := usercontext.NewService(contextitems.New(pool))
-	sessions, turns := conversationstore.New(pool), conversationstore.NewTurns(pool)
+	sessions, turns := conversationstore.NewSessions(pool), conversationstore.NewTurns(pool)
 	svc := conversation.NewService(catalog, sessions, turns, modelhttp.New(cfg.modelURL), userContext, cfg.settings)
 	deliveries := conversation.NewDeliveries(sessions, turns, conversationstore.NewWebhooks(pool), userContext, webhookhttp.New(webhookhttp.Deadline))
 	transport, err := webrtctransport.New(cfg.audio, speech.MessageLimit(svc.TurnLimit()), log)

@@ -220,7 +220,7 @@ func TestTwoSweepsAtOnceEndEachIdleSessionOnce(t *testing.T) {
 		s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
 		idleFor(t, pool, s.ID, time.Hour)
 	}
-	other := postgres.New(pool) // another instance, sweeping at the same time
+	other := postgres.NewSessions(pool) // another instance, sweeping at the same time
 	var wg sync.WaitGroup
 	counts := make([]int, 2)
 	for i, sweeper := range []*postgres.Sessions{sessions, other} {

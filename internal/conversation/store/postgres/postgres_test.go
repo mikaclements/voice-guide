@@ -34,7 +34,7 @@ func storeWithTwoWorkspaces(t *testing.T) (*postgres.Sessions, *pgxpool.Pool) {
 		pgtest.Exec(t, pool, `INSERT INTO agent.agent_versions (workspace_id, agent_id, version, name, description, reads, persona, content_hash)
 			VALUES ($1, $2, 1, 'Harbour hand', '', '{}', 'You answer every call from the sea.', 'hash')`, ws, agent)
 	}
-	return postgres.New(pool), pool
+	return postgres.NewSessions(pool), pool
 }
 
 // sessionOn builds a new session for the user on version 1 of the workspace's agent.

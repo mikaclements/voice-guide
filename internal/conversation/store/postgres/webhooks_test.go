@@ -178,7 +178,7 @@ func TestAnIdleEndQueuesEachSessionsDeliveryOnceForItsOwnWorkspacesWebhook(t *te
 	var sweeps sync.WaitGroup
 	for range 2 { // two instances sweeping at once
 		sweeps.Go(func() {
-			if _, err := postgres.New(pool).EndIdle(context.Background(), idle); err != nil {
+			if _, err := postgres.NewSessions(pool).EndIdle(context.Background(), idle); err != nil {
 				t.Errorf("EndIdle: %v", err)
 			}
 		})

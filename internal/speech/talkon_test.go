@@ -182,7 +182,7 @@ func TestATurnThatCantBeTakenBackPastItsDeadlineStillGivesAllTheWordsBack(t *tes
 	tts := &heldFirst{TextToSpeech: ttsfake.TextToSpeech{PacketsPerWord: packetsPerWord}, release: make(chan struct{})}
 	defer close(tts.release)
 	check := judging{asked: make(chan chan bool, 4)}
-	h := newStoredTurnHarness(t, postgres.New(pool), unremovable{postgres.NewTurns(pool)}, &modelfake.Model{Pieces: replyPieces}, tts,
+	h := newStoredTurnHarness(t, postgres.NewSessions(pool), unremovable{postgres.NewTurns(pool)}, &modelfake.Model{Pieces: replyPieces}, tts,
 		slog.New(slog.DiscardHandler), speakingTwice, saying, check)
 	c := h.connect(t)
 	request := talkOn(t, c, check)
