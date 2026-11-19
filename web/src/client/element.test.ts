@@ -348,6 +348,32 @@ test("once the session can take the user's words, the element fires voice-guide-
   );
 });
 
+test("over audio, the element fires voice-guide-ready once voice says the session is ready", async () => {
+  const p = page();
+  p.put();
+  p.el.join({ session: "s1", ticket: "tk1" });
+  await settle();
+  const c = p.f.offers[0].open(true);
+  await settle();
+  p.f.played[0].blocked(false);
+  c.audio.turns.receive(
+    JSON.stringify({
+      type: "refused",
+      request_id: c.sent[0].request_id,
+      reason: "opening-refused",
+    }),
+  );
+  await settle();
+  const ready = () => p.el.events.filter((e) => e.type === "voice-guide-ready");
+  assert.equal(ready().length, 0, "not before voice says so");
+  c.ready();
+  await settle();
+  assert.deepEqual(
+    ready().map((e) => e.detail),
+    [{ session: "s1" }],
+  );
+});
+
 test("end() right after join ends that session, and rejects when End doesn't reach voice", async () => {
   const p = page();
   p.put();

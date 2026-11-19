@@ -28,9 +28,10 @@ import { httpTurns, type Turns } from "./turns.ts";
 // microphone nor the random IDs every request carries.
 export const insecureMessage = "voice-guide needs this page served over https";
 
-// How long the microphone stays held for a session that never gets ready, as when its greeting's
-// first sound never arrives: a round guess, room for a slow first model call before the greeting
-// sounds (over 4 s seen); to be measured once the model starts with the session, which shortens it.
+// How long, from the audio connection opening, the microphone stays held for a session that never
+// gets ready, as when its greeting's first sound never arrives, and the page waits for it: a round
+// guess, room for a slow first model call before the greeting sounds (over 4 s seen), or for the
+// model's first read of a large session context; to be measured with the largest one allowed.
 const holdMs = 30_000;
 
 type State = {
@@ -168,8 +169,10 @@ export class JoinedSession {
   private reconnect: ReturnType<typeof setTimeout> | undefined;
   // The cap on the microphone's hold while the session gets ready, while it lasts.
   private holdCap: ReturnType<typeof setTimeout> | undefined;
-  // Whether the page was told the session is ready; it is told once, and nothing holds after.
+  // Whether the page was told the session is ready; it is told once.
   private readied = false;
+  // The cap on waiting for voice's ready on a connection that holds nothing, while it lasts.
+  private readyCap: ReturnType<typeof setTimeout> | undefined;
   private ending: Promise<void> | undefined;
   // Reads the received audio for every connection the session has, one after another.
   private readonly clock = new ReplySoundClock();
@@ -256,21 +259,36 @@ export class JoinedSession {
     this.silence();
   }
 
-  // Ends the hold that cap belongs to, so an earlier hold's greeting sounding late opens nothing,
-  // and, unless the audio closed under it, tells the page the session is ready.
-  private release(cap: ReturnType<typeof setTimeout> | undefined, ready = true): void {
-    if (cap === undefined || cap !== this.holdCap) return;
+  // Ends the hold that cap belongs to, as the session became ready, and tells the page so.
+  private release(cap: ReturnType<typeof setTimeout> | undefined): void {
+    if (this.endHold(cap)) this.becameReady();
+  }
+
+  // Ends the hold that cap belongs to, so an earlier hold's greeting sounding late opens nothing;
+  // whether it did.
+  private endHold(cap: ReturnType<typeof setTimeout> | undefined): boolean {
+    if (cap === undefined || cap !== this.holdCap) return false;
     clearTimeout(cap);
     this.holdCap = undefined;
     this.set({ gettingReady: false });
     this.silence();
-    if (ready) this.becameReady();
+    return true;
   }
 
+  // Tells the page, once, the session can take the user's words; never once it is let go or over.
   private becameReady(): void {
+    clearTimeout(this.readyCap);
     if (this.readied || this.left || this.state.over) return;
     this.readied = true;
     this.deps.ready?.();
+  }
+
+  // Tells the page the session is ready once voice says so on a connection that holds nothing, or
+  // after the hold's cap, as a voice that never answers warm would leave it waiting.
+  private readyBy(ready: Promise<void>): void {
+    clearTimeout(this.readyCap);
+    this.readyCap = setTimeout(() => this.becameReady(), holdMs);
+    void ready.then(() => this.becameReady());
   }
 
   // Plays the agent from the user's press, after the browser refused to without one.
@@ -319,6 +337,7 @@ export class JoinedSession {
     this.left = true;
     clearTimeout(this.reconnect);
     this.stop.abort();
+    clearTimeout(this.readyCap);
     this.closeAudio();
   }
 
@@ -345,7 +364,7 @@ export class JoinedSession {
     this.audio = undefined;
     // After the close, so letting go of the hold can't turn the closing microphone back on; the
     // session isn't ready for it, and the next connection holds again.
-    this.release(this.holdCap, false);
+    this.endHold(this.holdCap);
     this.set({ microphoneOn: false, blocked: false });
     return closing ?? Promise.resolve();
   }
@@ -406,8 +425,8 @@ export class JoinedSession {
       connection.stream.then((stream) => this.startPlayback(opened, stream));
       // The session's first connection, before its opening: a reconnect once it has turns holds
       // nothing, and is ready when voice says so.
-      if (!this.readied && !this.openedInText && !this.state.messages.length) this.hold();
-      else if (!this.readied) void connection.ready.then(() => this.becameReady());
+      if (!this.openedInText && !this.state.messages.length) this.hold();
+      else if (!this.readied) this.readyBy(connection.ready);
       connection.microphone.mute(this.state.muted || this.state.gettingReady);
       connection.microphone.given.then((given) => {
         if (this.audio === opened) this.set({ microphoneOn: given });
@@ -431,6 +450,8 @@ export class JoinedSession {
     this.turns = this.httpTurns();
     this.note({ audio: closings[why] ?? closings.dropped });
     if (next === "reconnect") void this.connect(reconnectTries);
+    // Staying in text, as when another tab took the audio: the user waits on replies in text.
+    else this.becameReady();
   }
 
   // Plays the agent's stream of a connection that is still the session's, and asks for the agent's
@@ -448,6 +469,9 @@ export class JoinedSession {
   private onPlaybackBlocked(opened: HeldAudio, blocked: boolean): void {
     if (this.audio !== opened) return;
     this.set({ blocked });
+    // The page must take its own loading screen down for the user to press to hear, and can type
+    // meanwhile; the microphone stays held until the greeting sounds.
+    if (blocked && this.holdCap !== undefined) this.becameReady();
     // The agent's opening, once the browser plays it, at once or from the user's press: a greeting
     // sent while it refused would be lost to the user, yet saved as heard. Again on each
     // connection, as after a drop: voice takes only the first, and refuses the rest. The greeting's

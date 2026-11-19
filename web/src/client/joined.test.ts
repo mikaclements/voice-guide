@@ -681,3 +681,63 @@ test("audio dropping before the session is ready tells nothing; the next connect
   await settle();
   assert.deepEqual([next.muted.at(-1), s.readies()], [false, 1]);
 });
+
+test("the browser refusing to play the agent during the hold tells the page at once, so the press to hear shows, and the microphone holds until the greeting sounds", async () => {
+  const s = joining();
+  const c = s.f.offers[0].open(true);
+  c.give(true);
+  await settle();
+  s.f.played[0].blocked(true);
+  assert.deepEqual([c.muted.at(-1), s.last().blocked, s.readies()], [true, true, 1]);
+  s.joined.playAfterPress();
+  await settle();
+  c.ready();
+  c.audio.turns.receive(
+    JSON.stringify({ type: "text", request_id: c.sent[0].request_id, text: "Welcome" }),
+  );
+  await settle();
+  assert.equal(c.muted.at(-1), true, "held until the greeting sounds");
+  s.f.played[0].level(true, 1);
+  await settle();
+  assert.deepEqual([c.muted.at(-1), s.readies()], [false, 1]);
+});
+
+test("audio closed before ready for a reason that leaves the session in text, as another tab taking it, tells the page", async () => {
+  const s = joining();
+  s.f.offers[0].open(true);
+  await settle();
+  s.f.offers[0].closing("replaced");
+  await settle();
+  assert.equal(s.readies(), 1);
+});
+
+test("a connection that holds nothing, as when the user typed first, tells the page at voice's ready, or after 30 s if it never comes", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const voiceAnswers of [true, false]) {
+    const s = joining();
+    await s.joined.send("Hi");
+    const c = s.f.offers[0].open(true);
+    c.give(true);
+    await settle();
+    assert.deepEqual([c.muted, s.readies()], [[false], 0], "nothing held");
+    if (voiceAnswers) c.ready();
+    else t.mock.timers.tick(30_000);
+    await settle();
+    assert.equal(s.readies(), 1, String(voiceAnswers));
+  }
+});
+
+test("the page leaving, or the session ending, before ready tells nothing", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const left = await gettingReady();
+  left.s.joined.leave();
+  left.c.ready();
+  t.mock.timers.tick(30_000);
+  await settle();
+  const ended = await gettingReady();
+  ended.s.f.offers[0].closing("ended");
+  ended.c.ready();
+  t.mock.timers.tick(30_000);
+  await settle();
+  assert.deepEqual([left.s.readies(), ended.s.readies()], [0, 0]);
+});
