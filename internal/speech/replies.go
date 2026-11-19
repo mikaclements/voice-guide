@@ -9,6 +9,12 @@ import (
 	"github.com/mikaclements/voice-guide/internal/access"
 )
 
+// waitingTurns bounds the turns waiting behind the one being taken on a
+// connection; more are refused as busy. A person can't type faster than an
+// interrupted turn is saved, about 15 ms measured, so more than a couple
+// waiting means a script or a stuck key: a round guess.
+const waitingTurns = 2
+
 // replies takes one connection's turns, typed and spoken, in order, and keeps
 // what the agent's replies have sounded like to the user. A turn begins under
 // its lock on the goroutine that read it, the data channel's or the
