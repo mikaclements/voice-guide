@@ -28,7 +28,7 @@ The plan, item specs and decision register are working notes, never committed; `
 | Engineering decision (code structure, tooling, testing, delivery) | An E entry in `docs/reference/contributing.md` section 14, linked from the rule it explains | The `CLAUDE.md` extract if it changes a rule there |
 | Use case, failure mode, quality target, assumption, data model | The feature's section in the design | The item spec; a new use case also in the scope table |
 | Coding or testing rule, including one raised in review | `docs/reference/contributing.md` | The `CLAUDE.md` extract if agents need it on every edit; a reply on the review comment |
-| Scope (included or excluded for now) | Design section 4 | `ARCHITECTURE.md` section 4 |
+| Scope (included or excluded for now) | Design section 3 | `ARCHITECTURE.md` section 3 |
 | A term added, renamed or redefined | Design Appendix A | Every doc, spec and code name using the old term |
 | Order of work, items, status | The plan | |
 | Per-item procedure | `.claude/skills/feature/SKILL.md` | |

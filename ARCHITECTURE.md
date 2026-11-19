@@ -29,7 +29,33 @@ What it isn't:
 - An agent: it has no subject or persona of its own.
 - A text chat with voice added: speech comes first, typing is the fallback.
 
-## 3. How it works
+## 3. Scope
+
+Included:
+- Starting, ending and resuming sessions.
+- Speaking and interrupting.
+- Reviewing past sessions.
+- Seeing and correcting what voice-guide knows about the user.
+- Switching agents and being known.
+- Per-step timing and load tests.
+- Putting an agent on a product: the product's server starts each session with its key, the user's browser talks, and the product's server hears each session once it has ended.
+
+Excluded for now, where it grows next:
+- Embedding for anonymous visitors: a public key in the page, for products whose visitors don't log in.
+- Agents registered through the API.
+- Screen activities: the product's page reaches the agent, and the agent acts on it.
+- Connectors that fetch a business's knowledge or a user's data from other systems; until then the product sends what it holds.
+- More agents.
+- Japanese.
+- Logins.
+- An agent builder.
+- Sharing context with another workspace.
+
+Further out, when measurements call for them:
+- A different store for turns.
+- Text-to-speech in the browser.
+
+## 4. How it works
 
 The product's server and the user's browser talk to one Go service. The server starts and ends sessions with its product key, and hears each session's end through a signed webhook. The browser takes turns with a ticket for one session. Speech-to-text, text-to-speech and the model each run as their own service behind it (speech-to-text and text-to-speech in containers by default; text-to-speech can run natively on a Mac instead), and PostgreSQL holds everything that must survive.
 
@@ -87,32 +113,6 @@ sequenceDiagram
     V-->>B: audio, over WebRTC
     Note over V: turn saved and timed, off to the side
 ```
-
-## 4. Scope
-
-Included:
-- Starting, ending and resuming sessions.
-- Speaking and interrupting.
-- Reviewing past sessions.
-- Seeing and correcting what voice-guide knows about the user.
-- Switching agents and being known.
-- Per-step timing and load tests.
-- Putting an agent on a product: the product's server starts each session with its key, the user's browser talks, and the product's server hears each session once it has ended.
-
-Excluded for now, where it grows next:
-- Embedding for anonymous visitors: a public key in the page, for products whose visitors don't log in.
-- Agents registered through the API.
-- Screen activities: the product's page reaches the agent, and the agent acts on it.
-- Connectors that fetch a business's knowledge or a user's data from other systems; until then the product sends what it holds.
-- More agents.
-- Japanese.
-- Logins.
-- An agent builder.
-- Sharing context with another workspace.
-
-Further out, when measurements call for them:
-- A different store for turns.
-- Text-to-speech in the browser.
 
 ## 5. Qualities
 

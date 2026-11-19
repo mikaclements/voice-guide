@@ -70,10 +70,63 @@ Without it, each product that wants a voice agent rebuilds those parts on its ow
 - A text chat with voice added: speech is the main way in, and typing is the fallback.
 
 <a id="how"></a>
-## 3. How it works
+## 3. Scope
+
+<a id="use-cases"></a>
+### 3.1 Use cases
+
+The use cases are the functional requirements. Each one's full text is in its feature.
+
+| Feature | Use case | Caller | Scope |
+|---|---|---|---|
+| [Sessions](#sessions) | [U1](#u1) Start a session with an agent | User | Included |
+| [Turns](#turns) | [U2](#u2) Take a turn: speak, and the agent answers out loud | User | Included |
+| [Turns](#turns) | [U3](#u3) Interrupt the agent mid-sentence | User | Included |
+| [Sessions](#sessions) | [U4](#u4) End a session; what was learned is saved in the background | User, background job | Included |
+| [Sessions](#sessions) | [U5](#u5) Resume an earlier session | User | Included |
+| [History](#history) | [U6](#u6) Review past sessions | User | Included |
+| [User context](#user-context) | [U7](#u7) See, correct and delete what voice-guide knows about me | User | Included |
+| [User context](#user-context) | [U8](#u8) Switch to another agent and have it know me | User | Included |
+| [Agents](#agents) | [W1](#w1) Create or change an agent | Member | Excluded for now (today: files edited in the repository) |
+| [Agents](#agents) | [W3](#w3) Put an agent on a product | Member, through the product's server | Included |
+| [User context](#user-context) | [W2](#w2) Grant another workspace access to my context | User | Excluded for now |
+| [Timing and load](#timing) | [O1](#o1) See per-stage timing for any turn; run a load test | The team running voice-guide | Included |
+| [Turns](#turns) | [F1](#f1) A provider (model or speech) is slow, down or rate-limited | Model or speech provider | Included, as failure modes of [U1](#u1) to [U5](#u5) |
+
+<a id="excluded"></a>
+### 3.2 Excluded for now
+
+Where voice-guide grows next. None of it is built or designed yet; the code doesn't implement it, and avoids blocking it where that costs little.
+
+Capabilities:
+- Embedding for anonymous visitors: a public key in the product's page, a list of the sites allowed to use it, and limits per key and per address, for a product whose visitors don't log in; such sessions know no user, so no user context ([D32](#d32)).
+- Agents registered through the API; until then agent files, published by a script ([D17](#d17)).
+- Screen activities: the agent acting on the product's screen (filling a form, opening a page). What the screen shows already reaches the agent as screen input ([D35](#d35)).
+- Connectors that fetch a business's knowledge or a user's data from other systems; until then the product sends what it holds ([D35](#d35)).
+- More agents, including ones that read other context kinds ([section 7](#agents)).
+- Japanese, then other languages: through Speaches with Whisper, or Moonshine's Japanese model ([D21](#d21)); Smart Turn already covers Japanese ([D22](#d22)).
+- Logins and accounts; until then one placeholder user ([section 6](#platform-security)).
+- A builder for workspaces' members to create agents ([W1](#w1)).
+- Sharing context with another workspace ([W2](#w2)).
+
+For production, before anyone outside its maintainers uses voice-guide:
+- Model access through the provider's API, billed per token, as the default in place of a development subscription ([D25](#d25)).
+- A relay (TURN) server for users whose network blocks direct WebRTC connections ([D19](#d19)).
+- Row-level security in PostgreSQL once a second workspace exists ([D12](#d12)).
+- A container platform running several instances of each service; any instance serves any turn ([D14](#d14)).
+
+Technical paths, taken when measurements call for them:
+- A backend-for-frontend (Rails), when logins, the builder or a second frontend give it a job ([D8](#d8)).
+- Turns in a wide-column store (ScyllaDB, or Apache Cassandra on the same protocol) if the PostgreSQL primary can't keep up; without real traffic, the move is an export and import ([D5](#d5)).
+- A dedicated vector store, past roughly 5 to 50 million vectors or on measured slowness ([D5](#d5)).
+- Kokoro in the browser, for cost at scale, with voice handling echo itself ([D23](#d23)).
+- Speech detection in the browser, if interrupting feels sluggish ([D20](#d20)).
+
+<a id="qualities"></a>
+## 4. How it works
 
 <a id="context"></a>
-### 3.1 System context
+### 4.1 System context
 
 A user's browser loads the web app and talks to one Go service: HTTP for agents, for starting and ending sessions and for typed turns, WebRTC for audio ([D11 API transports](#d11)). The Go service holds no conversation between requests ([D14 stateless servers](#d14)); everything it needs is in PostgreSQL. Around it, three services of its own, speech-to-text and text-to-speech in containers (text-to-speech can run natively on a Mac instead, with `KOKORO=mlx`) and the model service on the machine beside voice until it gets one:
 - a speech-to-text service, which turns streamed audio into text ([D21 speech-to-text](#d21));
@@ -83,7 +136,7 @@ A user's browser loads the web app and talks to one Go service: HTTP for agents,
 Outside voice-guide's own services, it reaches only the model provider and, once a session has ended, the product's server, at the workspace's webhook ([D40](#d40)). Every container runs the same way locally and in the cloud ([D10 containers](#d10)).
 
 <a id="modules"></a>
-### 3.2 Modules and boundaries
+### 4.2 Modules and boundaries
 
 The Go service is one program with four modules:
 - conversation: sessions and their turns: each turn's prompt, the model's reply, what was said, and the time each stage took. It works in text only, whether the words were typed or spoken.
@@ -150,7 +203,7 @@ internal/speech/
 > - Enforced by: depguard lists per folder: a module's core allows the standard library, the modules it may use and, for conversation and speech, `internal/access`, which names the caller, and for conversation `internal/secret`, which holds the webhook's secret redacted; each adapter folder with a list of its own allows its own vendor, and a new adapter folder falls under its core's list until it gets one; any other package under `internal/` allows only the standard library until it gets a list of its own.
 
 <a id="domain"></a>
-### 3.3 Domain model
+### 4.3 Domain model
 
 | Term | What it is | Owned by |
 |---|---|---|
@@ -186,12 +239,12 @@ Every stored record carries its workspace, and every record about a user carries
 > - Enforced by: the workspace filter on every query but the system's own sweeps ([D12](#d12)); a grant check once grants exist.
 
 <a id="lifecycles"></a>
-### 3.4 Lifecycles
+### 4.4 Lifecycles
 
 A session is started, live while turns happen, and ended, once, when the product ends it or after five minutes idle ([D38](#d38)); an ended session takes no turns, and can be resumed ([U5 resume a session](#u5)). After it ends, a background job saves what it learned ([U4 end a session](#u4)), and then another posts it to the product's server ([D40](#d40)). A turn is listening, then thinking (the model is working), then speaking, then recorded; an interruption ends speaking early and records the reply as far as it was heard ([U3 interrupt the agent](#u3)). The exact states and their transitions are designed when each is built.
 
 <a id="turn-life"></a>
-### 3.5 A turn's life
+### 4.5 A turn's life
 
 Every stage streams and starts on the first piece of input from the stage before, so the stages overlap ([section 9](#pipeline)).
 
@@ -214,59 +267,6 @@ The user waits only for the pause, the model's first word and the first phrase's
 A typed turn records reading for the prompt, the model's first text, the model's whole reply and saving; one the user cut in on before the model was asked records only reading for the prompt and saving. One typed on a session's audio connection is spoken too, and speech adds its own stages to the turn's, each counted from the words arriving: the first phrase's text complete and the first audio packet sent, the audio stage naming the text-to-speech that made it. Speech logs them with the model's first text, and saves them with the turn's other stages in the same write. A spoken turn, as built so far, is taken once the end-of-turn check says the user has finished, or the maximum wait is up, and its final text is in, without the speculative start yet ([U2](#u2)); speech counts its stages from the end of the user's speech, when they start waiting: the final text, the check's answer, the turn taken, the first phrase's text complete and the first audio packet sent, which it logs, with the model's first text, and saves with the turn. A stage that didn't happen, such as the audio of a reply cut in on before its first sound or one text-to-speech failed to make, is left out.
 
 <a id="scope"></a>
-## 4. Scope
-
-<a id="use-cases"></a>
-### 4.1 Use cases
-
-The use cases are the functional requirements. Each one's full text is in its feature.
-
-| Feature | Use case | Caller | Scope |
-|---|---|---|---|
-| [Sessions](#sessions) | [U1](#u1) Start a session with an agent | User | Included |
-| [Turns](#turns) | [U2](#u2) Take a turn: speak, and the agent answers out loud | User | Included |
-| [Turns](#turns) | [U3](#u3) Interrupt the agent mid-sentence | User | Included |
-| [Sessions](#sessions) | [U4](#u4) End a session; what was learned is saved in the background | User, background job | Included |
-| [Sessions](#sessions) | [U5](#u5) Resume an earlier session | User | Included |
-| [History](#history) | [U6](#u6) Review past sessions | User | Included |
-| [User context](#user-context) | [U7](#u7) See, correct and delete what voice-guide knows about me | User | Included |
-| [User context](#user-context) | [U8](#u8) Switch to another agent and have it know me | User | Included |
-| [Agents](#agents) | [W1](#w1) Create or change an agent | Member | Excluded for now (today: files edited in the repository) |
-| [Agents](#agents) | [W3](#w3) Put an agent on a product | Member, through the product's server | Included |
-| [User context](#user-context) | [W2](#w2) Grant another workspace access to my context | User | Excluded for now |
-| [Timing and load](#timing) | [O1](#o1) See per-stage timing for any turn; run a load test | The team running voice-guide | Included |
-| [Turns](#turns) | [F1](#f1) A provider (model or speech) is slow, down or rate-limited | Model or speech provider | Included, as failure modes of [U1](#u1) to [U5](#u5) |
-
-<a id="excluded"></a>
-### 4.2 Excluded for now
-
-Where voice-guide grows next. None of it is built or designed yet; the code doesn't implement it, and avoids blocking it where that costs little.
-
-Capabilities:
-- Embedding for anonymous visitors: a public key in the product's page, a list of the sites allowed to use it, and limits per key and per address, for a product whose visitors don't log in; such sessions know no user, so no user context ([D32](#d32)).
-- Agents registered through the API; until then agent files, published by a script ([D17](#d17)).
-- Screen activities: the agent acting on the product's screen (filling a form, opening a page). What the screen shows already reaches the agent as screen input ([D35](#d35)).
-- Connectors that fetch a business's knowledge or a user's data from other systems; until then the product sends what it holds ([D35](#d35)).
-- More agents, including ones that read other context kinds ([section 7](#agents)).
-- Japanese, then other languages: through Speaches with Whisper, or Moonshine's Japanese model ([D21](#d21)); Smart Turn already covers Japanese ([D22](#d22)).
-- Logins and accounts; until then one placeholder user ([section 6](#platform-security)).
-- A builder for workspaces' members to create agents ([W1](#w1)).
-- Sharing context with another workspace ([W2](#w2)).
-
-For production, before anyone outside its maintainers uses voice-guide:
-- Model access through the provider's API, billed per token, as the default in place of a development subscription ([D25](#d25)).
-- A relay (TURN) server for users whose network blocks direct WebRTC connections ([D19](#d19)).
-- Row-level security in PostgreSQL once a second workspace exists ([D12](#d12)).
-- A container platform running several instances of each service; any instance serves any turn ([D14](#d14)).
-
-Technical paths, taken when measurements call for them:
-- A backend-for-frontend (Rails), when logins, the builder or a second frontend give it a job ([D8](#d8)).
-- Turns in a wide-column store (ScyllaDB, or Apache Cassandra on the same protocol) if the PostgreSQL primary can't keep up; without real traffic, the move is an export and import ([D5](#d5)).
-- A dedicated vector store, past roughly 5 to 50 million vectors or on measured slowness ([D5](#d5)).
-- Kokoro in the browser, for cost at scale, with voice handling echo itself ([D23](#d23)).
-- Speech detection in the browser, if interrupting feels sluggish ([D20](#d20)).
-
-<a id="qualities"></a>
 ## 5. Qualities
 
 The non-functional requirements. No target has been agreed: where a target would be a commitment, this section says what the quality needs and leaves the figure undecided until there is evidence ([D13](#d13)). Targets live in the "Qualities" table of the feature they apply to; system-wide ones in [Platform](#platform-qualities).
@@ -488,7 +488,7 @@ Audio connections ([D19](#d19)), by actor:
 
 <a id="d13"></a>
 > #### D13. Every turn timed by stage
-> - Decision: every turn records the time of each stage ([section 3.5](#turn-life)) and which implementation served it, stored with the session. Reports give median and 90th percentile per stage. The slowest stage is worked on first; each change is measured before and after and kept only if it helps. No latency target until there is evidence of where users find it slow or are cut off. What the user feels is measured in the page as well: from pressing send to the reply's first text, and to its first sound, the first moment the agent's audio track rises above -40 dB below full scale (under the quietest speech, above the near-silence between words), looked for every 10 ms. The gap between that and voice's first audio packet sent is the network and the browser's jitter buffer. For a reply the user interrupts, the page also times how long after the press its sound stopped: the end of its last sound before 500 ms of silence, longer than the pauses inside a reply and shorter than the wait before the next reply can sound. That time holds the new turn's trip to voice, voice stopping the reply, the last packet's trip back, the browser's jitter buffer and the 11 ms window the level is read over. The page mutes its own playback at the press, so it reads the level from the received track; the user hears silence at once, and the point voice records as heard can include up to a trip plus a jitter buffer of audio the page had already muted. For a turn the user spoke, the page can't see when they finished speaking, since voice judges it from the audio, so voice tells the page, with the turn's last message, how long after the speech ended the reply's first audio went out, and the page shows it as finished speaking to first sound: short, by a trip and a jitter buffer, of what the user hears.
+> - Decision: every turn records the time of each stage ([section 4.5](#turn-life)) and which implementation served it, stored with the session. Reports give median and 90th percentile per stage. The slowest stage is worked on first; each change is measured before and after and kept only if it helps. No latency target until there is evidence of where users find it slow or are cut off. What the user feels is measured in the page as well: from pressing send to the reply's first text, and to its first sound, the first moment the agent's audio track rises above -40 dB below full scale (under the quietest speech, above the near-silence between words), looked for every 10 ms. The gap between that and voice's first audio packet sent is the network and the browser's jitter buffer. For a reply the user interrupts, the page also times how long after the press its sound stopped: the end of its last sound before 500 ms of silence, longer than the pauses inside a reply and shorter than the wait before the next reply can sound. That time holds the new turn's trip to voice, voice stopping the reply, the last packet's trip back, the browser's jitter buffer and the 11 ms window the level is read over. The page mutes its own playback at the press, so it reads the level from the received track; the user hears silence at once, and the point voice records as heard can include up to a trip plus a jitter buffer of audio the page had already muted. For a turn the user spoke, the page can't see when they finished speaking, since voice judges it from the audio, so voice tells the page, with the turn's last message, how long after the speech ended the reply's first audio went out, and the page shows it as finished speaking to first sound: short, by a trip and a jitter buffer, of what the user hears.
 > - Needed by: [NFR1 latency](#nfr1); [O1](#o1); [D2](#d2) (implementations compared).
 > - Assumes: measurements on one machine say which stage is slowest, if not the absolute times at scale.
 > - Why: "faster" means nothing without a split by stage; a target set before measuring is a guess.
@@ -816,7 +816,7 @@ What happens when user context is slow or down at a start is settled in failure 
 <a id="turns-overview"></a>
 ### Overview
 
-A turn is one exchange: the user speaks (or types), and the agent answers out loud. Its path is the speech pipeline ([section 3.5](#turn-life)). Each stage sits behind its own swap point ([D2](#d2)) and is timed ([D13](#d13)).
+A turn is one exchange: the user speaks (or types), and the agent answers out loud. Its path is the speech pipeline ([section 4.5](#turn-life)). Each stage sits behind its own swap point ([D2](#d2)) and is timed ([D13](#d13)).
 
 <a id="turns-requirements"></a>
 ### Requirements
@@ -1280,7 +1280,7 @@ Every identifier links to its single definition, with its name beside it.
 
 | Prefix | Meaning | Defined in |
 |---|---|---|
-| U | A use case of a user | Its feature's "Requirements"; listed in [section 4.1](#use-cases) |
+| U | A use case of a user | Its feature's "Requirements"; listed in [section 3.1](#use-cases) |
 | W | A use case of a workspace's member | As U |
 | O | A use case of the team running voice-guide | As U |
 | F | A failure family that applies across use cases | As U |
