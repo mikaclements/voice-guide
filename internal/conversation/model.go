@@ -48,10 +48,25 @@ type ModelUsage struct {
 	Input, CachedInput, CacheWrite, Output int
 }
 
-// ModelErrorKind says why a reply failed, from the model service's closed set
-// (rate_limited, quota, overloaded, unavailable, auth, bad_request, too_large,
-// unknown), or busy: the model service itself had no free place for it.
+// ModelErrorKind says why a reply failed, from the model service's closed set,
+// or busy: the model service itself had no free place for it.
 type ModelErrorKind string
+
+// The model service's closed set of reasons a reply failed, as it names them.
+const (
+	ModelRateLimited ModelErrorKind = "rate_limited"
+	ModelQuota       ModelErrorKind = "quota"
+	ModelOverloaded  ModelErrorKind = "overloaded"
+	ModelUnavailable ModelErrorKind = "unavailable"
+	ModelAuth        ModelErrorKind = "auth"
+	ModelBadRequest  ModelErrorKind = "bad_request"
+	ModelTooLarge    ModelErrorKind = "too_large"
+	ModelUnknown     ModelErrorKind = "unknown"
+)
+
+// ModelBusy says the model service itself had no free place for the reply, at
+// its own cap: nothing failed, and moments may clear it.
+const ModelBusy ModelErrorKind = "busy"
 
 // ReplyFailedError reports a reply the model didn't finish, naming why.
 type ReplyFailedError struct{ Kind ModelErrorKind }

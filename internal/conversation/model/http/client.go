@@ -65,16 +65,16 @@ func (m *Model) Reply(ctx context.Context, r conversation.ModelRequest) <-chan c
 func (m *Model) reply(ctx context.Context, r conversation.ModelRequest, send func(conversation.ModelEvent) bool) conversation.ModelErrorKind {
 	body, err := json.Marshal(requestOf(r))
 	if err != nil {
-		return "unknown"
+		return conversation.ModelUnknown
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.url, bytes.NewReader(body))
 	if err != nil {
-		return "unknown"
+		return conversation.ModelUnknown
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := m.client.Do(req)
 	if err != nil {
-		return "unavailable"
+		return conversation.ModelUnavailable
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -86,7 +86,7 @@ func (m *Model) reply(ctx context.Context, r conversation.ModelRequest, send fun
 	for lines.Scan() {
 		var e eventJSON
 		if err := json.Unmarshal(lines.Bytes(), &e); err != nil {
-			return "unknown"
+			return conversation.ModelUnknown
 		}
 		switch e.Type {
 		case "text":
@@ -103,11 +103,11 @@ func (m *Model) reply(ctx context.Context, r conversation.ModelRequest, send fun
 		// it lets the model service add events without breaking voice.
 	}
 	if errors.Is(lines.Err(), bufio.ErrTooLong) {
-		return "unknown"
+		return conversation.ModelUnknown
 	}
 	// The stream ended, or the connection broke, before the final event,
 	// perhaps midway through a line.
-	return "unavailable"
+	return conversation.ModelUnavailable
 }
 
 // wholeLines splits a stream into lines, refusing a last line without its
@@ -123,11 +123,12 @@ func wholeLines(data []byte, atEOF bool) (int, []byte, error) {
 // outside it, or none, is unknown, so voice never acts on a reason it doesn't
 // know.
 func kindOf(kind string) conversation.ModelErrorKind {
-	switch kind {
-	case "rate_limited", "quota", "overloaded", "unavailable", "auth", "bad_request", "too_large":
-		return conversation.ModelErrorKind(kind)
+	switch k := conversation.ModelErrorKind(kind); k {
+	case conversation.ModelRateLimited, conversation.ModelQuota, conversation.ModelOverloaded, conversation.ModelUnavailable,
+		conversation.ModelAuth, conversation.ModelBadRequest, conversation.ModelTooLarge:
+		return k
 	}
-	return "unknown"
+	return conversation.ModelUnknown
 }
 
 // refused says why the model service refused a request: at its own cap of
@@ -138,15 +139,15 @@ func refused(resp *http.Response) conversation.ModelErrorKind {
 	status := resp.StatusCode
 	switch {
 	case status == http.StatusServiceUnavailable && problemType(resp) == atCapacity:
-		return "busy"
+		return conversation.ModelBusy
 	case status == http.StatusServiceUnavailable:
-		return "overloaded"
+		return conversation.ModelOverloaded
 	case status == http.StatusRequestEntityTooLarge:
-		return "too_large"
+		return conversation.ModelTooLarge
 	case status >= 400 && status < 500:
-		return "bad_request"
+		return conversation.ModelBadRequest
 	}
-	return "unknown"
+	return conversation.ModelUnknown
 }
 
 // atCapacity is the problem type the model service refuses with at its own

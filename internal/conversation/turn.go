@@ -223,9 +223,9 @@ func (s *Service) TakeTurn(ctx context.Context, c access.Caller, r TurnRequest, 
 	var reply strings.Builder
 	var firstText time.Time
 	var report *ModelReport
-	failed := error(&ReplyFailedError{Kind: "unavailable"}) // until a final event says otherwise
-	ended := false                                          // the model sent its final event
-	final := func(e ModelEvent) {                           // the model's last word: finished, or failed
+	failed := error(&ReplyFailedError{Kind: ModelUnavailable}) // until a final event says otherwise
+	ended := false                                             // the model sent its final event
+	final := func(e ModelEvent) {                              // the model's last word: finished, or failed
 		switch {
 		case e.Done:
 			failed, report, ended = nil, e.Report, true

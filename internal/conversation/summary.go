@@ -113,7 +113,7 @@ func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, erro
 	defer stop()
 	events := s.model.Reply(ctx, ModelRequest{Model: model, Prompt: p})
 	var text strings.Builder
-	var failed error = &ReplyFailedError{Kind: "unavailable"} // until a final event says otherwise
+	var failed error = &ReplyFailedError{Kind: ModelUnavailable} // until a final event says otherwise
 	for e := range events {
 		switch {
 		case e.Done:
@@ -124,7 +124,7 @@ func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, erro
 			text.WriteString(e.Text)
 		}
 	}
-	if busy := (*ReplyFailedError)(nil); errors.As(failed, &busy) && busy.Kind == "busy" {
+	if busy := (*ReplyFailedError)(nil); errors.As(failed, &busy) && busy.Kind == ModelBusy {
 		return "", fmt.Errorf("%w: %w", ErrModelBusy, failed)
 	}
 	return text.String(), failed
