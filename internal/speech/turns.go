@@ -108,7 +108,7 @@ func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection,
 	// meanwhile, typed or spoken.
 	expire := func() {
 		expired = nil
-		r.cutIn(s.clock.Now())
+		r.interruptLast(s.clock.Now())
 		cancel()
 		conn.Close(Expired)
 	}
@@ -120,7 +120,7 @@ func (s *Service) serve(c access.Caller, session, id uuid.UUID, conn Connection,
 			// The caller ends this connection, as the page does when it ends the session: the
 			// reply reaching the user is cut where they stopped hearing it, as an interrupt is,
 			// rather than saved whole or lost as when a connection drops.
-			r.cutIn(s.clock.Now())
+			r.interruptLast(s.clock.Now())
 			conn.Close(Ended)
 		case <-expired:
 			expire()
@@ -217,12 +217,12 @@ func (r *replies) begin(ctx context.Context, m turnIn, received time.Time, said 
 		if ctx.Err() != nil || r.caller.ExpiredAt(r.s.clock.Now()) {
 			return // the connection ended, or is ending; the page sends it again on its next
 		}
-		r.s.take(ctx, speaking, r.conn, r.caller, r.session, m, received, run, said, &r.aired)
+		r.s.runTurn(ctx, speaking, r.conn, r.caller, r.session, m, received, run, said, &r.aired)
 	})
 }
 
-// cutIn interrupts the turn begun last, if it is still being taken, at at.
-func (r *replies) cutIn(at time.Time) {
+// interruptLast interrupts the turn begun last, if it is still being taken, at at.
+func (r *replies) interruptLast(at time.Time) {
 	r.mu.Lock()
 	last := r.last
 	r.mu.Unlock()
@@ -241,9 +241,9 @@ func (r *replies) begun(request uuid.UUID) *turnRun {
 	return r.last
 }
 
-// hand begins a turn the user spoke before it returns, so whatever the
+// beginSpoken begins a turn the user spoke before it returns, so whatever the
 // microphone brings next comes after it.
-func (r *replies) hand(ctx context.Context, h heardTurn) {
+func (r *replies) beginSpoken(ctx context.Context, h heardTurn) {
 	r.begin(ctx, turnIn{Type: "turn", RequestID: h.request, Words: h.words}, r.s.clock.Now(), &h)
 }
 
@@ -261,23 +261,25 @@ type turnRun struct {
 	freeOnce      sync.Once
 
 	// mu orders the reply's first packet, its text reaching the page, the
-	// user talking on and the turn being settled: firstAt is when the first
-	// packet went, and sounding closes then; talked says the user talked on
-	// before the reply reached them, settled that it had, or stopped with
-	// none, and unremoved that the turn couldn't be taken back.
+	// user talking on and the turn being settled.
+	// firstAt is when the first packet went, and sounding closes then.
+	// talked says the user talked on before the reply reached them.
+	// settled says the reply reached them, or stopped with none, before they
+	// talked on: the turn is to be saved.
+	// unremoved says the turn couldn't be taken back.
 	mu                         sync.Mutex
 	firstAt                    time.Time
 	sounding                   chan struct{}
 	talked, settled, unremoved bool
 }
 
-// talkOn stops the reply as the user talks on after their spoken turn was
+// stopForTalkOn stops the reply as the user talks on after their spoken turn was
 // taken, having begun to speak at began, before they could hear any of it:
 // unless its first packet had been heard by then, by the same estimate as the
 // part of a reply heard, the turn has been settled or let the next start, or
 // the user cut in otherwise. tell tells the page, before any more of the
 // reply's text can reach it. It says whether it stopped the reply.
-func (r *turnRun) talkOn(began time.Time, roundTrip time.Duration, tell func()) bool {
+func (r *turnRun) stopForTalkOn(began time.Time, roundTrip time.Duration, tell func()) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	heardFirst := !r.firstAt.IsZero() && !heardBy(began.Add(-captureDelay), roundTrip).Before(r.firstAt)
@@ -297,8 +299,8 @@ func (r *turnRun) talkedOn() bool {
 	return r.talked
 }
 
-// settle says the turn is to be saved, unless the user talked on first; from
-// then on they can't.
+// settle says the turn is to be saved, unless the user talked on first.
+// After it says yes, talking on no longer stops the reply.
 func (r *turnRun) settle() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -362,9 +364,9 @@ func (r *turnRun) show(tell func()) bool {
 	return true
 }
 
-// sounding is a reply's connection: its packets go out only while the user
+// gatedConn is a reply's connection: its packets go out only while the user
 // hasn't talked on, and the first is noted.
-type sounding struct {
+type gatedConn struct {
 	Connection
 	run   *turnRun
 	clock clock
@@ -372,7 +374,7 @@ type sounding struct {
 
 var errTalkedOn = errors.New("the user talked on before the reply reached them")
 
-func (c sounding) Play(opus []byte, silence time.Duration) error {
+func (c gatedConn) Play(opus []byte, silence time.Duration) error {
 	if !c.run.sound(c.clock.Now()) {
 		return errTalkedOn
 	}
@@ -421,7 +423,7 @@ func requestOf(m turnIn) string {
 	return m.RequestID.String()
 }
 
-// take answers one turn: the reply's text goes to the browser as it arrives,
+// runTurn answers one turn: the reply's text goes to the browser as it arrives,
 // and to text-to-speech, whose audio is played as it is made, until the
 // reply ends or the user cuts in. It releases run for the next turn once the
 // turn is saved, as far as it was heard, and its last message has gone.
@@ -430,7 +432,7 @@ func requestOf(m turnIn) string {
 // user, or stops with none; if the user talks on before then, it is taken back
 // and ends without another word to the page, and the words they go on to say
 // are taken with its words as one turn, in its place.
-func (s *Service) take(ctx, speaking context.Context, conn Connection, c access.Caller, session uuid.UUID, m turnIn, received time.Time, run *turnRun, said *heardTurn, aired *aired) {
+func (s *Service) runTurn(ctx, speaking context.Context, conn Connection, c access.Caller, session uuid.UUID, m turnIn, received time.Time, run *turnRun, said *heardTurn, aired *aired) {
 	request := m.RequestID.String()
 	if said != nil && said.continues != nil && said.continues.stillInFlight() {
 		// All the words can't take the place of a turn that couldn't be taken
@@ -451,7 +453,7 @@ func (s *Service) take(ctx, speaking context.Context, conn Connection, c access.
 	onAir := func(at time.Time, on bool) { aired.note(run, at, on) }
 	playing.Go(func() {
 		defer close(stopped)
-		audio = play(speaking, sounding{Connection: conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, onAir)
+		audio = play(speaking, gatedConn{Connection: conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, onAir)
 	})
 	var firstText time.Time
 	turn, err := s.conversation.TakeTurn(ctx, c, req, s.forward(speaking, conn, run, request, text, &firstText))

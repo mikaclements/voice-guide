@@ -39,11 +39,11 @@ type asking struct {
 
 type question struct {
 	audio  []int16
-	answer chan checked
+	answer chan checkAnswer
 }
 
 func (a *asking) Finished(ctx context.Context, audio []int16) (bool, error) {
-	q := question{audio: audio, answer: make(chan checked, 1)}
+	q := question{audio: audio, answer: make(chan checkAnswer, 1)}
 	a.asked <- q
 	select {
 	case c := <-q.answer:
@@ -89,7 +89,7 @@ func newHearingHarness(t *testing.T, script ...[]float32) *hearingHarness {
 	s := &Service{stt: h.stt, endOfTurn: h.check, settings: Settings{Listening: listening}, log: slog.New(slog.DiscardHandler), clock: h.clock}
 	h.ctx = ctx
 	h.st = newSpokenTurns(s, h.page, uuid.NewV7(), h.replies)
-	h.st.hand = func(_ context.Context, t heardTurn) { h.taken <- t }
+	h.st.begin = func(_ context.Context, t heardTurn) { h.taken <- t }
 	h.st.l = newListener(&scripted{script: slices.Concat(script...)}, listening, h.clock)
 	// As the connection's loop ends: its context first, then the stream, which ends with its audio.
 	var once sync.Once
@@ -181,10 +181,10 @@ func (h *hearingHarness) asked(t *testing.T) question {
 // answer answers the next check asked, and passes the answer on as the connection's loop does.
 func (h *hearingHarness) answer(t *testing.T, finished bool, err error) {
 	t.Helper()
-	h.asked(t).answer <- checked{finished: finished, err: err}
+	h.asked(t).answer <- checkAnswer{finished: finished, err: err}
 	select {
 	case c := <-h.st.checks:
-		h.st.checked(h.ctx, c)
+		h.st.receiveCheck(h.ctx, c)
 	case <-time.After(time.Second):
 		t.Fatal("the check's answer didn't come back")
 	}
@@ -299,7 +299,7 @@ func TestSpeakingAgainAfterAPauseContinuesTheTurn(t *testing.T) {
 	h.say(0, "I led the team", true)
 	h.asked(t)
 	h.feed(3 + 5) // speaking again while the check runs: its answer no longer counts
-	h.st.checked(h.ctx, checked{n: 1, finished: true})
+	h.st.receiveCheck(h.ctx, checkAnswer{n: 1, finished: true})
 	h.feed(7)
 	h.say(1, "that rebuilt pricing.", true)
 	if _, ok := h.turn(); ok {
@@ -577,7 +577,7 @@ func TestASpokenTurnHasBegunWhenItIsHandedOver(t *testing.T) {
 	var turns sync.WaitGroup
 	t.Cleanup(turns.Wait)
 	h.replies.s, h.replies.conn, h.replies.turns, h.replies.waiting = h.st.s, h.page, &turns, make(chan struct{}, waitingTurns)
-	h.st.hand = func(_ context.Context, t heardTurn) { h.replies.hand(ended, t) }
+	h.st.begin = func(_ context.Context, t heardTurn) { h.replies.beginSpoken(ended, t) }
 	h.feed(32)
 	h.say(0, "Where should we start?", true)
 	h.answer(t, true, nil)

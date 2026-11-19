@@ -137,7 +137,7 @@ func newTestRun() *turnRun {
 func TestTalkingOnSettlingAndTheReplysFirstPacketExcludeEachOther(t *testing.T) {
 	now := time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC)
 	talked, told := newTestRun(), false
-	if !talked.talkOn(now, 0, func() { told = true }) || !told {
+	if !talked.stopForTalkOn(now, 0, func() { told = true }) || !told {
 		t.Fatal("talking on before any packet didn't stop the reply and tell the page")
 	}
 	if talked.sound(now) || talked.settle() {
@@ -147,7 +147,7 @@ func TestTalkingOnSettlingAndTheReplysFirstPacketExcludeEachOther(t *testing.T) 
 		t.Error("show said the text went, want it held back")
 	}
 	settled := newTestRun()
-	if !settled.settle() || settled.talkOn(now, 0, func() { t.Error("the page told of talking on after settling") }) {
+	if !settled.settle() || settled.stopForTalkOn(now, 0, func() { t.Error("the page told of talking on after settling") }) {
 		t.Error("talking on stopped a reply once its turn was settled, want it left to the interrupt")
 	}
 }
@@ -163,7 +163,7 @@ func TestTalkingOnEndsWhereSpeechOverTheAgentBegins(t *testing.T) {
 		a.note(run, first, true)
 		began := first.Add(after)
 		over := a.heard(began.Add(-captureDelay), roundTrip) != nil
-		if talked := run.talkOn(began, roundTrip, func() {}); talked == over {
+		if talked := run.stopForTalkOn(began, roundTrip, func() {}); talked == over {
 			t.Errorf("speech %s after the first packet: talking on %v, over the agent %v; want exactly one", after, talked, over)
 		}
 	}
@@ -213,7 +213,7 @@ func TestSpeechBegunJustBeforeTheReplyIsHeardTalksOnThoughNoticedLater(t *testin
 	if noticed := began.Add(audioTime(DetectionFrame) + PacketDuration); until.Before(noticed) {
 		t.Errorf("held until %s after the first packet, want at least %s: until speech begun before it was heard is noticed", until.Sub(first), noticed.Sub(first))
 	}
-	if !run.talkOn(began, roundTrip, func() {}) {
+	if !run.stopForTalkOn(began, roundTrip, func() {}) {
 		t.Error("speech begun before the reply was heard didn't talk on")
 	}
 	close(clock.release)
