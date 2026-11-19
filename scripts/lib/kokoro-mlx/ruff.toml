@@ -1,0 +1,3 @@
+# The speech-to-text service's rules, for the Python in .python-version here.
+extend = "../../../services/stt/pyproject.toml"
+target-version = "py312"

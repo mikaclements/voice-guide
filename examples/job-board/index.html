@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hearth Jobs</title>
+    <style>
+      body { font-family: system-ui, sans-serif; background: #f6f4ef; color: #222; margin: 0; }
+      header { background: #2d5a46; color: #fff; padding: 1rem 2rem; font-size: 1.25rem; }
+      main { max-width: 42rem; margin: 2rem auto; padding: 0 1rem; }
+      article { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 1px 3px #0002; }
+      h1 { margin-top: 0; font-size: 1.4rem; }
+      .meta { color: #666; }
+      button { background: #2d5a46; color: #fff; border: 0; border-radius: 6px; padding: 0.7rem 1.2rem; font-size: 1rem; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      #status { margin: 1rem 0; }
+      #feedback { border-top: 1px solid #ddd; margin-top: 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <header>Hearth Jobs</header>
+    <main>
+      <article>
+        <h1>Backend Engineer</h1>
+        <p class="meta">Hearth Kitchens, Tokyo. Hybrid, full time.</p>
+        <p>Build the ordering and pricing services behind a growing delivery marketplace. You will own services end to end, from design to on-call.</p>
+        <button id="start" type="button">Practise the interview for this role</button>
+        <p id="status"></p>
+        <div id="feedback" hidden>
+          <h2>Interview feedback</h2>
+          <p id="summary"></p>
+          <p id="turns" class="meta"></p>
+        </div>
+        <voice-guide-session id="practice" api="{{VOICE_URL}}"></voice-guide-session>
+      </article>
+    </main>
+    <script type="module" src="{{VOICE_URL}}/client/voice-guide.js"></script>
+    <script type="module">
+      const el = document.getElementById("practice");
+      const button = document.getElementById("start");
+      const status = document.getElementById("status");
+      const feedback = document.getElementById("feedback");
+      // One request ID per click, kept across retries until a start succeeds: voice answers a
+      // repeated ID with the same session, so a lost reply never makes a second one.
+      let requestId = null;
+
+      async function startSession(restarted) {
+        requestId ??= crypto.randomUUID();
+        const res = await fetch("/api/practice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ request_id: requestId }),
+        });
+        // 409: voice can't use this request ID again (its session is over, or it refused the
+        // start), so the ID is dropped and the start made once more with a new one. Any other
+        // failure keeps the ID, and the next click retries with it.
+        if (res.status === 409) {
+          requestId = null;
+          if (restarted) throw new Error("voice would not start a session");
+          return startSession(true);
+        }
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const session = await res.json();
+        requestId = null;
+        return session;
+      }
+
+      button.onclick = async () => {
+        if (!customElements.get("voice-guide-session")) {
+          status.textContent = "voice-guide's client didn't load; is voice running?";
+          return;
+        }
+        button.disabled = true;
+        generation++;
+        feedback.hidden = true;
+        status.textContent = "Starting...";
+        try {
+          const { id, ticket } = await startSession(false);
+          status.textContent = "";
+          // The ticket goes in by method, never as an attribute, which page scripts may record.
+          el.join({ session: id, ticket });
+        } catch (err) {
+          status.textContent = `Could not start the practice: ${err.message}. Try again.`;
+          button.disabled = false;
+        }
+      };
+
+      // The board's server hears the summary from voice's webhook after the session ends, so the
+      // page asks for that session's feedback until it comes: every 2 s, 20 times. Round guesses:
+      // the summary job usually lands within seconds; to measure in the demo. Each click starts a
+      // new generation, which stops an older loop.
+      let generation = 0;
+      async function showFeedback(session, mine) {
+        for (let i = 0; i < 20 && mine === generation; i++) {
+          try {
+            const res = await fetch(`/api/last-session?session=${encodeURIComponent(session)}`);
+            const found = res.ok ? await res.json() : { ready: false };
+            if (found.ready && mine === generation) {
+              document.getElementById("summary").textContent =
+                found.summary ?? "No summary was written.";
+              document.getElementById("turns").textContent = `${found.turns} turns`;
+              feedback.hidden = false;
+              return;
+            }
+          } catch {
+            // The board's server is briefly unreachable: ask again.
+          }
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+        if (mine === generation) {
+          status.textContent += " Feedback hasn't arrived yet; it can take a minute.";
+        }
+      }
+
+      el.addEventListener("voice-guide-ended", (e) => {
+        status.textContent = `Session over (${e.detail.reason}).`;
+        button.disabled = false;
+        feedback.hidden = true;
+        showFeedback(e.detail.session, generation);
+      });
+      el.addEventListener("voice-guide-error", (e) => {
+        status.textContent = `Something went wrong: ${e.detail?.message ?? "see the console"}`;
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+# The images take only what they build from: never .env, which holds the API key and the signing
+# keys, nor the developer's own data in seed/local/, nor what this machine installed or built.
+*
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!migrations/
+!package.json
+!package-lock.json
+!schematic/package.json
+!services/model/package.json
+!services/model/src/
+!web/
+!agents/
+!scripts/lib/container.sh
+!scripts/lib/seed.sql
+**/node_modules
+web/dist
+web/dist-client

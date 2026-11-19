@@ -1,0 +1,554 @@
+# Lint and format configuration for the Go code (golangci-lint v2).
+# Module boundaries are enforced here by depguard: each module's core and each adapter has an
+# allow-list, so any import not listed fails. Module paths end in $ to match exactly, since
+# depguard matches prefixes and a module's core would otherwise allow its adapters too. A core's
+# list leaves out only the adapter folders with a list of their own, so a new adapter folder falls
+# under its core's list until it gets one, and a new package elsewhere under internal/ falls under
+# a list that allows only the standard library.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        # Every package under internal/ without a list of its own: nothing of voice-guide's or a vendor's.
+        internal-other:
+          list-mode: strict
+          files:
+            - "**/internal/**"
+            - "!**/internal/conversation/**"
+            - "!**/internal/speech/**"
+            - "!**/internal/usercontext/**"
+            - "!**/internal/agents/**"
+            - "!**/internal/api/**"
+            - "!**/internal/ticket/**"
+            - "!**/internal/access/**"
+            - "!**/internal/pgtest/**"
+            - "!**/internal/jobs/**"
+            - "!**/internal/productkey/**"
+          allow:
+            - $gostd
+        conversation:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/**"
+            - "!**/internal/conversation/http/**"
+            - "!**/internal/conversation/store/fake/**"
+            - "!**/internal/conversation/store/postgres/**"
+            - "!**/internal/conversation/model/fake/**"
+            - "!**/internal/conversation/model/http/**"
+            - "!**/internal/conversation/webhook/fake/**"
+            - "!**/internal/conversation/webhook/http/**"
+            - "!**/internal/conversation/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/agents$
+            # User context's service only, never its store: its tables are user context's alone.
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+        # The core's tests run on the fake stores, agents', user context's and its own, the fake model
+        # and the fake products' servers.
+        conversation-tests:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/model/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/webhook/fake$
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+            - github.com/mikaclements/voice-guide/internal/usercontext/store/fake$
+        conversation-store-fake:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/store/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+        conversation-model-fake:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/model/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+        conversation-webhook-fake:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/webhook/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+        # Deliveries to products' servers are plain HTTP, signed with the standard library's HMAC:
+        # the standard library and conversation's port only.
+        conversation-webhook-http:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/webhook/http/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/conversation/webhook/http$
+        conversation-store-postgres:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/store/postgres/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/conversation/store/postgres
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+        # Speech is a client of conversation: its core may call conversation's service, never its stores.
+        speech:
+          list-mode: strict
+          files:
+            - "**/internal/speech/**"
+            - "!**/internal/speech/http/**"
+            - "!**/internal/speech/transport/fake/**"
+            - "!**/internal/speech/transport/webrtc/**"
+            - "!**/internal/speech/tts/fake/**"
+            - "!**/internal/speech/tts/kokoro/**"
+            - "!**/internal/speech/detection/fake/**"
+            - "!**/internal/speech/detection/silero/**"
+            - "!**/internal/speech/stt/fake/**"
+            - "!**/internal/speech/stt/realtime/**"
+            - "!**/internal/speech/endofturn/fake/**"
+            - "!**/internal/speech/endofturn/smartturn/**"
+            - "!**/internal/speech/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+        # The core's tests take turns through conversation over its fakes (agents', user context's,
+        # its stores and its model), connect through the fake transport, speak with the fake
+        # text-to-speech, notice speech with the fake speech detection and hear it with the fake
+        # speech-to-text and end-of-turn check.
+        speech-tests:
+          list-mode: strict
+          files:
+            - "**/internal/speech/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/transport/fake$
+            - github.com/mikaclements/voice-guide/internal/speech/tts/fake$
+            - github.com/mikaclements/voice-guide/internal/speech/detection/fake$
+            - github.com/mikaclements/voice-guide/internal/speech/stt/fake$
+            - github.com/mikaclements/voice-guide/internal/speech/endofturn/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/model/fake$
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+            - github.com/mikaclements/voice-guide/internal/usercontext/store/fake$
+            # A spoken turn's take-back is also tested against PostgreSQL, which cuts off a turn
+            # left in flight past the turn deadline, as no fake store does.
+            - github.com/mikaclements/voice-guide/internal/conversation/store/postgres$
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+        # Speech's part of the API registers on the API's router and calls speech's service; WebRTC stays in the transport.
+        speech-http:
+          list-mode: strict
+          files:
+            - "**/internal/speech/http/**"
+            - "!**/internal/speech/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/api$
+        # The endpoint's tests serve speech over the fake transport and fake speech detection, and
+        # conversation's fake store, on a router that checks product keys kept in their fake store.
+        speech-http-tests:
+          list-mode: strict
+          files:
+            - "**/internal/speech/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/http$
+            - github.com/mikaclements/voice-guide/internal/api$
+            - github.com/mikaclements/voice-guide/internal/speech/transport/fake$
+            - github.com/mikaclements/voice-guide/internal/speech/detection/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
+        # Pion appears only here, its Opus decoder included; the adapter and its tests reach speech's
+        # core and nothing else of voice-guide.
+        speech-transport-webrtc:
+          list-mode: strict
+          files:
+            - "**/internal/speech/transport/webrtc/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/transport/webrtc$
+            - github.com/pion/webrtc/v4
+            # Its UDP mux, for one port every connection shares, which webrtc doesn't re-export.
+            - github.com/pion/ice/v4
+            - github.com/pion/interceptor
+            - github.com/pion/rtp
+            - github.com/pion/opus
+        speech-transport-fake:
+          list-mode: strict
+          files:
+            - "**/internal/speech/transport/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+        speech-tts-fake:
+          list-mode: strict
+          files:
+            - "**/internal/speech/tts/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/tts/fake$
+        speech-detection-fake:
+          list-mode: strict
+          files:
+            - "**/internal/speech/detection/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+        # govad appears only here; the adapter and its tests reach speech's core and nothing else of voice-guide.
+        speech-detection-silero:
+          list-mode: strict
+          files:
+            - "**/internal/speech/detection/silero/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/detection/silero$
+            - github.com/zserge/govad
+        # Kokoro's adapter speaks plain HTTP: the standard library and speech's port only.
+        speech-tts-kokoro:
+          list-mode: strict
+          files:
+            - "**/internal/speech/tts/kokoro/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/tts/kokoro$
+        speech-stt-fake:
+          list-mode: strict
+          files:
+            - "**/internal/speech/stt/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/stt/fake$
+        # The realtime API's WebSocket client appears only here, beside speech's port.
+        speech-stt-realtime:
+          list-mode: strict
+          files:
+            - "**/internal/speech/stt/realtime/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/stt/realtime$
+            - github.com/coder/websocket
+        speech-endofturn-fake:
+          list-mode: strict
+          files:
+            - "**/internal/speech/endofturn/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/endofturn/fake$
+        # The end-of-turn check is plain HTTP: the standard library and speech's port only.
+        speech-endofturn-smartturn:
+          list-mode: strict
+          files:
+            - "**/internal/speech/endofturn/smartturn/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/speech$
+            - github.com/mikaclements/voice-guide/internal/speech/endofturn/smartturn$
+        usercontext:
+          list-mode: strict
+          files:
+            - "**/internal/usercontext/**"
+            - "!**/internal/usercontext/store/fake/**"
+            - "!**/internal/usercontext/store/postgres/**"
+            - "!**/internal/usercontext/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+        # The core's tests run against the fake store.
+        usercontext-tests:
+          list-mode: strict
+          files:
+            - "**/internal/usercontext/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+            - github.com/mikaclements/voice-guide/internal/usercontext/store/fake$
+        usercontext-store-fake:
+          list-mode: strict
+          files:
+            - "**/internal/usercontext/store/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+        usercontext-store-postgres:
+          list-mode: strict
+          files:
+            - "**/internal/usercontext/store/postgres/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+            - github.com/mikaclements/voice-guide/internal/usercontext/store/postgres
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+        agents:
+          list-mode: strict
+          files:
+            - "**/internal/agents/**"
+            - "!**/internal/agents/agentfile/**"
+            - "!**/internal/agents/store/fake/**"
+            - "!**/internal/agents/store/postgres/**"
+            - "!**/internal/agents/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+        # The core's tests run against the fake store.
+        agents-tests:
+          list-mode: strict
+          files:
+            - "**/internal/agents/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+        # Adapters: each may import its own vendor package, never another module.
+        conversation-http:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/http/**"
+            - "!**/internal/conversation/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/api$
+        # The http tests serve a real catalog over the fake store, and turns from the fake model; the handlers reach
+        # agents only through conversation.
+        conversation-http-tests:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/conversation/http$
+            - github.com/mikaclements/voice-guide/internal/api$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/store/fake$
+            - github.com/mikaclements/voice-guide/internal/conversation/model/fake$
+            - github.com/mikaclements/voice-guide/internal/usercontext$
+            - github.com/mikaclements/voice-guide/internal/usercontext/store/fake$
+        # The model service's client speaks plain HTTP: the standard library and conversation's port only.
+        conversation-model-http:
+          list-mode: strict
+          files:
+            - "**/internal/conversation/model/http/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/conversation$
+            - github.com/mikaclements/voice-guide/internal/conversation/model/http$
+        # The migrations run through goose on database/sql over pgx.
+        migrations:
+          list-mode: strict
+          files:
+            - "**/migrations/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/migrations$
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+            - github.com/pressly/goose/v3
+        # The API's one router: every route behind the credential check, every error a problem. It
+        # imports no module, so every module's HTTP adapter can register on it.
+        api:
+          list-mode: strict
+          files:
+            - "**/internal/api/**"
+            - "!**/internal/api/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/api$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/productkey$
+        # The router's tests check product keys kept in the fake store.
+        api-tests:
+          list-mode: strict
+          files:
+            - "**/internal/api/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/api$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
+        # Product keys name a workspace; the API's router checks them. Like the ticket check, they import
+        # no module; only the store adapter reaches the database.
+        productkey:
+          list-mode: strict
+          files:
+            - "**/internal/productkey/**"
+            - "!**/internal/productkey/store/fake/**"
+            - "!**/internal/productkey/store/postgres/**"
+            - "!**/internal/productkey/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/productkey$
+        productkey-tests:
+          list-mode: strict
+          files:
+            - "**/internal/productkey/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
+        productkey-store-fake:
+          list-mode: strict
+          files:
+            - "**/internal/productkey/store/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/productkey$
+        productkey-store-postgres:
+          list-mode: strict
+          files:
+            - "**/internal/productkey/store/postgres/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/postgres
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+        # Tickets name a caller; the API's router checks them.
+        ticket:
+          list-mode: strict
+          files:
+            - "**/internal/ticket/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/golang-jwt/jwt/v5
+        # Who a request comes from, which the router, the tickets, conversation and speech name:
+        # nothing of voice-guide's but itself.
+        access:
+          list-mode: strict
+          files:
+            - "**/internal/access/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
+        # pgx appears only in store adapters, the migrations and the test database helper.
+        agents-store-postgres:
+          list-mode: strict
+          files:
+            - "**/internal/agents/store/postgres/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/store/postgres
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+        pgtest:
+          list-mode: strict
+          files:
+            - "**/internal/pgtest/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/migrations$
+            - github.com/jackc/pgx/v5
+        agents-agentfile:
+          list-mode: strict
+          files:
+            - "**/internal/agents/agentfile/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/agentfile$
+            - go.yaml.in/yaml/v3
+        agents-store-fake:
+          list-mode: strict
+          files:
+            - "**/internal/agents/store/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+        # The job runner imports no module: each hands it a handler, and cmd/ wires the two.
+        jobs:
+          list-mode: strict
+          files:
+            - "**/internal/jobs/**"
+            - "!**/internal/jobs/store/fake/**"
+            - "!**/internal/jobs/store/postgres/**"
+            - "!**/internal/jobs/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/jobs$
+        # The runner's tests run it on the fake queue.
+        jobs-tests:
+          list-mode: strict
+          files:
+            - "**/internal/jobs/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/jobs$
+            - github.com/mikaclements/voice-guide/internal/jobs/store/fake$
+        jobs-store-fake:
+          list-mode: strict
+          files:
+            - "**/internal/jobs/store/fake/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/jobs$
+        jobs-store-postgres:
+          list-mode: strict
+          files:
+            - "**/internal/jobs/store/postgres/**"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/jobs$
+            - github.com/mikaclements/voice-guide/internal/jobs/store/postgres
+            - github.com/mikaclements/voice-guide/internal/pgtest$
+            - github.com/jackc/pgx/v5
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/mikaclements/voice-guide

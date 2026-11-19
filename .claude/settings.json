@@ -1,0 +1,69 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build *)",
+      "Bash(go test *)",
+      "Bash(go vet *)",
+      "Bash(golangci-lint *)",
+      "Bash(scripts/format.sh*)",
+      "Bash(docker compose *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh pr create *)"
+    ],
+    "deny": [
+      "Bash(gh pr merge *)",
+      "Bash(gh pr close *--delete-branch*)",
+      "Bash(git push *--del*)",
+      "Bash(git push -d*)",
+      "Bash(git push * -d*)",
+      "Bash(git remote add *)",
+      "Bash(git remote set-url *)",
+      "Bash(git remote rename *)",
+      "Bash(git remote remove *)",
+      "Bash(git push http*)",
+      "Bash(git push git@*)",
+      "Bash(git *--no-veri*)",
+      "Bash(git commit -n*)",
+      "Bash(git commit * -n*)",
+      "Bash(git * commit -n*)",
+      "Bash(git * commit * -n*)",
+      "Bash(git -c core.hooks*)",
+      "Bash(git * -c core.hooks*)",
+      "Bash(git *--config-env*)",
+      "Bash(git push *--force)",
+      "Bash(git push *--force *)",
+      "Bash(git push *-f *)",
+      "Bash(git push * -f)",
+      "Bash(git push * +*)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push * :**)",
+      "Bash(git push *--pru*)",
+      "Bash(git push *--mir*)",
+      "Bash(git reset --hard*)",
+      "Bash(gh repo create *)",
+      "Bash(gh repo delete *)",
+      "Bash(gh repo edit *--visibility*)",
+      "Bash(gh api *visibility*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/format.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

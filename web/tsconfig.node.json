@@ -1,0 +1,8 @@
+// The files Node runs, not the browser: the dev server's config and the tests, which `node --test`
+// runs. Only they get Node's types, so the page can't use an API the browser lacks.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["vite.config.ts", "vite.config.client.ts", "vite.config.test.ts", "src/**/*.test.ts"],
+  "exclude": []
+}

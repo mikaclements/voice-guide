@@ -1,0 +1,26 @@
+# Personal and local files
+CLAUDE.local.md
+.claude/settings.local.json
+.env
+.env.tmp
+# Your own test data, used instead of the sample in seed/placeholder-user/ file by file
+seed/local/
+# The tickets the drive-session skill's start-session.sh keeps, one per session, for its turn.sh and end-session.sh
+.tickets/
+
+# IDE and OS files
+.idea/
+.DS_Store
+
+# Dependencies and build output
+node_modules/
+web/dist/
+web/dist-client/
+schematic/dist/
+# The schematic's class views, generated from the Go code by scripts/schematic.sh
+schematic/data/classes/
+schematic/.shots/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/

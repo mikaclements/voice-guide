@@ -1,0 +1,21 @@
+{
+  "name": "voice-guide",
+  "private": true,
+  "workspaces": [
+    "schematic",
+    "services/model",
+    "web"
+  ],
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.8",
+    "@types/node": "26.6.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.3.8"
+  }
+}

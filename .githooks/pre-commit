@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Shared pre-commit hook, the same for every author. Checks only; it never rewrites or re-stages files.
+# 1. Refuses to commit any file git is told to ignore (it can only be staged with `git add -f`).
+# 2. Formatting check of what is staged.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+ignored="$(git ls-files --cached --ignored --exclude-standard)"
+if [ -n "$ignored" ]; then
+  echo "pre-commit: these files are ignored by git and must not be committed:" >&2
+  echo "$ignored" | sed 's/^/  /' >&2
+  echo "Unstage them with: git rm --cached <file>" >&2
+  exit 1
+fi
+
+# The commit carries what is staged, not the working copy, so a file fixed but not staged again
+# must still fail. The staged files are copied out and checked there, with the tools installed here.
+staged="$(mktemp -d)"
+trap 'rm -rf "$staged"' EXIT
+git checkout-index --all --prefix="$staged/"
+[ ! -d node_modules ] || ln -s "$PWD/node_modules" "$staged/node_modules"
+[ ! -d services/stt/.venv ] || ln -s "$PWD/services/stt/.venv" "$staged/services/stt/.venv"
+if ! (cd "$staged" && scripts/format.sh --check); then
+  echo "pre-commit: formatting check failed on what is staged. Run scripts/format.sh, then stage the result." >&2
+  exit 1
+fi

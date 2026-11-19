@@ -1,0 +1,12 @@
+{
+  "name": "web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && npm run build:client",
+    "build:client": "vite build -c vite.config.client.ts",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json"
+  }
+}

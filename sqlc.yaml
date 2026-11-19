@@ -1,0 +1,73 @@
+# sqlc checks each module's queries against the migrations and generates typed Go for them.
+# Its version is in .sqlc-version; CI fails when the generated code isn't current.
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: internal/agents/store/postgres/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/agents/store/postgres/db
+        sql_package: pgx/v5
+        # Only the types the queries return; no struct per table.
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type: uuid.UUID
+  - engine: postgresql
+    schema: migrations
+    queries: internal/conversation/store/postgres/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/conversation/store/postgres/db
+        sql_package: pgx/v5
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type: uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time
+  - engine: postgresql
+    schema: migrations
+    queries: internal/usercontext/store/postgres/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/usercontext/store/postgres/db
+        sql_package: pgx/v5
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type: uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time
+  - engine: postgresql
+    schema: migrations
+    queries: internal/productkey/store/postgres/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/productkey/store/postgres/db
+        sql_package: pgx/v5
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type: uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time
+  - engine: postgresql
+    schema: migrations
+    queries: internal/jobs/store/postgres/queries.sql
+    gen:
+      go:
+        package: db
+        out: internal/jobs/store/postgres/db
+        sql_package: pgx/v5
+        omit_unused_structs: true
+        overrides:
+          - db_type: uuid
+            go_type: uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time

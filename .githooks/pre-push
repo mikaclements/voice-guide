@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Shared pre-push hook, the same for every author: the docs check (links, labels, decision index),
+# static checks and module boundaries (golangci-lint, including depguard), dead code, unit tests, then the
+# TypeScript and Python checks.
+# CI runs everything on each pull request.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+python3 .claude/skills/doc-audit/check_docs.py
+golangci-lint run ./...
+scripts/lib/deadcode.sh
+go test ./...
+scripts/lib/check-ts.sh
+scripts/lib/check-py.sh

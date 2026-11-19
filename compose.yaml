@@ -1,0 +1,155 @@
+# Local runtime, one project from any checkout; the database is reachable only here and kept until `down -v`.
+# The app profile runs all of voice-guide in containers, as scripts/up.sh starts it, on a database of
+# its own beside scripts/run.sh's; with no profile named, `docker compose up` starts the database only.
+name: voice-guide
+
+services:
+  postgres:
+    # Minor version and digest pinned so every checkout and CI test the same build; Dependabot proposes updates.
+    image: postgres:18.6@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    environment:
+      POSTGRES_USER: voice
+      POSTGRES_PASSWORD: voice
+      POSTGRES_DB: voice
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "voice", "-d", "voice"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Text-to-speech: Kokoro-FastAPI on the CPU, pinned to the build that was measured. In the tts
+  # profile, so a bare `docker compose up` doesn't pull its 4.5 GB image; naming it starts it
+  # (.claude/skills/measure/check-tts.sh).
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu@sha256:f54c5960c2b9387f6349080a9944f8bc7e8cdb98a4ef9238cb0b0f9ff9795f44
+    profiles: [tts, app]
+    ports:
+      - "127.0.0.1:8880:8880"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8880/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # Speech-to-text: Moonshine behind the realtime transcription API, built here with the model size
+  # in STT_MODEL (small unless set). In the stt profile, so a bare `docker compose up` doesn't build
+  # it; naming it starts it (.claude/skills/measure/check-stt.sh).
+  stt:
+    build:
+      context: services/stt
+      args:
+        STT_MODEL: ${STT_MODEL:-small}
+    profiles: [stt, app]
+    ports:
+      - "127.0.0.1:8092:8092"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8092/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # The app's one-time setup, from voice's image: its database, migrations, the workspace and the
+  # development product key, and agents/ published; voice starts once it has finished.
+  setup:
+    image: voice-guide-voice
+    build:
+      context: .
+      target: voice
+    profiles: [app]
+    command: [setup]
+    environment:
+      PGHOST: postgres
+      PGUSER: voice
+      PGPASSWORD: voice
+      PGDATABASE: voice_app
+      DATABASE_URL: postgres://voice:voice@postgres:5432/voice_app?sslmode=disable
+      VOICE_WORKSPACE_ID: ${VOICE_WORKSPACE_ID:-}
+      VOICE_DEV_PRODUCT_KEY: ${VOICE_DEV_PRODUCT_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  voice:
+    image: voice-guide-voice
+    build:
+      context: .
+      target: voice
+    profiles: [app]
+    environment:
+      VOICE_ADDR: 0.0.0.0:8080
+      DATABASE_URL: postgres://voice:voice@postgres:5432/voice_app?sslmode=disable
+      VOICE_WORKSPACE_ID: ${VOICE_WORKSPACE_ID:-}
+      VOICE_TICKET_KEY: ${VOICE_TICKET_KEY:-}
+      VOICE_CLIENT_DIR: /app/web/dist-client
+      VOICE_MODEL_URL: http://model:8091
+      VOICE_TTS_URL: http://kokoro:8880
+      VOICE_STT_URL: ws://stt:8092
+      VOICE_TURN_CHECK_URL: http://stt:8092
+      # Every audio connection on one UDP port, published below; 8443, a round pick that nothing in
+      # voice-guide uses. The answer names the host's loopback, where the browser reaches the port.
+      VOICE_AUDIO_UDP_PORT: "8443"
+      VOICE_AUDIO_ANNOUNCE_IPS: 127.0.0.1
+      # The settings people tune in .env, as scripts/run.sh passes them; unset keeps voice's default.
+      VOICE_MODEL: ${VOICE_MODEL:-}
+      VOICE_TTS_VOICE: ${VOICE_TTS_VOICE:-}
+      VOICE_PAUSE: ${VOICE_PAUSE:-}
+      VOICE_MAX_WAIT: ${VOICE_MAX_WAIT:-}
+      VOICE_INTERRUPT_SPEECH: ${VOICE_INTERRUPT_SPEECH:-}
+      VOICE_SPEECH_THRESHOLD: ${VOICE_SPEECH_THRESHOLD:-}
+      VOICE_MAX_SPEECH: ${VOICE_MAX_SPEECH:-}
+      VOICE_TURN_TIMEOUT: ${VOICE_TURN_TIMEOUT:-}
+      VOICE_SESSION_IDLE: ${VOICE_SESSION_IDLE:-}
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443/udp"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      model:
+        condition: service_healthy
+      kokoro:
+        condition: service_healthy
+      stt:
+        condition: service_healthy
+
+  # The model service; the API key reaches this container only, from .env when it starts.
+  model:
+    build:
+      context: .
+      target: model
+    profiles: [app]
+    init: true
+    environment:
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-claude-api}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      MODEL_HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8091/').then(() => {}, () => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  # The test page, playing the product's server with the development product key; it reads the
+  # placeholder user, or the developer's own files in seed/local/, from the checkout.
+  page:
+    build:
+      context: .
+      target: page
+    profiles: [app]
+    init: true
+    environment:
+      VOICE_ADDR: voice:8080
+      VOICE_DEV_PRODUCT_KEY: ${VOICE_DEV_PRODUCT_KEY:-}
+    volumes:
+      - ./seed:/app/seed:ro
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - voice
+
+volumes:
+  postgres:

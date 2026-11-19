@@ -1,0 +1,1960 @@
+/* The schematic's look. Sizes that graph.ts measures before layout (CARD, LABEL, CLASS) are
+   mirrored here exactly; change one, change the other. */
+
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f6f6f4;
+  --dots: #d9d9d4;
+  --surface: #ffffff;
+  --surface-2: #fafaf9;
+  --surface-3: #f3f3f1;
+  --border: #e4e4e0;
+  --border-strong: #d2d2cc;
+  --text: #18181b;
+  --text-2: #3f3f46;
+  --muted: #71717a;
+  --faint: #a1a1aa;
+  --edge: #a8a8b0;
+  --edge-lit: #3f3f46;
+  --shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.05);
+  --shadow: 0 1px 2px rgba(24, 24, 27, 0.04), 0 4px 14px -6px rgba(24, 24, 27, 0.1);
+  --shadow-lg: 0 2px 4px rgba(24, 24, 27, 0.04), 0 14px 32px -12px rgba(24, 24, 27, 0.2);
+  --logo-bg: #18181b;
+  --logo-fg: #ffffff;
+  --focus-ring: #18181b;
+
+  --k-client: #0e7490;
+  --k-service: #4f46e5;
+  --k-module: #7c3aed;
+  --k-core: #b45309;
+  --k-shared: #0f766e;
+  --k-port: #2563eb;
+  --k-adapter: #15803d;
+  --k-store: #c2410c;
+  --k-external: #64748b;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0f0f11;
+  --dots: #26262b;
+  --surface: #18181b;
+  --surface-2: #1c1c20;
+  --surface-3: #232328;
+  --border: #2c2c32;
+  --border-strong: #3a3a42;
+  --text: #f4f4f5;
+  --text-2: #d4d4d8;
+  --muted: #a1a1aa;
+  --faint: #71717a;
+  --edge: #52525b;
+  --edge-lit: #e4e4e7;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 18px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 2px 4px rgba(0, 0, 0, 0.3), 0 16px 36px -12px rgba(0, 0, 0, 0.7);
+  --logo-bg: #f4f4f5;
+  --logo-fg: #18181b;
+  --focus-ring: #f4f4f5;
+
+  --k-client: #22d3ee;
+  --k-service: #818cf8;
+  --k-module: #a78bfa;
+  --k-core: #fbbf24;
+  --k-shared: #2dd4bf;
+  --k-port: #60a5fa;
+  --k-adapter: #4ade80;
+  --k-store: #fb923c;
+  --k-external: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue",
+    Arial, sans-serif;
+  background: var(--canvas);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+}
+
+code,
+kbd,
+.mono {
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- the shell ------------------------------------------------------------------------------ */
+
+.app {
+  display: grid;
+  grid-template-rows: 52px 1fr;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px 0 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+
+.brand-name {
+  font-weight: 650;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.brand-sub {
+  color: var(--muted);
+  font-size: 13px;
+  padding-left: 9px;
+  border-left: 1px solid var(--border);
+}
+
+.crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: 8px;
+  color: var(--muted);
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.crumb:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.crumb.current {
+  color: var(--text);
+  font-weight: 560;
+  cursor: default;
+}
+
+.crumb-level {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 650;
+  background: var(--surface-3);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.crumb.current .crumb-level {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--surface);
+}
+
+.crumb-sep {
+  color: var(--faint);
+  display: inline-flex;
+}
+
+.topbar-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+kbd {
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.icon-button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.main {
+  display: grid;
+  grid-template-columns: 1fr 372px;
+  min-height: 0;
+}
+
+.canvas {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.loading,
+.failed {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+}
+
+.failed {
+  color: var(--k-store);
+}
+
+/* ---- canvas furniture ------------------------------------------------------------------------ */
+
+.react-flow {
+  --xy-background-color-default: transparent;
+  --xy-background-pattern-dots-color-default: var(--dots);
+}
+
+.canvas-top {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.canvas-top > * {
+  pointer-events: auto;
+}
+
+.view-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 34px;
+  padding: 0 13px 0 7px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.level-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: var(--surface-3);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.toolbar-button,
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 520;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.toolbar-button:hover,
+.toggle:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.18s;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.18s;
+}
+
+.toggle input:checked + .switch {
+  background: var(--text);
+}
+
+.toggle input:checked + .switch::after {
+  transform: translateX(11px);
+}
+
+.toggle input:focus-visible + .switch {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.legend {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  max-width: calc(100% - 140px);
+  padding: 9px 13px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 11.5px;
+  color: var(--text-2);
+  z-index: 5;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.legend-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+.legend-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--border);
+}
+
+.legend-line {
+  display: inline-block;
+}
+
+.zoom {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  z-index: 5;
+}
+
+.zoom button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.zoom button + button {
+  border-top: 1px solid var(--border);
+}
+
+.zoom button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* Edge labels above every card and group, so a label inside a group's box is never hidden by it. */
+.react-flow__edgelabel-renderer {
+  z-index: 1002;
+}
+
+/* Handles only anchor edges; the layout draws them. */
+.react-flow__handle.anchor {
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  pointer-events: none;
+}
+
+.react-flow__node {
+  cursor: default;
+}
+
+/* ---- cards: levels 1 to 3 (CARD in graph.ts) ------------------------------------------------- */
+
+.card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  padding: 14px 14px 0;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition:
+    opacity 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.85;
+}
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  box-shadow: var(--shadow-lg);
+}
+
+.card.lit {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.card.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+    var(--shadow-lg);
+}
+
+.card.dim,
+.cls.dim {
+  opacity: 0.3;
+}
+
+.card.drillable {
+  cursor: zoom-in;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+}
+
+.card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--surface));
+}
+
+.card-titles {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-eyebrow {
+  height: 14px;
+  line-height: 14px;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 80%, var(--muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-name {
+  height: 18px;
+  line-height: 18px;
+  font-size: 14px;
+  font-weight: 620;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-path {
+  margin-top: 8px;
+  height: 16px;
+  line-height: 16px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.card-tech {
+  margin-top: 8px;
+  height: 16px;
+  line-height: 16px;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.card-tech.tight {
+  margin-top: 2px;
+}
+
+/* A setting that switches the card, as a chip: CARD.setting* in graph.ts. */
+.card-setting {
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface-3);
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 15px;
+  color: var(--text-2);
+}
+
+.card-setting > div {
+  white-space: nowrap;
+}
+
+.setting-name {
+  color: var(--text);
+}
+
+.card-summary {
+  margin-top: 10px;
+  font-size: 12.5px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.card-summary > div {
+  white-space: nowrap;
+}
+
+.card-members {
+  margin-top: 10px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.card-members > div {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.member-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin: 0 9px 0 0;
+  border-radius: 50%;
+  border: 1.2px solid var(--accent);
+}
+
+.card-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 520;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.card-footer:hover {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--accent);
+}
+
+/* A node from outside the level: faded and dashed. */
+.card.ghost {
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  border-style: dashed;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.card.ghost::before {
+  display: none;
+}
+
+.card.ghost .card-icon {
+  width: 32px;
+  height: 32px;
+  opacity: 0.8;
+}
+
+.card.ghost .card-name {
+  color: var(--text-2);
+  font-weight: 560;
+}
+
+.card.ghost .card-summary {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--muted);
+}
+
+/* ---- groups ------------------------------------------------------------------------------------ */
+
+.box {
+  width: 100%;
+  height: 100%;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border));
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.box.accent-core {
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.box.external {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+
+.box.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.box-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.box-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.box-eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 80%, var(--muted));
+}
+
+.box-title {
+  font-weight: 640;
+  font-size: 13.5px;
+}
+
+.box-path {
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- class cards: level 4 (CLASS in graph.ts) ------------------------------------------------- */
+
+.cls {
+  --accent: var(--k-adapter);
+  width: 100%;
+  height: 100%;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition:
+    opacity 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.cls.iface {
+  --accent: var(--k-port);
+}
+
+.cls:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.cls.lit {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.cls.selected {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent),
+    var(--shadow-lg);
+}
+
+.cls.stub {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  box-shadow: none;
+}
+
+.cls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  /* CLASS.head less the card's 1px top border; with the bottom border the measured sizes come out
+     exactly. */
+  height: 37px;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
+}
+
+.cls.stub .cls-head {
+  background: transparent;
+  border-bottom-color: var(--border);
+}
+
+.cls-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cls.unexported .cls-name {
+  font-weight: 520;
+  color: var(--text-2);
+}
+
+.cls-pkg {
+  color: var(--muted);
+  font-weight: 450;
+}
+
+.cls-badge {
+  flex: none;
+  height: 18px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.cls-section {
+  padding: 6px 12px;
+}
+
+.cls-section + .cls-section {
+  border-top: 1px solid var(--border);
+}
+
+.cls-line {
+  display: flex;
+  height: 18px;
+  line-height: 18px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cls-member {
+  font-weight: 500;
+  color: var(--text);
+  margin-right: 0.6ch;
+}
+
+.cls-member.method {
+  margin-right: 0;
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+}
+
+.cls-type {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cls-line.muted .cls-member {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.cls-line.muted .cls-type {
+  color: var(--faint);
+}
+
+.cls-line.related .cls-member {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  text-underline-offset: 3px;
+}
+
+.cls-more {
+  height: 23px;
+  line-height: 18px;
+  padding: 1px 12px 5px;
+  font-size: 11px;
+  color: var(--faint);
+}
+
+/* ---- edges (LABEL in graph.ts) ------------------------------------------------------------- */
+
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}
+
+.edge-line {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  transition:
+    stroke 0.2s,
+    opacity 0.2s,
+    stroke-width 0.2s;
+}
+
+g.edge-implements .edge-line {
+  stroke-dasharray: 5 4;
+}
+
+g.edge-embeds .edge-line {
+  stroke-dasharray: 1.5 3.5;
+  stroke-linecap: round;
+}
+
+.edge-head {
+  transition:
+    fill 0.2s,
+    stroke 0.2s,
+    opacity 0.2s;
+}
+
+.edge-head.solid {
+  fill: var(--edge);
+  stroke: none;
+}
+
+.edge-head.hollow {
+  fill: var(--canvas);
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
+}
+
+.edge-head.open {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+g.edge.lit .edge-line,
+g.edge.selected .edge-line {
+  stroke: var(--edge-lit);
+  stroke-width: 1.8;
+}
+
+g.edge.lit .edge-head.solid,
+g.edge.selected .edge-head.solid {
+  fill: var(--edge-lit);
+}
+
+g.edge.lit .edge-head.hollow,
+g.edge.lit .edge-head.open,
+g.edge.selected .edge-head.hollow,
+g.edge.selected .edge-head.open {
+  stroke: var(--edge-lit);
+}
+
+g.edge.dim {
+  opacity: 0.18;
+}
+
+/* What moves, on a lit edge: a dash running from caller to callee. */
+path.edge-flow {
+  fill: none;
+  stroke: var(--edge-lit);
+  stroke-width: 1.8;
+  stroke-dasharray: 2 12;
+  stroke-linecap: round;
+  opacity: 0.9;
+  animation: flow 0.9s linear infinite;
+}
+
+@keyframes flow {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+
+.pill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  /* LABEL.padY and padX less the 1px border, which the measured size includes. */
+  padding: 4px 7px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--text-2);
+  pointer-events: all;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    opacity 0.2s,
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.pill:hover,
+.pill.lit {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.pill.selected {
+  border-color: var(--edge-lit);
+}
+
+.pill.dim {
+  opacity: 0.25;
+}
+
+.pill-grid {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.pill-chip {
+  flex: none;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.pill-text {
+  min-width: 0;
+  text-align: left;
+}
+
+.pill-send,
+.pill-back {
+  display: block;
+}
+
+.pill-send {
+  font-weight: 500;
+}
+
+.pill-back {
+  color: var(--muted);
+}
+
+.pill-arrow {
+  display: inline-block;
+  width: 12px;
+  color: var(--faint);
+}
+
+.pill.mono {
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 6px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+/* ---- side panel -------------------------------------------------------------------------- */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+
+.panel-nav {
+  flex: none;
+  padding: 10px 14px 0;
+}
+
+.back {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px 0 6px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.back:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 22px 28px;
+  animation: panel-in 0.22s ease-out;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.panel-header {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--accent) 75%, var(--muted));
+}
+
+.panel-eyebrow .level-pill {
+  letter-spacing: 0.04em;
+}
+
+.eyebrow-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.outside {
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.panel-header h2 {
+  margin: 10px 0 0;
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.panel-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.panel-sub code {
+  font-size: 11.5px;
+}
+
+.lead {
+  margin: 12px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.generated,
+.source {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.generated svg,
+.source svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.source {
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+.doc {
+  margin: 16px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+  white-space: pre-line;
+}
+
+.panel-section {
+  padding-top: 20px;
+}
+
+.panel-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 11px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+
+.flows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.flow {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.flow:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.flow-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.flow-dir {
+  display: none;
+}
+
+.flow-peer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 560;
+  color: var(--text);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.chip {
+  height: 17px;
+  line-height: 17px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0;
+  background: var(--surface-3);
+  color: var(--muted);
+}
+
+.flow-head .chip {
+  margin-left: auto;
+}
+
+.flow-send {
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.flow-back {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.flow-back span {
+  color: var(--faint);
+}
+
+.flow-big {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.flow-big-dir {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding-top: 2px;
+}
+
+.panel-ends {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 16px;
+}
+
+.end {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  color: var(--text);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.end:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.end-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+}
+
+.end-role {
+  width: 30px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+
+.end-name {
+  flex: 1;
+  text-align: left;
+  font-weight: 560;
+}
+
+.end svg:last-child {
+  color: var(--faint);
+}
+
+.port-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.port-members code {
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+}
+
+.open {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 38px;
+  margin-top: 16px;
+  padding: 0 12px;
+  border-radius: 9px;
+  background: var(--text);
+  color: var(--surface);
+  font-size: 12.5px;
+  font-weight: 560;
+  transition: opacity 0.15s;
+}
+
+.open svg:last-child {
+  margin-left: auto;
+}
+
+.open:hover {
+  opacity: 0.88;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.tag:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--accent);
+}
+
+.rels {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rel-row {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.rel-kind {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+  padding-top: 3px;
+}
+
+.rel-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.link {
+  font-family:
+    ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  text-decoration-color: var(--text);
+}
+
+.link.off {
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.via {
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.members {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.member code {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.member code b {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.member p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.member.muted code,
+.member.muted code b {
+  color: var(--muted);
+  font-weight: 450;
+}
+
+/* A host card's footer showing or folding the adapters behind it. */
+.card-fold svg {
+  transform: rotate(90deg);
+  transition: transform 0.15s;
+}
+
+.card-fold.unfolded svg {
+  transform: rotate(-90deg);
+}
+
+/* ---- walk-throughs ------------------------------------------------------------------------- */
+
+/* The top level's two lines on what you're looking at and where to begin. */
+.start-here {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  max-width: calc(100% - 32px);
+  margin: 0;
+  padding: 8px 12px;
+  white-space: pre-line;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+  z-index: 5;
+}
+
+.flowbar {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(680px, calc(100% - 150px));
+  padding: 11px 14px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+  z-index: 6;
+}
+
+.flowbar-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.flowbar-name {
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.flowbar-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.flowbar-dots > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.flowbar-dots > span.done {
+  background: var(--muted);
+}
+
+.flowbar-dots > span.on {
+  background: var(--text);
+}
+
+.flowbar-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+.flowbar-close:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.flowbar-caption {
+  margin: 6px 0 9px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  animation: panel-in 0.22s ease-out;
+}
+
+.flowbar-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.flowbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+.flowbar-btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+.flowbar-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.flowbar-btn.flowbar-play {
+  margin-left: auto;
+}
+
+/* The panel's list of a level's walk-throughs; the open one lists its steps. */
+.walks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.walk {
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.walk.on {
+  border-color: var(--text-2);
+}
+
+.walk-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.walk-head:hover {
+  background: var(--surface-2);
+  border-radius: 10px;
+}
+
+.walk-head .count {
+  margin-left: auto;
+}
+
+.walk-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.walk-steps {
+  margin: 0;
+  padding: 0 12px 10px 12px;
+  list-style: none;
+  counter-reset: step;
+}
+
+.walk-steps li button {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 7px;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.walk-steps li button::before {
+  counter-increment: step;
+  content: counter(step);
+  flex: none;
+  width: 16px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+
+.walk-steps li button:hover {
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+
+.walk-steps li.on button {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.play-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-2);
+}
+
+.play-all:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+
+/* Why a card is built the way it is, and the decisions behind it, folded. */
+.why {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+.why-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.panel-setting {
+  margin-top: 12px;
+}
+
+.panel-setting code {
+  display: inline-block;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.panel-setting .nowrap {
+  white-space: nowrap;
+}
+
+.panel-setting p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.decisions {
+  margin-top: 18px;
+  font-size: 12px;
+}
+
+.decisions summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.decisions summary:hover {
+  color: var(--text-2);
+}
+
+.decisions ul {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.decisions li {
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+
+.decisions li:first-child {
+  border-top: 0;
+}
+
+.decisions a {
+  color: var(--text);
+  font-weight: 540;
+  text-decoration: none;
+}
+
+.decisions a:hover {
+  text-decoration: underline;
+}
+
+.decisions li p {
+  margin: 2px 0 0;
+  line-height: 1.5;
+  color: var(--muted);
+}

@@ -1,0 +1,25 @@
+[project]
+name = "stt"
+version = "0"
+description = "Speech-to-text for voice (OpenAI's realtime transcription API, by Moonshine) and the end-of-turn check"
+# The exact version is in .python-version, the one place it is set.
+requires-python = "==3.14.*"
+dependencies = ["aiohttp>=3.14.5", "moonshine-voice>=0.1.6", "numpy>=2.5.5", "onnxruntime>=1.32.0"]
+
+[tool.uv]
+# uv's version, the one place it is set: uv refuses to run at another, and CI installs this one.
+required-version = "==0.13.7"
+
+[dependency-groups]
+dev = ["pytest>=9.2.0", "ruff>=0.17.5"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Ruff's defaults, plus sorted imports, likely bugs and syntax the pinned Python has outgrown.
+select = ["E4", "E7", "E9", "F", "I", "B", "UP"]

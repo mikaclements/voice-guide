@@ -1,0 +1,8 @@
+// The files Node runs, not the browser: the dev server's config, the tests, which `node --test`
+// runs, and the screenshot check. Only they get Node's types.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"] },
+  "include": ["vite.config.ts", "src/**/*.test.ts", "check.ts"],
+  "exclude": []
+}

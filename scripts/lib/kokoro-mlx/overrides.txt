@@ -1,0 +1,3 @@
+# num2words's command line needs docopt, which has no wheel; the library misaki calls doesn't import
+# it. A marker that never matches leaves it out.
+docopt ; sys_platform == "never"
