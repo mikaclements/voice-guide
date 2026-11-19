@@ -10,15 +10,19 @@ import (
 // in the browser and the reply would end before it was heard. Once ctx ends,
 // as when the user cuts in, or a packet won't go, it stops playing and reads
 // the rest, so text-to-speech can finish. It records each packet it sent, and
-// tells onAir when each went out and when it stopped sending.
-func play(ctx context.Context, conn Connection, speech <-chan Packet, clock clock, onAir func(at time.Time, playing bool)) played {
+// tells onAir when each went out and when it stopped sending. due is when the
+// reply before's next packet would have gone out, zero before any: the pause
+// since then is a silence like any other, so the audio keeps to real time
+// between replies too; uncounted, the browser took the next reply as arriving
+// seconds late and now and then held its first sound back for about a second.
+func play(ctx context.Context, conn Connection, speech <-chan Packet, clock clock, due time.Time, onAir func(at time.Time, playing bool)) played {
 	var p played
 	defer func() {
 		if p.stopped.IsZero() {
 			onAir(clock.Now(), false)
 		}
 	}()
-	var next time.Time
+	next := due
 	stopped := false
 	n := 0 // the packet's number in its phrase
 	for packet := range speech {

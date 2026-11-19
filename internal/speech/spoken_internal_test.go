@@ -606,7 +606,7 @@ func TestSpeechHeldOverTheAgentStopsItsReplyWithinAFrameOfTheInterruptSpeech(t *
 		packets <- Packet{Opus: []byte{0xf8, 0xff, 0xfe}}
 	}
 	close(packets)
-	p := play(speaking, conn, packets, h.clock, func(at time.Time, on bool) { h.replies.aired.note(run, at, on) })
+	p := play(speaking, conn, packets, h.clock, time.Time{}, func(at time.Time, on bool) { h.replies.aired.note(run, at, on) })
 
 	// The speech began at sample 5120, which arrived with the 17th packet, 320 ms in. It was held at
 	// the end of the frame that completes 0.2 s of it, 224 ms, which arrived with the 28th packet,

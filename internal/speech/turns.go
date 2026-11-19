@@ -118,9 +118,12 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 	var playing sync.WaitGroup
 	stopped := make(chan struct{})
 	onAir := func(at time.Time, on bool) { r.aired.note(run, at, on) }
+	// Read before this reply plays: the reply before has stopped playing, as
+	// this turn waited for it to.
+	due := r.aired.due()
 	playing.Go(func() {
 		defer close(stopped)
-		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, onAir)
+		audio = play(speaking, gatedConn{Connection: r.conn, run: run, clock: s.clock}, s.tts.Speak(speaking, s.settings.Voice, text), s.clock, due, onAir)
 	})
 	var firstText time.Time
 	turn, err := s.conversation.TakeTurn(ctx, r.caller, req, s.forward(speaking, r.conn, run, request, text, &firstText))
