@@ -19,6 +19,7 @@ import {
   whyOver,
 } from "./ending.ts";
 import { ReplySoundClock, shownReply } from "./replysound.ts";
+import { Screen, type ScreenBlock } from "./screen.ts";
 import { type Message, type Page, type Reply, Sender, transcriptPage } from "./sending.ts";
 import { SpokenTurns } from "./spoken.ts";
 import { httpTurns, type Turns } from "./turns.ts";
@@ -124,7 +125,7 @@ export function view(s: State, interrupts: boolean, agent = "Agent"): Shown {
 
 // What a session is handed when joined, and tells back: what to show, the words of a
 // send that wasn't taken, and, once, that the session is over, refused coming first with what made
-// it unusable.
+// it unusable; and why voice refused a block of the screen, which the session goes on without.
 export type Joining = {
   session: string;
   ticket: string;
@@ -135,6 +136,7 @@ export type Joining = {
   giveBack(words: string): void;
   ended(reason: Over): void;
   refused(refusal: { message: string; status?: number; type?: string }): void;
+  screenRefused?(message: string): void;
 };
 
 // One audio connection the session holds, with its playback once the agent's stream arrives; asked
@@ -170,6 +172,8 @@ export class JoinedSession {
   private readonly clock = new ReplySoundClock();
   private readonly sender: Sender;
   private readonly spoken: SpokenTurns;
+  // What the product's screen shows, which goes with the turns on whichever way they travel.
+  private readonly screen: Screen;
   // Whether the agent's opening was asked for over HTTP, which happens once, when the first try at
   // the audio connection fails; each connection that opens asks on its data channel.
   private openedInText = false;
@@ -182,6 +186,9 @@ export class JoinedSession {
     this.deps = deps;
     this.open = open;
     this.play = play;
+    this.screen = new Screen((message) => {
+      if (!this.left) this.deps.screenRefused?.(message);
+    });
     this.turns = this.httpTurns();
     const page: Page = {
       ...transcriptPage(
@@ -208,6 +215,11 @@ export class JoinedSession {
       this.note({ error: insecureMessage });
       this.markOver("unusable", insecureMessage);
     }
+  }
+
+  // What the product's screen shows now: each block that changed goes with the next turn.
+  showScreen(blocks: readonly ScreenBlock[]): void {
+    this.screen.set(blocks);
   }
 
   // Sends the user's words, unless a send can't go now; resolves once the turn and its audio end.
@@ -300,8 +312,11 @@ export class JoinedSession {
 
   private httpTurns(): Turns {
     const signal = this.stop.signal;
-    return httpTurns(this.deps.session, this.deps.ticket, (path, init) =>
-      this.deps.fetcher(path, { ...init, signal }),
+    return httpTurns(
+      this.deps.session,
+      this.deps.ticket,
+      (path, init) => this.deps.fetcher(path, { ...init, signal }),
+      this.screen,
     );
   }
 
@@ -370,6 +385,7 @@ export class JoinedSession {
           onRefused: () => this.note({ microphone: microphoneRefused }),
           onUserSpeech: (id, words, follow, lost) =>
             this.spoken.onUserSpeech(id, words, follow, lost),
+          screen: this.screen,
         },
       );
       mine = connection;

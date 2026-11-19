@@ -2,6 +2,7 @@
 // ended and was timed.
 import { authorized, problemFrom } from "./api.ts";
 import { EventParser } from "./events.ts";
+import type { Screen, ScreenBlock } from "./screen.ts";
 
 // How a turn ended: done, or lost when the reply didn't finish (the text so far is kept), with what
 // answered it as provider/model. A spoken reply also says when its audio has stopped.
@@ -34,22 +35,39 @@ export interface Turns {
   ): Promise<TurnEnd>;
 }
 
-// What a turn sends: the words, or the opening, which carries none.
-export const turnBody = (requestId: string, words: string, opening = false) =>
-  opening ? { request_id: requestId, opening: true } : { request_id: requestId, words };
+// What a turn sends: the words, or the opening, which carries none, and any screen input with it.
+export const turnBody = (
+  requestId: string,
+  words: string,
+  opening = false,
+  screen: ScreenBlock[] = [],
+) => ({
+  request_id: requestId,
+  ...(opening ? { opening: true } : { words }),
+  ...(screen.length > 0 && { screen_input: screen }),
+});
 
-export function httpTurns(sessionId: string, ticket: string, fetcher: typeof fetch = fetch): Turns {
+// Turns over HTTP, each carrying the screen's blocks voice hasn't saved with a turn yet.
+export function httpTurns(
+  sessionId: string,
+  ticket: string,
+  fetcher: typeof fetch = fetch,
+  screen?: Screen,
+): Turns {
   return {
     interrupts: false,
     async take(words, requestId, onText, opening) {
+      const blocks = screen?.pending() ?? [];
       const res = await authorized(
         ticket,
         fetcher,
         "POST",
         `/v1/sessions/${sessionId}/turns`,
-        turnBody(requestId, words, opening),
+        turnBody(requestId, words, opening, blocks),
       );
       if (!res.ok || !res.body) throw await problemFrom(res);
+      // The stream starts only once voice has saved the turn, so its blocks went with it.
+      screen?.carried(blocks);
       const reader = res.body.getReader();
       const parser = new EventParser();
       const decoder = new TextDecoder();
