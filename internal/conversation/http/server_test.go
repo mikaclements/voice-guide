@@ -449,9 +449,9 @@ func TestTheBodyLimitAlwaysFitsTheSessionContextLimit(t *testing.T) {
 	}
 }
 
-func TestSessionContextAtTheDefaultLimitStartsAndOneCharacterMoreIsA413(t *testing.T) {
-	// The service's default, 400,000 characters, split between a document the conversation reads
-	// and one only the summary reads, since the limit counts both.
+func TestSessionContextAtTheLimitStartsAndOneCharacterMoreIsA413(t *testing.T) {
+	// 400,000 characters, the most the body limits are sized for, split between a document the
+	// conversation reads and one only the summary reads, since the limit counts both.
 	const limit = 400_000
 	f := keeperExpectingDocuments(t, limit)
 	for extra, want := range map[int]int{0: nethttp.StatusCreated, 1: nethttp.StatusRequestEntityTooLarge} {

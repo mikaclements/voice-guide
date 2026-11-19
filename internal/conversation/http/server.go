@@ -53,7 +53,7 @@ type agentJSON struct {
 	Description string `json:"description"`
 	// What a product must send when it starts a session with this agent, by name.
 	SessionContext []string `json:"session_context"`
-	// What it may also send that only the summary reads, by name.
+	// What the summary reads, by name: those not under session_context it may also send.
 	SummaryDocuments []string `json:"summary_documents"`
 }
 

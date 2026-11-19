@@ -41,8 +41,9 @@ WHERE workspace_id = @workspace_id AND id = @id;
 
 -- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
 -- @before, the last id of the page before, is where this one starts.
+-- A list reads no session's documents, which may be long and which nothing listing them uses.
 -- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, '[]'::jsonb AS session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
 ORDER BY id DESC
 LIMIT @page_size;

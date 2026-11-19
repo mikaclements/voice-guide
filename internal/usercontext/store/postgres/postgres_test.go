@@ -160,8 +160,8 @@ func TestTheTableRefusesWhatAnItemMayNotBe(t *testing.T) {
 		"an unknown kind": {func() error {
 			return insert(pool, uuid.NewV7(), workspace, sailor, "diary", "Saw a whale.", uuid.Nil())
 		}, check, "context_items_kind_check"},
-		"a document, which a product sends as session context": {func() error {
-			return insert(pool, uuid.NewV7(), workspace, sailor, "document", "Deckhand, two seasons.", uuid.Nil())
+		"a resume, which a product sends as session context": {func() error {
+			return insert(pool, uuid.NewV7(), workspace, sailor, "resume", "Deckhand, two seasons.", uuid.Nil())
 		}, check, "context_items_kind_check"},
 		"an ID that isn't a UUIDv7": {func() error {
 			return insert(pool, uuid.NewV4(), workspace, sailor, usercontext.KindProfile, "Likes the night watch.", uuid.Nil())

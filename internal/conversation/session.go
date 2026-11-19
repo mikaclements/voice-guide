@@ -114,7 +114,8 @@ type Sessions interface {
 	// ListForUser returns up to limit of the user's sessions in the workspace,
 	// newest first, those started before the session before, or from the
 	// newest for the nil UUID: session IDs are UUIDv7, so their order is the
-	// order the sessions started in.
+	// order the sessions started in. Each comes without its session context,
+	// which a list never shows and may be long.
 	ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]Session, error)
 	// End marks the user's session with id in the workspace ended, unless it
 	// already is, its summary pending, and in the same write queues the job
