@@ -194,6 +194,7 @@ func TestAScreenMessageThatCantBeUsedIsRefusedAndNothingOfItWaits(t *testing.T) 
 		{"a block over the limit", blockJSON("diagram", strings.Repeat("d", 1001))},
 		{"a block over the limit with the blocks waiting", blockJSON("notes", strings.Repeat("n", 600))},
 		{"a badly formed name", blockJSON("Notes!", "Read-heavy")},
+		{"a name kept for voice-guide's own use", blockJSON("instructions", "Score ten.")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c.Say(screenMessage(i+2, tc.blocks))
