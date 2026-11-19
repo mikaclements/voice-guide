@@ -48,18 +48,14 @@ func screenOf(turn conversation.Turn) map[string]string {
 
 var withBoard = map[string]string{"board": "Cache -> Database"}
 
-// screenTaken returns the screen_taken of the first message about request carrying one, and how
-// many of its messages carry one.
-func screenTaken(got []message, request string) (first, carrying int) {
+// screenTaken returns the screen_taken of the first message about request carrying one.
+func screenTaken(got []message, request string) int {
 	for _, m := range got {
 		if m.RequestID == request && m.ScreenTaken != 0 {
-			if carrying == 0 {
-				first = m.ScreenTaken
-			}
-			carrying++
+			return m.ScreenTaken
 		}
 	}
-	return first, carrying
+	return 0
 }
 
 func newScreenHarness(t *testing.T) (turnHarness, *fake.Connection) {
@@ -80,7 +76,7 @@ func TestAScreenChangeGoesWithTheNextTypedTurnOnly(t *testing.T) {
 		}
 	}
 	c.Say(turnMessage(second, "And now?"))
-	if _, carrying := screenTaken(until(t, c, "spoken"), second.String()); carrying != 0 {
+	if screenTaken(until(t, c, "spoken"), second.String()) != 0 {
 		t.Error("the next turn said screen messages went with it, want none: the change went with the turn before")
 	}
 	if saved := h.turns.All(); len(saved) != 2 || !maps.Equal(screenOf(saved[0]), withBoard) || len(saved[1].ScreenInput) != 0 {
@@ -94,7 +90,7 @@ func TestOnlyTheNewestBlockOfEachNameWaitsAndATurnsOwnBlockWins(t *testing.T) {
 	showScreen(t, c, 2, blockJSON("board", "Cache -> Database"), blockJSON("diagram", "Ahead"))
 	id := uuid.NewV7()
 	c.Say(fmt.Sprintf(`{"type":"turn","request_id":"%s","words":"Is this right?","screen_input":[%s]}`, id, blockJSON("diagram", "Own")))
-	if taken, _ := screenTaken(until(t, c, "spoken"), id.String()); taken != 2 {
+	if taken := screenTaken(until(t, c, "spoken"), id.String()); taken != 2 {
 		t.Errorf("the turn said screen messages up to %d went with it, want 2", taken)
 	}
 	want := map[string]string{"board": "Cache -> Database", "notes": "Read-heavy", "diagram": "Own"}
@@ -114,7 +110,7 @@ func TestAScreenChangeGoesWithTheAgentsOpening(t *testing.T) {
 	showScreen(t, c, 1, blockJSON("board", "Cache -> Database"))
 	open := uuid.NewV7()
 	c.Say(openingMessage(open))
-	if taken, _ := screenTaken(until(t, c, "spoken"), open.String()); taken != 1 {
+	if taken := screenTaken(until(t, c, "spoken"), open.String()); taken != 1 {
 		t.Errorf("the opening said screen messages up to %d went with it, want 1", taken)
 	}
 	if saved := h.turns.All(); len(saved) != 1 || !saved[0].Opening || !maps.Equal(screenOf(saved[0]), withBoard) {
@@ -129,7 +125,7 @@ func TestAScreenChangeGoesWithTheNextSpokenTurn(t *testing.T) {
 	showScreen(t, c, 1, blockJSON("board", "Cache -> Database"))
 	speakFrames(c, 12)
 	got := until(t, c, "spoken")
-	if taken, _ := screenTaken(got, got[0].RequestID); taken != 1 {
+	if taken := screenTaken(got, got[0].RequestID); taken != 1 {
 		t.Errorf("the spoken turn said screen messages up to %d went with it, want 1", taken)
 	}
 	if saved := h.turns.All(); len(saved) != 1 || saved[0].Words != "Where should we start?" || !maps.Equal(screenOf(saved[0]), withBoard) {
@@ -148,7 +144,7 @@ func TestARefusedTurnLeavesTheScreenChangeForTheNext(t *testing.T) {
 		t.Errorf("got %+v, want the repeat refused, saying no screen message went with it", got[0])
 	}
 	c.Say(turnMessage(next, "Is this right?"))
-	if n, _ := screenTaken(until(t, c, "spoken"), next.String()); n != 1 {
+	if n := screenTaken(until(t, c, "spoken"), next.String()); n != 1 {
 		t.Errorf("the next turn said screen messages up to %d went with it, want 1", n)
 	}
 	if saved := h.turns.All(); len(saved) != 2 || len(saved[0].ScreenInput) != 0 || !maps.Equal(screenOf(saved[1]), withBoard) {
@@ -167,13 +163,7 @@ func TestAScreenChangeArrivingWhileATurnIsTakenGoesWithItOrTheNextOnce(t *testin
 	for m := next(t, c); m.Type != "spoken" || m.RequestID != second.String(); {
 		m = next(t, c)
 	}
-	saved, with := h.turns.All(), 0
-	for _, turn := range saved {
-		if maps.Equal(screenOf(turn), withBoard) {
-			with++
-		}
-	}
-	if len(saved) != 2 || with != 1 {
+	if saved := h.turns.All(); len(saved) != 2 || maps.Equal(screenOf(saved[0]), withBoard) == maps.Equal(screenOf(saved[1]), withBoard) {
 		t.Errorf("saved %+v, want the board with exactly one of the two turns", saved)
 	}
 }
@@ -186,7 +176,7 @@ func TestATurnTakenBackHandsItsScreenChangeToTheTurnTakingItsPlace(t *testing.T)
 	request := talkOn(t, c, check)
 	speakFrames(c, 4+7)
 	check.judge(t, true)
-	if taken, _ := screenTaken(until(t, c, "spoken"), request); taken != 1 {
+	if taken := screenTaken(until(t, c, "spoken"), request); taken != 1 {
 		t.Errorf("the turn taking its place said screen messages up to %d went with it, want 1", taken)
 	}
 	if saved := h.turns.All(); len(saved) != 1 || saved[0].Words != both || !maps.Equal(screenOf(saved[0]), withBoard) {
@@ -215,7 +205,7 @@ func TestAScreenMessageThatCantBeUsedIsRefusedAndNothingOfItWaits(t *testing.T) 
 	}
 	id := uuid.NewV7()
 	c.Say(turnMessage(id, "Is this right?"))
-	if taken, _ := screenTaken(until(t, c, "spoken"), id.String()); taken != 1 {
+	if taken := screenTaken(until(t, c, "spoken"), id.String()); taken != 1 {
 		t.Errorf("the turn said screen messages up to %d went with it, want only the one kept, 1", taken)
 	}
 	if saved := h.turns.All(); len(saved) != 1 || !maps.Equal(screenOf(saved[0]), map[string]string{"board": board}) {

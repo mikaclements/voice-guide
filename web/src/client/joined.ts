@@ -312,12 +312,8 @@ export class JoinedSession {
 
   private httpTurns(): Turns {
     const signal = this.stop.signal;
-    return httpTurns(
-      this.deps.session,
-      this.deps.ticket,
-      (path, init) => this.deps.fetcher(path, { ...init, signal }),
-      this.screen,
-    );
+    const fetcher: typeof fetch = (path, init) => this.deps.fetcher(path, { ...init, signal });
+    return httpTurns(this.deps.session, this.deps.ticket, fetcher, this.screen);
   }
 
   private set(change: Partial<State>): void {

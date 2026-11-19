@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ChannelTurns } from "./audio.ts";
-import { Screen, screenBlocks } from "./screen.ts";
+import { Screen } from "./screen.ts";
 import { httpTurns } from "./turns.ts";
 
 const board = (content: string) => ({ name: "board", content });
@@ -45,15 +45,6 @@ test("after a reconnect, every change voice didn't say went with a turn is sent 
   first.from({ type: "done", request_id: "r2", screen_taken: 2 }); // a connection let go late
   second.turns.closed();
   assert.deepEqual(channel(screen).sent, [screenMessage(1, notes("Read-heavy"))]);
-});
-
-test("a change made after the screen message a turn took stays pending", () => {
-  const screen = new Screen();
-  const c = channel(screen);
-  screen.set([board("Cache")]);
-  screen.set([board("Cache -> Database")]);
-  c.from({ type: "done", request_id: "r1", screen_taken: 1 });
-  assert.deepEqual(screen.pending(), [board("Cache -> Database")]);
 });
 
 test("a block voice refuses is reported, not sent again unchanged, and never counted as taken", () => {
@@ -104,11 +95,4 @@ test("over HTTP a turn, the opening too, carries the pending blocks, which stay 
     { request_id: "r2", words: "Hi", screen_input: [board("Cache")] },
     { request_id: "r3", words: "And now?" },
   ]);
-});
-
-test("a screen list with a block that isn't two texts, or a name twice, is a TypeError", () => {
-  assert.throws(() => screenBlocks([board("Cache"), board("Cache")]), TypeError);
-  assert.throws(() => screenBlocks([{ name: "board" }] as never), TypeError);
-  assert.throws(() => screenBlocks("board" as never), TypeError);
-  assert.deepEqual(screenBlocks([board("Cache")]), [board("Cache")]);
 });

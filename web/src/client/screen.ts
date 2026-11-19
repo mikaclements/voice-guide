@@ -1,9 +1,7 @@
-// What the product's screen shows, as the page hands it to the element: named text blocks that go
-// to the agent with the turns. A block voice hasn't saved with a turn as it is now is pending. With
-// audio up, each change goes at once as its own `screen` message on the data channel, which voice
-// holds for the next turn taken there, spoken, typed or the opening; over HTTP, a typed turn carries
-// the pending blocks itself. A connection that drops loses what voice held for it, so every change
-// not yet saved goes again on the next.
+// What the product's screen shows, as named text blocks for the agent. A block voice hasn't saved
+// with a turn as it is now is pending: with audio up, each change goes at once on the data channel,
+// held by voice for the next turn there, and again on the next connection until a turn takes it;
+// over HTTP, a typed turn carries the pending blocks itself.
 
 export type ScreenBlock = { name: string; content: string };
 
