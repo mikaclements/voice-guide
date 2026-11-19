@@ -904,3 +904,29 @@ func TestASessionStartedBeforeARepublishKeepsItsVersionsModel(t *testing.T) {
 		t.Errorf("the model was asked %+v, want claude-haiku-5-5 for a session started after the republish", asked)
 	}
 }
+
+func TestATurnSendsTheCriteriaOfItsSessionsAgentVersionEvenAfterANewOneIsPublished(t *testing.T) {
+	h := newServiceOverFakes(t)
+	graded := agents.Agent{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea.", Summary: instruction, Grading: agents.Grading{
+		Lowest: 1, Highest: 5, Criteria: []agents.Criterion{{Name: "fog_calls", LooksFor: "Answers every call in the fog."}},
+	}}
+	h.publish(t, graded)
+	s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+	h.takeTurn(t, turnIn(s.ID, "Is the lamp lit?"))
+	graded.Grading.Criteria[0] = agents.Criterion{Name: "lamp_care", LooksFor: "Keeps the lamp lit."}
+	h.publish(t, graded)
+	h.takeTurn(t, turnIn(s.ID, "And the fog?"))
+
+	asked, _ := h.model.Requests()
+	if len(asked) != 2 {
+		t.Fatalf("the model was asked %d times, want 2", len(asked))
+	}
+	for i, r := range asked {
+		if layer := r.StableLayers[0]; !strings.Contains(layer, "<fog_calls>\nAnswers every call in the fog.\n</fog_calls>") || strings.Contains(layer, "lamp_care") {
+			t.Errorf("turn %d's agent layer = %q, want the session's version's criteria only", i+1, layer)
+		}
+	}
+	if asked[0].StableLayers[0] != asked[1].StableLayers[0] {
+		t.Error("the agent layer changed between the session's turns, want the same bytes")
+	}
+}

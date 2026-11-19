@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
@@ -153,5 +154,31 @@ func TestTheNoteComesBeforeTheScreenInput(t *testing.T) {
 	got := buildPrompt(agentPersona, nil, nil, saved, next).NewWords
 	if want := interruptedNote + "\n\n<weather>\nFog.\n</weather>\n\nHold on."; got != want {
 		t.Errorf("new words = %q, want %q", got, want)
+	}
+}
+
+func TestTheAgentLayerIsThePersonaAloneWhenNothingIsGraded(t *testing.T) {
+	a := agents.Agent{Persona: agentPersona + "\n", Summary: "Note the ships.", SummaryModel: "claude-opus-5-5"}
+	if got := agentLayer(a); got != agentPersona+"\n" {
+		t.Errorf("agent layer = %q, want the persona exactly as written", got)
+	}
+}
+
+func TestTheAgentLayerHoldsTheCriteriaAndTheScaleAfterThePersona(t *testing.T) {
+	a := agents.Agent{Persona: agentPersona + "\n", Summary: "Note the ships.", Grading: agents.Grading{
+		Lowest: 1, Highest: 5,
+		Levels:   []agents.Level{{Score: 1, Means: "Lost a ship."}, {Score: 5, Means: "Guided every ship home."}},
+		Criteria: []agents.Criterion{{Name: "fog_calls", LooksFor: "Answers every call in the fog."}, {Name: "lamp_care", LooksFor: "Keeps the lamp lit."}},
+	}}
+	want := agentPersona + "\n\n" +
+		"After this session ends, it is graded on the criteria below, each scored on the scale after them. Steer the conversation so the user has the chance to show each one.\n\n" +
+		"<criteria>\n<fog_calls>\nAnswers every call in the fog.\n</fog_calls>\n<lamp_care>\nKeeps the lamp lit.\n</lamp_care>\n</criteria>\n\n" +
+		"<scale>\nFrom 1, the lowest, to 5, the highest.\n1: Lost a ship.\n5: Guided every ship home.\n</scale>"
+	if got := agentLayer(a); got != want {
+		t.Errorf("agent layer =\n%s\nwant\n%s", got, want)
+	}
+	a.Grading.Levels = nil
+	if got := agentLayer(a); !strings.HasSuffix(got, "<scale>\nFrom 1, the lowest, to 5, the highest.\n</scale>") {
+		t.Errorf("agent layer without levels ends %q, want the scale's ends alone", got[len(got)-60:])
 	}
 }

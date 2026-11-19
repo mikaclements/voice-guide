@@ -189,7 +189,7 @@
       "title": "Agents stored as versions that never change, published from one file per agent",
       "section": "Agents",
       "status": "accepted",
-      "decision": "An agent's versions are database rows that are never changed; a change is saved as the next number. New sessions get the newest version and a running session keeps its own, and publishing from agents/<name>.md is a step of its own, never part of a start.",
+      "decision": "An agent's versions are database rows that are never changed; a change is saved as the next number. New sessions get the newest version and a running session keeps its own, and publishing from agents/<name>.md is a step of its own, never part of a start. Its file's summary section may name the summary's model and the criteria and scale its sessions are graded on, checked at publish.",
       "why": "Any instance may serve a session's next turn, so every instance must find the exact version the session started on, even mid-deploy.",
       "tradeoff": "The file shows only the text it will publish next; earlier versions live in the database."
     },
@@ -279,7 +279,7 @@
       "title": "A layered, cached prompt",
       "section": "Turns · The model",
       "status": "accepted",
-      "decision": "The prompt is built in layers, stable ones first: the agent's persona, the session's context, the append-only conversation, then the screen input and the new words. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
+      "decision": "The prompt is built in layers, stable ones first: the agent's persona with any criteria its sessions are graded on, the session's context, the append-only conversation, then the screen input and the new words. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
       "why": "Every uncached input token adds to the time to the model's first word, and caching cuts it sharply.",
       "tradeoff": "Changes mid-session must arrive as messages, never as edits to the layers above."
     },
@@ -348,10 +348,10 @@
     },
     "session-summary": {
       "ref": "architecture.md#d39",
-      "title": "A session's summary: written by its agent's own model, with the agent's instruction, read back only by that agent",
+      "title": "A session's summary: written by the model its agent names, with the agent's instruction, read back only by that agent",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "When a session ends, a background job asks the session's model, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery.",
+      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery.",
       "why": "What is worth remembering differs per agent, and the agent that wrote the summary is the one that knows what it is for.",
       "tradeoff": "The summary arrives a few seconds after the end, so a session started at once may open without it; each summary is a billed model call."
     },
@@ -970,7 +970,7 @@
                 "conversation-usercontext",
                 "usercontext-postgres"
               ],
-              "caption": "conversation reads the agent's summary instruction, asks the model service for notes on the turns as you heard them, and has user context save the summary"
+              "caption": "conversation reads the agent's summary instruction, asks the model service, on the summary's model, for notes on the turns as you heard them, and has user context save the summary"
             },
             {
               "nodes": ["jobs", "x-postgres", "conversation", "usercontext", "x-product"],

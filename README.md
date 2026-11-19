@@ -380,9 +380,26 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `opens`: who speaks first, `agent` or `user`;
 - `reads`: what the agent may know about the user from earlier sessions;
 - `session_context`: what the product must send at the start, such as the resume;
-- `summary`: how the agent sums up a session for next time;
-- `model`: the model that answers its turns and writes its summary, the server's `VOICE_MODEL` unless set;
+- `summary`: how the agent sums up a session for next time, as a string, or as a mapping that adds what the session is graded on (below);
+- `model`: the model that answers its turns, and writes its summary unless the summary names its own, the server's `VOICE_MODEL` unless set;
 - `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
+
+The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary, a `scale` of two whole numbers, lowest first, with `levels` saying what some scores mean, and the `criteria`, each a `name` (lower-case letters, digits and `_`) and what it `looks_for`. A scale and criteria come together or not at all, and the criteria and scale reach the agent too, so it can steer toward them:
+
+```yaml
+summary:
+  instruction: In under 150 words, tell the user what went well and what to practise.
+  model: claude-opus-5-5
+  scale: [1, 5]
+  levels:
+    1: No evidence of it.
+    5: Clear, specific and their own.
+  criteria:
+    - name: ownership
+      looks_for: Says what they did themselves, not what the team did.
+    - name: impact
+      looks_for: Gives a number for the result and says how it was measured.
+```
 
 The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
 
