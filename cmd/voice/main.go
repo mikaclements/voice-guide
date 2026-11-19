@@ -58,8 +58,11 @@ const defaultContextLimit = 20_000
 // defaultScreenInputLimit is about 10,000 tokens of English with a turn: room for a whiteboard of
 // boxes and arrows, or a document the user is reading, turned into text. Only the newest block of
 // each name is read fresh each turn, the earlier ones standing as one line in the cached
-// conversation. A round guess, checked against the time to first word with a board of about 1,000
-// tokens.
+// conversation, but that block is read fresh on every turn: from Anthropic's published caching
+// figures (a 100,000-token prompt, 11.5 s to the first token uncached, 2.4 s cached), a full
+// 10,000-token board adds about 0.9 s before the first word, and a board of about 1,000 tokens,
+// the size expected, about 0.1 s. A round guess, measured with a 1,000-token board on the real
+// page before the apps that send boards ship.
 const defaultScreenInputLimit = 40_000
 
 // defaultWordsLimit is about 700 words of English in one turn: room for a long answer, while one
