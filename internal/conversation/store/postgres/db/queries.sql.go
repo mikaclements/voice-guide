@@ -17,7 +17,7 @@ const addSession = `-- name: AddSession :one
 INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data
 `
 
 type AddSessionParams struct {
@@ -46,6 +46,7 @@ type AddSessionRow struct {
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 	SummaryStatus  pgtype.Text
+	SummaryData    []byte
 }
 
 // A repeat of the same request inserts nothing; the caller then reads the session it made.
@@ -76,6 +77,7 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.SummaryStatus,
+		&i.SummaryData,
 	)
 	return i, err
 }
@@ -372,8 +374,31 @@ func (q *Queries) RotateWebhookSecret(ctx context.Context, arg RotateWebhookSecr
 	return result.RowsAffected(), nil
 }
 
+const saveSummaryData = `-- name: SaveSummaryData :exec
+UPDATE sessions SET summary_data = $1
+WHERE workspace_id = $2 AND user_id = $3 AND id = $4 AND ended_at IS NOT NULL AND summary_data IS NULL
+`
+
+type SaveSummaryDataParams struct {
+	SummaryData []byte
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	ID          uuid.UUID
+}
+
+// A session keeps the first summary data its summary job saves: a run after a crash saves nothing more.
+func (q *Queries) SaveSummaryData(ctx context.Context, arg SaveSummaryDataParams) error {
+	_, err := q.db.Exec(ctx, saveSummaryData,
+		arg.SummaryData,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.ID,
+	)
+	return err
+}
+
 const sessionByID = `-- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id = $3
 `
 
@@ -396,6 +421,7 @@ type SessionByIDRow struct {
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 	SummaryStatus  pgtype.Text
+	SummaryData    []byte
 }
 
 func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (SessionByIDRow, error) {
@@ -414,6 +440,7 @@ func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (Sessi
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.SummaryStatus,
+		&i.SummaryData,
 	)
 	return i, err
 }
@@ -435,7 +462,7 @@ func (q *Queries) SessionEnded(ctx context.Context, arg SessionEndedParams) (boo
 }
 
 const sessionForRequest = `-- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND request_id = $3
 `
 
@@ -458,6 +485,7 @@ type SessionForRequestRow struct {
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 	SummaryStatus  pgtype.Text
+	SummaryData    []byte
 }
 
 func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestParams) (SessionForRequestRow, error) {
@@ -476,12 +504,13 @@ func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestPa
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.SummaryStatus,
+		&i.SummaryData,
 	)
 	return i, err
 }
 
 const sessionInWorkspace = `-- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -503,6 +532,7 @@ type SessionInWorkspaceRow struct {
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 	SummaryStatus  pgtype.Text
+	SummaryData    []byte
 }
 
 // A product's server names no user, so its reads find a session by its workspace alone.
@@ -522,12 +552,13 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 		&i.StartedAt,
 		&i.EndedAt,
 		&i.SummaryStatus,
+		&i.SummaryData,
 	)
 	return i, err
 }
 
 const sessionsOfUser = `-- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id < $3
 ORDER BY id DESC
 LIMIT $4
@@ -553,6 +584,7 @@ type SessionsOfUserRow struct {
 	StartedAt      time.Time
 	EndedAt        pgtype.Timestamptz
 	SummaryStatus  pgtype.Text
+	SummaryData    []byte
 }
 
 // A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
@@ -584,6 +616,7 @@ func (q *Queries) SessionsOfUser(ctx context.Context, arg SessionsOfUserParams) 
 			&i.StartedAt,
 			&i.EndedAt,
 			&i.SummaryStatus,
+			&i.SummaryData,
 		); err != nil {
 			return nil, err
 		}

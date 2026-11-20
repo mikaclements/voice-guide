@@ -4,6 +4,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"sync"
 	"time"
@@ -170,6 +171,15 @@ func (f *Sessions) QueuedSummaries() []uuid.UUID {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]uuid.UUID(nil), f.summaries...)
+}
+
+// SaveSummaryData saves data on the user's ended session unless it has some.
+func (f *Sessions) SaveSummaryData(ctx context.Context, workspace, user, id uuid.UUID, data json.RawMessage) error {
+	return f.update(ctx, workspace, user, id, func(s *conversation.Session) {
+		if s.Ended() && s.SummaryData == nil {
+			s.SummaryData = data
+		}
+	})
 }
 
 // SettleSummary moves the user's session's summary status from pending to status.

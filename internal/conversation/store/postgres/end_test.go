@@ -431,3 +431,30 @@ func TestTheIdleSweepMarksTheSummaryPendingAndQueuesTheJobThatSettlesIt(t *testi
 		t.Errorf("%d settle jobs after the summary's, %v; want one", settles, err)
 	}
 }
+
+func TestAnEndedSessionKeepsTheFirstSummaryDataSavedOnIt(t *testing.T) {
+	sessions, _ := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	ctx := context.Background()
+	first := json.RawMessage(`{"recipe":"bread","steps":3}`)
+	if err := sessions.SaveSummaryData(ctx, workspace, user, s.ID, first); err != nil {
+		t.Fatalf("SaveSummaryData while live: %v", err)
+	}
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryData != nil {
+		t.Errorf("a live session holds %s, want no data", got.SummaryData)
+	}
+	if _, _, err := sessions.End(ctx, workspace, user, s.ID); err != nil {
+		t.Fatalf("End: %v", err)
+	}
+	for _, data := range []json.RawMessage{first, json.RawMessage(`{"recipe":"soup"}`)} {
+		if err := sessions.SaveSummaryData(ctx, workspace, user, s.ID, data); err != nil {
+			t.Fatalf("SaveSummaryData: %v", err)
+		}
+	}
+	_ = sessions.SaveSummaryData(ctx, elsewhere, user, s.ID, json.RawMessage(`{}`))
+	got, _, _ := sessions.ByID(ctx, workspace, user, s.ID)
+	var read map[string]any
+	if err := json.Unmarshal(got.SummaryData, &read); err != nil || read["recipe"] != "bread" || read["steps"] != 3.0 {
+		t.Errorf("read back %s, want the first data", got.SummaryData)
+	}
+}

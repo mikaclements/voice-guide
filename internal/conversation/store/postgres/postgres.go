@@ -196,6 +196,14 @@ func (st *Sessions) End(ctx context.Context, workspace, user, id uuid.UUID) (con
 	return s, n == 1, nil
 }
 
+// SaveSummaryData saves data on the user's ended session unless it has some.
+func (st *Sessions) SaveSummaryData(ctx context.Context, workspace, user, id uuid.UUID, data json.RawMessage) error {
+	if err := db.New(st.pool).SaveSummaryData(ctx, db.SaveSummaryDataParams{SummaryData: data, WorkspaceID: workspace, UserID: user, ID: id}); err != nil {
+		return fmt.Errorf("save the summary's data: %w", err)
+	}
+	return nil
+}
+
 // SettleSummary moves the user's session's summary status from pending to status.
 func (st *Sessions) SettleSummary(ctx context.Context, workspace, user, id uuid.UUID, status conversation.SummaryStatus) error {
 	if err := db.New(st.pool).SettleSummary(ctx, db.SettleSummaryParams{Status: string(status), WorkspaceID: workspace, UserID: user, ID: id}); err != nil {
@@ -262,7 +270,7 @@ func sessionFrom(r db.SessionForRequestRow) (conversation.Session, error) {
 	return conversation.Session{
 		ID: r.ID, Workspace: r.WorkspaceID, User: r.UserID, Agent: r.AgentID, AgentVersion: int(r.AgentVersion),
 		ContextItems: r.ContextItemIds, SessionContext: blocks, Voice: r.Voice, Speed: r.Speed, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
-		SummaryStatus: conversation.SummaryStatus(r.SummaryStatus.String),
+		SummaryStatus: conversation.SummaryStatus(r.SummaryStatus.String), SummaryData: r.SummaryData,
 	}, nil
 }
 

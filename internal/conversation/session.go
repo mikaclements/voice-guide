@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -40,6 +41,10 @@ type Session struct {
 	// SummaryStatus says whether the ended session's summary is still coming:
 	// empty while it is live.
 	SummaryStatus SummaryStatus
+	// SummaryData is the structured part of the session's summary, in the shape
+	// its agent's summary schema gives: a JSON object, nil until saved and for
+	// good when the agent has no schema.
+	SummaryData json.RawMessage
 }
 
 // Ended says whether the session has ended.
@@ -119,6 +124,9 @@ type Sessions interface {
 	// it: ended again, it keeps the time it first ended and queues nothing.
 	// It returns ErrNoSuchSession when there is no such session.
 	End(ctx context.Context, workspace, user, id uuid.UUID) (Session, bool, error)
+	// SaveSummaryData saves data as the user's ended session's summary data,
+	// unless it has some: the first saved is kept.
+	SaveSummaryData(ctx context.Context, workspace, user, id uuid.UUID, data json.RawMessage) error
 	// SettleSummary moves the user's session's summary status from pending to
 	// status; a status already settled stays.
 	SettleSummary(ctx context.Context, workspace, user, id uuid.UUID, status SummaryStatus) error

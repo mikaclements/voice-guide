@@ -24,25 +24,25 @@ RETURNING user_id;
 INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
 VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context, @voice, @speed)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status;
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data;
 
 -- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND request_id = @request_id;
 
 -- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id;
 
 -- A product's server names no user, so its reads find a session by its workspace alone.
 -- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = @workspace_id AND id = @id;
 
 -- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
 -- @before, the last id of the page before, is where this one starts.
 -- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
 ORDER BY id DESC
 LIMIT @page_size;
@@ -101,6 +101,11 @@ WITH ended AS (
     FROM summaries JOIN webhooks ON webhooks.workspace_id = summaries.workspace_id AND webhooks.stopped_at IS NULL
 )
 SELECT ended.id FROM ended;
+
+-- A session keeps the first summary data its summary job saves: a run after a crash saves nothing more.
+-- name: SaveSummaryData :exec
+UPDATE sessions SET summary_data = @summary_data
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id AND ended_at IS NOT NULL AND summary_data IS NULL;
 
 -- A summary's status moves once, from pending to written or none, and never back.
 -- name: SettleSummary :exec

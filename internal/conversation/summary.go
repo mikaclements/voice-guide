@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -65,11 +66,13 @@ var errTurnInFlight = errors.New("a turn of the session is still in flight")
 
 // Summarize writes the summary of the user's ended session and saves it
 // through user context, for the session's agent to read in its next session
-// with the user. It writes none when the agent asks for none, or the user
-// said nothing in the session, and settles the summary's status either way.
-// It is safe to run more than once: user context keeps one summary per
-// session. It fails, to be run again, while a turn is
-// in flight, and when the model doesn't answer.
+// with the user; for an agent with a summary schema, the same answer holds
+// the summary's data, saved on the session. It writes none when the agent
+// asks for none, or the user said nothing in the session, and settles the
+// summary's status either way. It is safe to run more than once: user context
+// keeps one summary per session and the session its first data, so a
+// run after a crash between the two saves completes the missing one. It fails,
+// to be run again, while a turn is in flight, and when the model doesn't answer.
 func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args SummaryArgs) error {
 	session, found, err := s.sessions.ByID(ctx, workspace, user, args.Session)
 	switch {
@@ -102,13 +105,14 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 	if version.Summary == "" {
 		return s.settle(ctx, session, SummaryNone)
 	}
-	written, err := s.ask(ctx, s.summaryModelOf(version), summaryPrompt(version.Summary, turns))
+	summary, data, err := s.writeSummary(ctx, version, turns)
 	if err != nil {
 		return err
 	}
-	summary := capSummary(written)
-	if summary == "" {
-		return errors.New("the model wrote an empty summary")
+	if data != nil {
+		if err := s.sessions.SaveSummaryData(ctx, workspace, user, session.ID, data); err != nil {
+			return fmt.Errorf("save the summary's data: %w", err)
+		}
 	}
 	if _, err := s.userContext.SaveSummary(ctx, usercontext.SummaryRequest{
 		Workspace: workspace, User: user, Agent: session.Agent, Session: session.ID, SessionEnded: session.EndedAt, Content: summary,
@@ -116,6 +120,46 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 		return fmt.Errorf("save the summary: %w", err)
 	}
 	return s.settle(ctx, session, SummaryWritten)
+}
+
+// writeSummary asks the summary's model for the session's summary, and, when
+// its agent has a summary schema, the summary's data in the same answer:
+// asked once more when the answer fails the check, then given up for the text
+// alone.
+func (s *Service) writeSummary(ctx context.Context, v agents.Version, turns []Turn) (string, json.RawMessage, error) {
+	if v.SummarySchema == nil {
+		written, err := s.ask(ctx, s.summaryModelOf(v), summaryPrompt(v.Summary, turns), nil)
+		if err != nil {
+			return "", nil, err
+		}
+		if summary := capSummary(written); summary != "" {
+			return summary, nil, nil
+		}
+		return "", nil, errors.New("the model wrote an empty summary")
+	}
+	schema, err := summaryDataSchema(v.SummarySchema)
+	if err != nil {
+		return "", nil, fmt.Errorf("encode the summary's schema: %w", err)
+	}
+	prompt := summaryDataPrompt(v.Summary, schema, turns)
+	var summary string
+	for range summaryAsks {
+		answer, err := s.ask(ctx, s.summaryModelOf(v), prompt, schema)
+		if err != nil {
+			return "", nil, err
+		}
+		text, data := readSummaryData(answer)
+		if text != "" {
+			summary = text
+		}
+		if data != nil {
+			return summary, data, nil
+		}
+	}
+	if summary == "" {
+		return "", nil, errNoSummaryText
+	}
+	return summary, nil, nil
 }
 
 // SummarySettleJob is the kind of background job that settles an ended
@@ -172,11 +216,12 @@ func userSpoke(turns []Turn) bool {
 }
 
 // ask asks the model for one whole reply outside any session, so the model
-// service keeps nothing for it and leaves every session's kept state alone.
-func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, error) {
+// service keeps nothing for it and leaves every session's kept state alone;
+// in JSON of schema, for a schema that isn't nil.
+func (s *Service) ask(ctx context.Context, model string, p Prompt, schema json.RawMessage) (string, error) {
 	ctx, stop := context.WithCancel(ctx)
 	defer stop()
-	reply := s.readReply(s.model.Reply(ctx, ModelRequest{Model: model, Prompt: p}), nil, func(string) {})
+	reply := s.readReply(s.model.Reply(ctx, ModelRequest{Model: model, Prompt: p, Schema: schema}), nil, func(string) {})
 	if busy := (*ReplyFailedError)(nil); errors.As(reply.failed, &busy) && busy.Kind == ModelBusy {
 		return "", fmt.Errorf("%w: %w", ErrModelBusy, reply.failed)
 	}
@@ -184,12 +229,17 @@ func (s *Service) ask(ctx context.Context, model string, p Prompt) (string, erro
 }
 
 // summaryPrompt asks for the summary: the agent's instruction in the stable
-// layers, after what the ask is; then, as the user's message, the record: the
-// conversation as the user heard it, in a transcript, each screen input block
-// as the marker where it changed, then the screen, the newest block of each
-// name whole. A board replayed whole at every change would grow the ask
-// with the session until it no longer fits a request.
+// layers, after what the ask is; then, as the user's message, the record.
 func summaryPrompt(instruction string, turns []Turn) Prompt {
+	return Prompt{StableLayers: []string{summaryLayer, instruction}, NewWords: record(turns)}
+}
+
+// record is the session as the summary's call reads it: the conversation as
+// the user heard it, in a transcript, each screen input block as the marker
+// where it changed, then the screen, the newest block of each name whole. A
+// board replayed whole at every change would grow the ask with the session
+// until it no longer fits a request.
+func record(turns []Turn) string {
 	var b strings.Builder
 	b.WriteString("<transcript>\n")
 	note := ""
@@ -210,7 +260,7 @@ func summaryPrompt(instruction string, turns []Turn) Prompt {
 	if len(screen) > 0 {
 		b.WriteString("\n\n" + tagged("screen", strings.Join(whole(screen), "\n\n")))
 	}
-	return Prompt{StableLayers: []string{summaryLayer, instruction}, NewWords: b.String()}
+	return b.String()
 }
 
 // capSummary trims the summary and, past summaryChars, cuts it at the last

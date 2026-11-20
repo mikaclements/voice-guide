@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { transformJSONSchema } from "@anthropic-ai/sdk/lib/transform-json-schema";
 import {
   type ErrorKind,
   type Message,
@@ -138,7 +139,8 @@ function sdkStream(apiKey: string, timeoutMs: number): StreamFn {
 // after its last saved message, so the next turn reads it all from the cache; then the new message,
 // after the cache point, since the newest screen input in it changes from turn to turn. Three cache
 // points of the four the API takes. An ask outside any session is asked once, so caching its
-// conversation would only pay to write it.
+// conversation would only pay to write it. An ask with a
+// schema answers in JSON the API holds to the schema, at the model's own effort (see heldTo).
 function paramsFor(
   r: ReplyRequest,
   maxTokens: number,
@@ -152,13 +154,14 @@ function paramsFor(
   );
   return {
     model: r.model,
-    // Thinking left on counts against the limit, so it gets room enough to leave the text whole.
-    max_tokens: thinking ? maxTokens : BACKGROUND_MAX_TOKENS,
+    // Thinking left on counts against the limit, and a schema's answer carries the author's data, so
+    // either gets room enough to leave the text whole.
+    max_tokens: thinking && !r.schema ? maxTokens : BACKGROUND_MAX_TOKENS,
     ...(system.length > 0 && { system }),
     messages: messagesFor(r.conversation, r.newWords, r.sessionId !== undefined),
     ...(thinking && { thinking }),
     // A spoken reply is short and plain; the least effort reaches its first word soonest.
-    output_config: { effort: "low" },
+    output_config: r.schema ? heldTo(r.schema) : { effort: "low" },
   };
 }
 
@@ -223,4 +226,17 @@ function detailOf(err: unknown): ProviderError["detail"] {
   if (Number.isInteger(err.status)) detail.status = err.status as number;
   if (typeof err.type === "string" && /^[a-z_]+$/.test(err.type)) detail.error_type = err.type;
   return detail;
+}
+
+// The API holds an answer only to the keywords its structured outputs take: the SDK's own transform
+// moves the rest, such as minimum, maximum or a pattern, into the description, where the model still
+// reads them and voice and the agent's author check the answer, instead of the API refusing every
+// request. A schema the transform can't take, a property with no type say, is asked for without the
+// format: the shape is in the prompt, and voice checks the answer either way.
+function heldTo(schema: Record<string, unknown>): Anthropic.OutputConfig {
+  try {
+    return { format: { type: "json_schema", schema: transformJSONSchema(schema) } };
+  } catch {
+    return {};
+  }
 }

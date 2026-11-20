@@ -141,6 +141,22 @@ func TestNewWordsReadingOtherwiseOnceSavedOrToAKeptProcessAreSentToo(t *testing.
 	}
 }
 
+func TestAnAskWithASchemaSendsItAsJSON(t *testing.T) {
+	var asked map[string]any
+	m := serving(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&asked)
+		for _, l := range recorded(t) {
+			_, _ = io.WriteString(w, l+"\n")
+		}
+	})
+	withSchema := request
+	withSchema.Schema = json.RawMessage(`{"type":"object"}`)
+	collect(m.Reply(context.Background(), withSchema))
+	if !reflect.DeepEqual(asked["schema"], map[string]any{"type": "object"}) {
+		t.Errorf("asked %v, want the schema as a JSON object", asked)
+	}
+}
+
 func TestARefusalAtTheModelServicesCapIsBusyAndAnyOther503Overloaded(t *testing.T) {
 	for problem, want := range map[string]conversation.ModelErrorKind{
 		`{"type":"/v1/problems/at-capacity","title":"At capacity","status":503}`: "busy",
@@ -245,7 +261,7 @@ func TestAStreamCutBeforeItsFinalEventIsUnavailable(t *testing.T) {
 }
 
 func TestALineOverTheCapIsRefused(t *testing.T) {
-	long := `{"type":"text","text":"` + strings.Repeat("a", 64<<10) + `"}`
+	long := `{"type":"text","text":"` + strings.Repeat("a", 256<<10) + `"}`
 	got := collect(replaying(t, []string{recorded(t)[0], long, recorded(t)[6]}).Reply(context.Background(), request))
 	if want := append(texts("Yes, the lamp"), conversation.ModelEvent{Error: "unknown"}); !reflect.DeepEqual(got, want) {
 		t.Errorf("events = %+v, want the first text, then unknown", got)

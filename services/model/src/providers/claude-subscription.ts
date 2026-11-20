@@ -96,6 +96,8 @@ export function claudeSubscriptionProvider(
       strictMcpConfig: true,
       mcpServers: {},
       persistSession: false,
+      // Claude Code holds the answer to the schema and retries an answer that misses it.
+      ...(request.schema && { outputFormat: { type: "json_schema", schema: request.schema } }),
       env: childEnv(env, request.sessionId === undefined ? backgroundApiTimeoutMs : apiTimeoutMs),
     });
     live.add(started);
@@ -247,7 +249,9 @@ class SessionProcess {
     if (signal.aborted) cancel();
     try {
       for (let msg = await this.next(cancelled); msg; msg = await this.next(cancelled)) {
+        // An answer to a schema arrives whole with the result; text before it is the model's aside.
         if (
+          !request.schema &&
           msg.type === "stream_event" &&
           msg.event.type === "content_block_delta" &&
           msg.event.delta.type === "text_delta"
@@ -272,6 +276,14 @@ class SessionProcess {
             { role: "user", text: request.newWordsSaved ?? request.newWords },
             { role: "agent", text: reply },
           ];
+          // An answer held to the schema, or, without one, the result's own text for voice to check.
+          if (request.schema) {
+            const answer =
+              msg.structured_output === undefined
+                ? msg.result
+                : JSON.stringify(msg.structured_output);
+            yield { type: "text", text: answer };
+          }
           yield { type: "usage", ...usage };
           return true;
         }

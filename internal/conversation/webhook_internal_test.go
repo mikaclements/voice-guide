@@ -3,6 +3,7 @@ package conversation
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 	"uuid"
@@ -45,6 +46,19 @@ func TestAHugeSessionLeavesOutItsEarliestTurnsToFitTheLimit(t *testing.T) {
 				t.Errorf("limit %d: turns %d then %d, want them in order with none between", limit, kept[i-1].Seq, kept[i].Seq)
 			}
 		}
+	}
+}
+
+func TestTheCapLeavesOutTurnsButKeepsTheSummaryAndItsDataWhole(t *testing.T) {
+	summary := "Covered the lamp."
+	data := json.RawMessage(`{"shopping_list":["lamp oil","wicks"]}`)
+	d := deliveryJSON{ID: uuid.NewV7(), Type: "session.ended", Data: endedSession{ID: uuid.NewV7(), Summary: &summary, SummaryStatus: SummaryWritten, SummaryData: data}}
+	body, err := deliveryBody(d, []turnJSON{{Seq: 1, Words: "Is the lamp lit?", Reply: "Bearing 040."}}, 10)
+	if err != nil {
+		t.Fatalf("deliveryBody: %v", err)
+	}
+	if !strings.Contains(string(body), `"summary":"Covered the lamp.","summary_status":"written","summary_data":{"shopping_list":["lamp oil","wicks"]}`) || !strings.Contains(string(body), `"turns_left_out":1`) {
+		t.Errorf("body %s, want the turn left out and the summary and its data whole", body)
 	}
 }
 

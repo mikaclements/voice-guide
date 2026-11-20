@@ -25,6 +25,9 @@ export interface ReplyRequest {
   // before; left out when it is the same as newWords. A provider that keeps the conversation sends
   // this to what it kept, which already holds every earlier block, rather than repeating them.
   newWordsOwn?: string;
+  // The JSON schema the reply answers in, for an ask wanting data rather than words, such as a
+  // summary with data; left out, the reply is plain text.
+  schema?: Record<string, unknown>;
 }
 
 // Every provider reports the same way: inputTokens are those read fresh and exclude the cached
@@ -93,6 +96,12 @@ export function parseRequest(body: unknown): ReplyRequest | string {
   }
   const conversation = b.conversation ?? [];
   if (!Array.isArray(conversation)) return "conversation must be a list";
+  const schema = b.schema;
+  if (
+    schema !== undefined &&
+    (typeof schema !== "object" || schema === null || Array.isArray(schema))
+  )
+    return "schema, when sent, must be a JSON schema object";
   for (const m of conversation) {
     if (typeof m?.text !== "string" || (m.role !== "user" && m.role !== "agent")) {
       return "each conversation message needs a role (user or agent) and text";
@@ -106,5 +115,6 @@ export function parseRequest(body: unknown): ReplyRequest | string {
     newWords: b.new_words as string,
     ...(b.new_words_saved !== undefined && { newWordsSaved: b.new_words_saved as string }),
     ...(b.new_words_own !== undefined && { newWordsOwn: b.new_words_own as string }),
+    ...(schema !== undefined && { schema: schema as Record<string, unknown> }),
   };
 }

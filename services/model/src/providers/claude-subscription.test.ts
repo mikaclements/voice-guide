@@ -658,3 +658,27 @@ test("an ask outside any session gives Claude Code the background deadline", asy
   await collect(provider.reply({ ...request, sessionId: undefined }, new AbortController().signal));
   assert.equal(calls[0]?.options?.env?.API_TIMEOUT_MS, "120000");
 });
+
+test("an ask with a schema hands it to Claude Code and yields its structured answer whole", async () => {
+  const schema = { type: "object", properties: { summary: { type: "string" } } };
+  const answered = { ...success, structured_output: { summary: "Kind." } } as unknown as SDKMessage;
+  const { query, calls } = fakeQuery([delta("Here it is: "), answered]);
+  const provider = newProvider(query);
+  const events = await collect(
+    provider.reply({ ...request, sessionId: undefined, schema }, new AbortController().signal),
+  );
+
+  assert.deepEqual(calls[0]?.options?.outputFormat, { type: "json_schema", schema });
+  assert.deepEqual(
+    events.filter((e) => e.type === "text"),
+    [{ type: "text", text: '{"summary":"Kind."}' }],
+  );
+});
+
+test("an ask with a schema whose result holds no structured answer yields the result's text", async () => {
+  const plain = { ...success, result: '{"summary":"Kind."}' } as unknown as SDKMessage;
+  const { query } = fakeQuery([delta("thinking aloud"), plain]);
+  const ask = { ...request, sessionId: undefined, schema: { type: "object" } };
+  const events = await collect(newProvider(query).reply(ask, new AbortController().signal));
+  assert.deepEqual(events.slice(0, -1), [{ type: "text", text: '{"summary":"Kind."}' }]);
+});

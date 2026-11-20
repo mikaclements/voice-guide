@@ -342,3 +342,42 @@ test("an ask outside any session on a model with no thinking rule thinks by defa
   );
   assert.equal(calls.length, 2);
 });
+
+test("an ask with a schema asks for JSON held to what the API takes, at the model's own thinking, with room", async () => {
+  const { stream, calls } = fakeApi(
+    { events: [delta('{"summary":"Kind."}')] },
+    { events: [] },
+    { events: [] },
+  );
+  const score = { type: "integer", minimum: 1, maximum: 100 };
+  const schema = { type: "object", properties: { score }, required: ["score"] };
+  const background = { ...request, model: "claude-opus-5-5", sessionId: undefined, schema };
+  const events = await collect(provider(stream).reply(background, never));
+
+  const params = calls[0]?.params;
+  // Bounds the API's structured outputs don't take move into the description, so no request fails.
+  assert.deepEqual(params?.output_config, {
+    format: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { score: { type: "integer", description: "{minimum: 1, maximum: 100}" } },
+        additionalProperties: false,
+        required: ["score"],
+      },
+    },
+  });
+  assert.equal("thinking" in (params ?? {}), false);
+  assert.equal(params?.max_tokens, 16_000);
+  assert.deepEqual(events[0], { type: "text", text: '{"summary":"Kind."}' });
+
+  // A model with a thinking rule keeps it, still with room for the answer.
+  await collect(provider(stream).reply({ ...background, model: "claude-sonnet-5-5" }, never));
+  assert.deepEqual(calls[1]?.params.thinking, { type: "between_tools" });
+  assert.equal(calls[1]?.params.max_tokens, 16_000);
+
+  // A schema the transform can't take is asked for without the format, never refused.
+  const untyped = { type: "object", properties: { note: { description: "anything" } } };
+  await collect(provider(stream).reply({ ...background, schema: untyped }, never));
+  assert.deepEqual(calls[2]?.params.output_config, {});
+});

@@ -98,9 +98,10 @@ type body struct {
 			Reply string `json:"reply"`
 			Cut   bool   `json:"cut"`
 		} `json:"turns"`
-		TurnsLeftOut  int     `json:"turns_left_out"`
-		Summary       *string `json:"summary"`
-		SummaryStatus string  `json:"summary_status"`
+		TurnsLeftOut  int             `json:"turns_left_out"`
+		Summary       *string         `json:"summary"`
+		SummaryStatus string          `json:"summary_status"`
+		SummaryData   json.RawMessage `json:"summary_data"`
 	} `json:"data"`
 }
 
@@ -440,5 +441,19 @@ func TestADeliverySettlesAPendingSummaryFromWhetherItWasSavedAndKeepsOneSettled(
 	}
 	if b := read(t, settled.poster.Posted()[0]); b.Data.SummaryStatus != "none" {
 		t.Errorf("settled none: %q, want it as recorded", b.Data.SummaryStatus)
+	}
+}
+
+func TestADeliveryCarriesTheSummaryDataAsItIs(t *testing.T) {
+	d := newDelivering(t)
+	data := json.RawMessage(`{"areas":[{"name":"seasoning","score":72,"reason":"Salted the soup twice."}]}`)
+	if err := d.sessions.SaveSummaryData(context.Background(), workspace, d.session.User, d.session.ID, data); err != nil {
+		t.Fatalf("SaveSummaryData: %v", err)
+	}
+	if err := d.deliver(conversation.DeliveryArgs{Session: d.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if posted := d.poster.Posted()[0]; !strings.Contains(string(posted.Body), `"summary_data":`+string(data)) {
+		t.Errorf("body %s, want the summary data as saved", posted.Body)
 	}
 }

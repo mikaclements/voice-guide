@@ -42,3 +42,18 @@ test("stops as soon as the reply is cancelled", async () => {
   }
   assert.deepEqual(events, [{ type: "text", text: "One " }]);
 });
+
+test("an ask with a schema gets an answer voice's check always takes: the reply, no data", async () => {
+  const provider = fakeProvider(
+    { reply: "Kind.", firstTextMs: 0, charsPerSecond: 100 },
+    async () => {},
+  );
+  const events: ProviderEvent[] = [];
+  for await (const e of provider.reply(
+    { ...request, schema: { type: "object" } },
+    new AbortController().signal,
+  ))
+    events.push(e);
+  const text = events.flatMap((e) => (e.type === "text" ? [e.text] : [])).join("");
+  assert.deepEqual(JSON.parse(text), { summary: "Kind.", data: {} });
+});

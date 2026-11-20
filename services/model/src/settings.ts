@@ -10,9 +10,10 @@ export const DEFAULT_REPLY_TIMEOUT_MS = 15_000;
 // subscription with Opus; voice's summary job allows one such ask and 30 s around it in one run.
 export const DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS = 120_000;
 
-// The longest answer, in tokens, to an ask outside any session on a model whose thinking stays on: a
-// summary of up to 2,000 characters, some 500 tokens, with room for the thinking before it, so the
-// thinking never cuts the text short. A round guess, measured with the first summaries on Opus.
+// The longest answer, in tokens, to an ask outside any session on a model whose thinking stays on, or
+// to any ask with a schema: a summary of up to 2,000 characters, some 500 tokens, the agent's own data,
+// and room for the thinking before them, so the thinking never cuts the text short. A round guess,
+// measured with the first summaries on Opus.
 export const BACKGROUND_MAX_TOKENS = 16_000;
 
 // The port voice calls unless told otherwise, so the two meet with neither set.

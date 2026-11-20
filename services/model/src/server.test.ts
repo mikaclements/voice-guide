@@ -532,3 +532,13 @@ test("an ask outside any session gets the longer deadline; a live reply keeps it
   );
   assert.deepEqual(deadlines, [15_000, 120_000]);
 });
+
+test("an ask's schema reaches the provider, and one that isn't an object is refused", async () => {
+  const seen: ReplyRequest[] = [];
+  const schema = { type: "object" };
+  await withServer(scripted([], seen), async (url) => {
+    await (await post(url, { ...validBody, schema })).text();
+    assert.equal((await post(url, { ...validBody, schema: [] })).status, 400);
+  });
+  assert.deepEqual(seen[0]?.schema, schema);
+});

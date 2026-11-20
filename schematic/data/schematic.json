@@ -351,7 +351,7 @@
       "title": "A session's summary: written by the model its agent names, with the agent's instruction, read back only by that agent",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery. The session says whether it is still coming: pending from the end, then written or none, settled by a second job if the first failed for good.",
+      "decision": "When a session ends, a background job asks the model the agent's summary section names, else the session's, outside any session, for what it learned, as the agent's summary instruction says, and saves it through user context. Only that agent's next session with the user loads it, the latest first, dated; the session's product hears it with the session's delivery. For an agent with a summary schema, the same one call returns data in its shape; voice checks it is an object within its cap, asks once more, then keeps the text alone. The session says whether it is still coming: pending from the end, then written or none, settled by a second job if the first failed for good.",
       "why": "What is worth remembering differs per agent, and the agent that wrote the summary is the one that knows what it is for.",
       "tradeoff": "The summary arrives a few seconds after the end, so a session started at once may open without it; each summary is a billed model call."
     },
@@ -763,7 +763,7 @@
           "protocol": "HTTP · JSON lines",
           "send": "model, session, stable layers, conversation, new words",
           "back": "text …, then done (usage, timing) or error",
-          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it. When screen input makes them differ, the request also carries the new words as they will read once saved and with only the screen input the turn carried, for a provider that keeps the conversation.",
+          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it; one with data adds the JSON schema its answer is held to. When screen input makes them differ, the request also carries the new words as they will read once saved and with only the screen input the turn carried, for a provider that keeps the conversation.",
           "considerations": ["model-access", "layered-prompt"]
         },
         {
@@ -1549,12 +1549,12 @@
             {
               "nodes": ["service", "x-agents", "p-model", "modelhttp", "x-model"],
               "edges": ["service-agents", "service-model", "mh-model", "mh-service"],
-              "caption": "If the user said anything and the agent version has a summary instruction, the model writes notes from the transcript as the user heard it, outside any session"
+              "caption": "If the user said anything and the agent has a summary instruction, the model writes notes from the transcript as heard; with a summary schema, the same answer holds data in its shape"
             },
             {
               "nodes": ["service", "x-usercontext"],
               "edges": ["service-usercontext"],
-              "caption": "The summary, at most 2,000 characters, is saved through user context, for the agent to read in its next session with this user"
+              "caption": "Data that passes the check is kept on the session; the text, at most 2,000 characters, is saved through user context for the agent's next session"
             },
             {
               "nodes": ["x-jobs", "deliveries", "p-webhooks", "storepg", "x-postgres"],
@@ -1664,13 +1664,14 @@
             "InWorkspace",
             "ListForUser",
             "End",
+            "SaveSummaryData",
             "SettleSummary",
             "Touch",
             "UserByReference",
             "Reference",
             "EndIdle"
           ],
-          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, list a user's sessions newest first from a cursor, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time, its summary pending, and queuing its summary job, the job that settles the summary's status after it, and its delivery job for a workspace with a webhook, in the same write, settle the summary's status once, from pending, mark it active, and end every idle one in a single sweep.",
+          "description": "The port for keeping sessions: find one by its request ID or ID within the caller's workspace, or by ID in a product's workspace, whichever user's, list a user's sessions newest first from a cursor, find the user a product names by reference, and the reference a user is named by, start one once per request ID, adding a product's new user and their reference in the same write, end one keeping the first end time, its summary pending, and queuing its summary job, the job that settles the summary's status after it, and its delivery job for a workspace with a webhook, in the same write, keep the first summary data saved, settle the summary's status once, from pending, mark it active, and end every idle one in a single sweep.",
           "considerations": ["workspace-every-record", "session-end"],
           "drill": "types-conversation",
           "focus": "internal/conversation"

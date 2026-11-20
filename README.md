@@ -212,13 +212,20 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
     ],
     "turns_left_out": 0,
     "summary": "<the agent's summary, or null when none was written>",
-    "summary_status": "<written, or none when no summary was written>"
+    "summary_status": "<written, or none when no summary was written>",
+    "summary_data": {
+      "scores": [
+        { "area": "clarity", "score": 72, "reason": "<why this score>" },
+        { "area": "depth", "score": 40, "reason": "<why this score>" }
+      ]
+    }
   }
 }
 ```
 
 - The opening, the first turn when the agent speaks first, has empty `words`. `cut` says the user interrupted the reply.
-- A body holds at most 256 KiB. A longer session leaves out its earliest turns, counted in `turns_left_out`.
+- `summary_data` is null unless the agent's summary section has a `schema`; then it is an object in that shape, as the model wrote it, passed on as it is. Check its fields on your server. When the model's answer isn't an object of at most 64 KiB twice in a row, the data is dropped and the summary still comes.
+- A body holds at most 256 KiB. A longer session leaves out its earliest turns, counted in `turns_left_out`, never the summary or its data.
 - **Check the signature:** the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the bytes the base64 after `whsec_` decodes to, is the base64 after `v1,` in `webhook-signature`. This is the Standard Webhooks specification's scheme, so its libraries verify it; `verifyWebhook` in `examples/job-board/server.mjs` does it in Node, and also refuses a timestamp more than five minutes off.
 - Answer with any 2xx within 15 s. A slower answer counts as none. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled.
 - `410 Gone` stops deliveries until the URL is set again. That session, and any that end while deliveries are stopped, are never sent.
@@ -246,7 +253,8 @@ The reply lists the user's sessions, newest first, without their turns:
       "started_at": "<RFC 3339 time>",
       "ended_at": "<RFC 3339 time, or null while the session is live>",
       "summary": "<the agent's summary, or null while live or when none was written>",
-      "summary_status": "<pending, written or none; null while live>"
+      "summary_status": "<pending, written or none; null while live>",
+      "summary_data": "<the summary's data, as a delivery holds it, or null>"
     }
   ]
 }
@@ -407,6 +415,8 @@ summary:
             score: {type: integer, minimum: 1, maximum: 100}
             reason: {type: string}
 ```
+
+When a session ends, the summary's one call writes the text and the data; the data reaches the product as the session's `summary_data` ([the delivery](#webhook), [past sessions](#past-sessions)). On the Claude API, bounds such as `minimum` and `maximum` guide the model without holding it to them, so check them on your server.
 
 The persona follows it, in plain prose. `scripts/up.sh` and `scripts/run.sh` publish a changed file as a new version when they start; sessions already running keep the version they started with.
 

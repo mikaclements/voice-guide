@@ -16,7 +16,10 @@ import (
 type Model struct {
 	Pace   time.Duration
 	Pieces []string
-	Fail   conversation.ModelErrorKind
+	// Answers, when set, are sent one whole per request, in order, in place of
+	// Pieces, until they run out.
+	Answers []string
+	Fail    conversation.ModelErrorKind
 	// Report goes with done; unset, it names the fake as the provider and the
 	// model asked for.
 	Report *conversation.ModelReport
@@ -31,11 +34,15 @@ type Model struct {
 func (m *Model) Reply(ctx context.Context, r conversation.ModelRequest) <-chan conversation.ModelEvent {
 	m.mu.Lock()
 	m.requests = append(m.requests, r)
+	pieces := m.Pieces
+	if len(m.Answers) > 0 {
+		pieces, m.Answers = m.Answers[:1], m.Answers[1:]
+	}
 	m.mu.Unlock()
 	events := make(chan conversation.ModelEvent)
 	go func() {
 		defer close(events)
-		for _, piece := range m.Pieces {
+		for _, piece := range pieces {
 			if !m.send(ctx, events, conversation.ModelEvent{Text: piece}) {
 				return
 			}
