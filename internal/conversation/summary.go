@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
 
@@ -78,7 +79,7 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 	if version.Summary == "" {
 		return nil
 	}
-	written, err := s.ask(ctx, s.modelOf(version), summaryPrompt(version.Summary, turns))
+	written, err := s.ask(ctx, s.summaryModelOf(version), summaryPrompt(version.Summary, turns))
 	if err != nil {
 		return err
 	}
@@ -92,6 +93,15 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 		return fmt.Errorf("save the summary: %w", err)
 	}
 	return nil
+}
+
+// summaryModelOf is the model that writes an agent version's summaries: the
+// one its summary section names, else the one that answers its turns.
+func (s *Service) summaryModelOf(v agents.Version) string {
+	if v.SummaryModel != "" {
+		return v.SummaryModel
+	}
+	return s.modelOf(v)
 }
 
 // userSpoke says whether the user said or sent anything in the turns: a

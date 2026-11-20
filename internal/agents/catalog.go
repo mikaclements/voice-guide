@@ -2,6 +2,7 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -26,6 +27,12 @@ type Agent struct {
 	// Summary is what to note about a session once it ends, for the
 	// agent's next session with the user; empty, no summary is written.
 	Summary string
+	// SummaryModel names the model that writes the agent's summaries; empty,
+	// the model that answers its turns writes them.
+	SummaryModel string
+	// SummarySchema is a JSON Schema of the agent author's own, an object,
+	// for a structured part of the summary; nil, the summary is text alone.
+	SummarySchema json.RawMessage
 	// Opens says the agent speaks first in its sessions, rather than waiting
 	// for the user.
 	Opens bool
@@ -137,6 +144,29 @@ func CheckVoices(defs []Agent, offered []string) error {
 	return nil
 }
 
+// MaxSummarySchemaChars bounds a summary's schema, encoded as JSON: a round
+// guess, room for a few dozen fields each with a description, while a schema
+// stays small beside the transcript it is asked with. To be revisited when an
+// agent's schema presses against it.
+const MaxSummarySchemaChars = 16000
+
+// CheckSummarySchema refuses a summary schema that isn't a JSON object whose
+// type is object, or is over MaxSummarySchemaChars: the summary's structured
+// part is one object, so a schema for anything else could never be met.
+func CheckSummarySchema(schema json.RawMessage) error {
+	if len(schema) > MaxSummarySchemaChars {
+		return fmt.Errorf("summary schema is %d characters as JSON, at most %d", len(schema), MaxSummarySchemaChars)
+	}
+	var top map[string]any
+	if err := json.Unmarshal(schema, &top); err != nil {
+		return fmt.Errorf("summary schema must be a JSON object: %w", err)
+	}
+	if top["type"] != "object" {
+		return errors.New("summary schema must have type: object at its top level")
+	}
+	return nil
+}
+
 var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)
 
 // IsModelName reports whether name can name a model: the form a model
@@ -191,6 +221,17 @@ func validate(a Agent) error {
 	if a.Speed != 0 && !IsSpeed(a.Speed) {
 		return fmt.Errorf("agent %s: speed %v must be from %v to %v", a.ID, a.Speed, MinSpeed, MaxSpeed)
 	}
+	if a.SummaryModel != "" && !IsModelName(a.SummaryModel) {
+		return fmt.Errorf("agent %s: summary model %q must be lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", a.ID, a.SummaryModel)
+	}
+	if a.Summary == "" && (a.SummaryModel != "" || a.SummarySchema != nil) {
+		return fmt.Errorf("agent %s: a summary model or schema needs a summary instruction", a.ID)
+	}
+	if a.SummarySchema != nil {
+		if err := CheckSummarySchema(a.SummarySchema); err != nil {
+			return fmt.Errorf("agent %s: %w", a.ID, err)
+		}
+	}
 	switch {
 	case a.ID == uuid.Nil():
 		return errors.New("agent without an ID")
@@ -204,10 +245,11 @@ func validate(a Agent) error {
 	return nil
 }
 
-// copy returns the agent with its own Reads, so no caller can change which
-// context kinds the catalog gives later sessions.
+// copy returns the agent with its own slices, so no caller can change which
+// context kinds or summary schema the catalog gives later sessions.
 func (a Agent) copy() Agent {
 	a.Reads = slices.Clone(a.Reads)
 	a.SessionContext = slices.Clone(a.SessionContext)
+	a.SummarySchema = slices.Clone(a.SummarySchema)
 	return a
 }

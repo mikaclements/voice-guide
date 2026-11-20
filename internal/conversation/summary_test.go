@@ -357,3 +357,26 @@ func TestASummaryAsksForTheModelOfItsSessionsAgentVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestASummaryIsWrittenOnTheSummarysOwnModelWhenItsSectionNamesOne(t *testing.T) {
+	for _, tt := range []struct{ agentModel, summaryModel, wantTurn, wantSummary string }{
+		{"claude-sonnet-5-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5-5"},
+		{"", "claude-opus-5-5", "claude-test", "claude-opus-5-5"},
+		{"claude-sonnet-5-5", "", "claude-sonnet-5-5", "claude-sonnet-5-5"},
+	} {
+		h := newServiceOverFakes(t)
+		h.publish(t, agents.Agent{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea.", Summary: instruction, Model: tt.agentModel, SummaryModel: tt.summaryModel})
+		s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+		h.takeTurn(t, turnIn(s.ID, "Is the lamp lit?"))
+		if _, err := h.svc.EndSession(context.Background(), caller, s.ID); err != nil {
+			t.Fatalf("EndSession: %v", err)
+		}
+		if err := h.svc.Summarize(context.Background(), workspace, user, conversation.SummaryArgs{Session: s.ID}); err != nil {
+			t.Fatalf("Summarize: %v", err)
+		}
+		asked, _ := h.model.Requests()
+		if len(asked) != 2 || asked[0].Model != tt.wantTurn || asked[1].Model != tt.wantSummary {
+			t.Errorf("with models %q and %q the model was asked %+v, want %q for the turn and %q for the summary", tt.agentModel, tt.summaryModel, asked, tt.wantTurn, tt.wantSummary)
+		}
+	}
+}

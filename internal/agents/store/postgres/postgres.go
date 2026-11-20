@@ -4,7 +4,9 @@
 package postgres
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -36,7 +38,12 @@ func (s *Versions) Newest(ctx context.Context, workspace uuid.UUID) ([]agents.Ve
 	}
 	out := make([]agents.Version, len(rows))
 	for i, r := range rows {
+		schema, err := decodeSchema(r.SummarySchema)
+		if err != nil {
+			return nil, fmt.Errorf("read the summary schema of agent %s version %d: %w", r.AgentID, r.Version, err)
+		}
 		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
+		out[i].SummaryModel, out[i].SummarySchema = r.SummaryModel, schema
 	}
 	return out, nil
 }
@@ -53,7 +60,13 @@ func (s *Versions) Version(ctx context.Context, workspace, agent uuid.UUID, numb
 	if err != nil {
 		return agents.Version{}, fmt.Errorf("read agent version: %w", err)
 	}
-	return version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed), nil
+	schema, err := decodeSchema(r.SummarySchema)
+	if err != nil {
+		return agents.Version{}, fmt.Errorf("read the agent version's summary schema: %w", err)
+	}
+	v := version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
+	v.SummaryModel, v.SummarySchema = r.SummaryModel, schema
+	return v, nil
 }
 
 // Save stores a as its next version unless the newest version has the same
@@ -89,12 +102,16 @@ func (s *Versions) Save(ctx context.Context, workspace uuid.UUID, a agents.Agent
 		return int(newest.Version), false, nil
 	}
 	// The columns hold an empty list, never NULL, and pgx sends a nil slice as NULL.
+	schema := []byte(a.SummarySchema)
+	if schema == nil {
+		schema = noSchema
+	}
 	reads := append([]string{}, a.Reads...)
 	sessionContext := append([]string{}, a.SessionContext...)
 	next := newest.Version + 1
 	if err := q.AddVersion(ctx, db.AddVersionParams{
 		WorkspaceID: workspace, AgentID: a.ID, Version: next,
-		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
+		Name: a.Name, Description: a.Description, Reads: reads, SessionContext: sessionContext, Persona: a.Persona, Summary: a.Summary, SummaryModel: a.SummaryModel, SummarySchema: schema, Opens: a.Opens, Model: a.Model, Voice: a.Voice, Speed: a.Speed, ContentHash: hash,
 	}); err != nil {
 		return 0, false, fmt.Errorf("save the agent version: %w", err)
 	}
@@ -111,4 +128,24 @@ func version(id uuid.UUID, number int32, name, description string, reads, sessio
 		},
 		Number: int(number),
 	}
+}
+
+// The column holds {} for no schema, since it is never NULL; a schema has at
+// least its type, so {} is never one.
+var noSchema = []byte("{}")
+
+// decodeSchema reads a kept schema back. PostgreSQL keeps jsonb in its own
+// key order and spacing, so it is encoded again as the loader encodes it,
+// keys sorted, giving back the bytes that were published.
+func decodeSchema(kept []byte) (json.RawMessage, error) {
+	dec := json.NewDecoder(bytes.NewReader(kept))
+	dec.UseNumber() // a number reads back exactly as written, never through a float
+	var schema map[string]any
+	if err := dec.Decode(&schema); err != nil {
+		return nil, err
+	}
+	if len(schema) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(schema)
 }

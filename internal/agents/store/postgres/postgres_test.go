@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"slices"
 	"strings"
@@ -134,6 +135,31 @@ func TestAnAgentsVoiceAndSpeedReadBackAndOneWithoutReadsBackEmpty(t *testing.T) 
 	if err != nil || secondErr != nil || newestErr != nil || first.Voice != "" || first.Speed != 0 ||
 		second.Voice != "bf_emma" || second.Speed != 1.1 || len(newest) != 1 || newest[0].Voice != "bf_emma" || newest[0].Speed != 1.1 {
 		t.Errorf("versions %+v, %v and %+v, %v; Newest %+v, %v; want nothing set, then bf_emma at 1.1 exactly", first, err, second, secondErr, newest, newestErr)
+	}
+}
+
+func TestAnAgentsSummaryModelAndSchemaReadBackExactlyAndOneWithoutReadsBackEmpty(t *testing.T) {
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	keeper.Summary = "Note the ships you guided."
+	save(t, s, keeper, "first")
+	keeper.SummaryModel = "claude-opus-5-5"
+	// As the loader encodes it: keys sorted, no spaces. PostgreSQL keeps jsonb in an order and
+	// spacing of its own, and a number past a float's precision must still read back as written.
+	keeper.SummarySchema = json.RawMessage(`{"properties":{"score":{"maximum":12345678901234567890,"minimum":1,"type":"integer"}},"required":["score"],"type":"object"}`)
+	save(t, s, keeper, "second")
+
+	first, err := s.Version(context.Background(), workspace, keeperID, 1)
+	if err != nil || first.SummaryModel != "" || first.SummarySchema != nil {
+		t.Errorf("version 1 = %+v, %v; want no summary model and no schema", first, err)
+	}
+	second, err := s.Version(context.Background(), workspace, keeperID, 2)
+	if err != nil || second.SummaryModel != "claude-opus-5-5" || string(second.SummarySchema) != string(keeper.SummarySchema) {
+		t.Errorf("version 2 = %+v, %s, %v; want the summary model and %s exactly", second, second.SummarySchema, err, keeper.SummarySchema)
+	}
+	newest, err := s.Newest(context.Background(), workspace)
+	if err != nil || len(newest) != 1 || newest[0].SummaryModel != "claude-opus-5-5" || string(newest[0].SummarySchema) != string(keeper.SummarySchema) {
+		t.Errorf("Newest = %+v, %v; want the summary model and %s exactly", newest, err, keeper.SummarySchema)
 	}
 }
 

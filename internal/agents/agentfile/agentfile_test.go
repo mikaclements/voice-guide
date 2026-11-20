@@ -182,3 +182,83 @@ func TestLoadReadsTheVoiceAndSpeedAndRefusesAVoiceOutOfFormOrASpeedOutOfRange(t 
 		}
 	}
 }
+
+// scoredSummary is a summary section in its mapping form, with a model and a schema written as YAML.
+const scoredSummary = `summary:
+  instruction: |
+    Note the ships you guided.
+  model: claude-opus-5-5
+  schema:
+    type: object
+    required: [scores]
+    properties:
+      scores:
+        type: array
+        items:
+          type: object
+          properties:
+            area: {type: string}
+            score: {type: integer, minimum: 1, maximum: 100}
+            reason: {type: string}
+`
+
+func TestLoadReadsTheSummaryMappingWithItsModelAndSchemaAsJSON(t *testing.T) {
+	got, err := agentfile.Load(context.Background(), fstest.MapFS{
+		"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+scoredSummary, "You answer every call from the sea.\n"),
+	})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("Load = %d agents, %v; want 1", len(got), err)
+	}
+	a := got[0]
+	// Keys sorted, as encoding/json writes a map, so the same file always gives the same bytes.
+	const want = `{"properties":{"scores":{"items":{"properties":{"area":{"type":"string"},"reason":{"type":"string"},"score":{"maximum":100,"minimum":1,"type":"integer"}},"type":"object"},"type":"array"}},"required":["scores"],"type":"object"}`
+	if a.Summary != "Note the ships you guided." || a.SummaryModel != "claude-opus-5-5" || a.Model != "" || string(a.SummarySchema) != want {
+		t.Errorf("summary %q, summary model %q, model %q, schema %s; want the schema %s", a.Summary, a.SummaryModel, a.Model, a.SummarySchema, want)
+	}
+	if err := agents.Check(got); err != nil {
+		t.Errorf("Check = %v, want the loaded agent accepted", err)
+	}
+}
+
+func TestLoadReadsASummaryMappingWithTheInstructionAloneAsAPlainString(t *testing.T) {
+	load := func(summary string) agents.Agent {
+		t.Helper()
+		got, err := agentfile.Load(context.Background(), fstest.MapFS{
+			"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+summary, "You answer every call from the sea.\n"),
+		})
+		if err != nil || len(got) != 1 {
+			t.Fatalf("Load with %q = %+v, %v", summary, got, err)
+		}
+		return got[0]
+	}
+	plain := load("summary: Note the ships you guided.\n")
+	mapped := load("summary:\n  instruction: Note the ships you guided.\n")
+	if plain.Summary != mapped.Summary || mapped.SummaryModel != "" || mapped.SummarySchema != nil || plain.SummarySchema != nil {
+		t.Errorf("plain %+v, mapping %+v; want the same instruction and nothing else", plain, mapped)
+	}
+}
+
+func TestLoadRefusesASummaryMappingOutOfForm(t *testing.T) {
+	big := "summary:\n  instruction: Note it.\n  schema:\n    type: object\n    description: " + strings.Repeat("a", agents.MaxSummarySchemaChars) + "\n"
+	for name, summary := range map[string]string{
+		"no instruction":                 "summary:\n  model: claude-opus-5-5\n",
+		"an unknown key":                 "summary:\n  instruction: Note it.\n  temperature: 0.2\n",
+		"a summary model's name":         "summary:\n  instruction: Note it.\n  model: Claude Opus\n",
+		"a schema whose top is an array": "summary:\n  instruction: Note it.\n  schema:\n    type: array\n",
+		"a schema with no type":          "summary:\n  instruction: Note it.\n  schema:\n    properties: {}\n",
+		"an empty schema":                "summary:\n  instruction: Note it.\n  schema: {}\n",
+		"a schema that is a list":        "summary:\n  instruction: Note it.\n  schema: [object]\n",
+		"a schema JSON can't hold":       "summary:\n  instruction: Note it.\n  schema:\n    type: object\n    maximum: .inf\n",
+		"a schema over the cap":          big,
+		"a list":                         "summary: [Note it.]\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := agentfile.Load(context.Background(), fstest.MapFS{
+				"lighthouse-keeper.md": agentFile(settings(keeperID, "Lighthouse keeper")+summary, "p"),
+			})
+			if err == nil || !strings.Contains(err.Error(), "lighthouse-keeper.md: ") {
+				t.Errorf("Load = %v; want an error naming the file", err)
+			}
+		})
+	}
+}

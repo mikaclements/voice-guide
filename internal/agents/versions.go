@@ -88,9 +88,13 @@ func contentHash(a Agent) string {
 		// Left out when empty or 0, for the same reason.
 		Voice string  `json:"voice,omitempty"`
 		Speed float64 `json:"speed,omitempty"`
-	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed})
+		// Left out when empty, for the same reason; the schema hashes as the
+		// author's own JSON, keys and all.
+		SummaryModel  string          `json:"summary_model,omitempty"`
+		SummarySchema json.RawMessage `json:"summary_schema,omitempty"`
+	}{a.ID.String(), a.Name, a.Description, reads, a.SessionContext, a.Persona, a.Summary, a.Opens, a.Model, a.Voice, a.Speed, a.SummaryModel, a.SummarySchema})
 	if err != nil {
-		panic(err) // strings, a slice of strings, a bool and a speed that Check keeps finite always encode
+		panic(err) // strings, slices of strings, a bool, a schema Check keeps valid JSON and a speed it keeps finite always encode
 	}
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
