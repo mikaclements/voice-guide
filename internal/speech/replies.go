@@ -27,7 +27,7 @@ type replies struct {
 	voice   voiceSettings // how its replies are spoken
 	turns   *sync.WaitGroup
 	waiting chan struct{} // a place for each turn waiting
-	active  chan struct{} // the user began speaking, for marking the session active
+	active  chan struct{} // the user began speaking or changed the screen, for marking the session active
 	aired   aired
 	screen  screenWaiting // what the screen shows, for the next turn taken
 

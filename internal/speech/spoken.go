@@ -217,7 +217,7 @@ func (st *spokenTurns) overAgent(at time.Time) bool {
 // passed over, that is where the blip's speech ended: the quiet after it went only with an
 // utterance dropped, which speech-to-text has let go of, so it may go again.
 func (st *spokenTurns) speech(ctx context.Context, e event) {
-	st.replies.heardSpeech()
+	st.replies.userActive()
 	if st.audio == nil {
 		st.audio = make(chan UtteranceAudio, sttAhead)
 		st.texts = st.s.stt.Transcribe(ctx, st.audio)

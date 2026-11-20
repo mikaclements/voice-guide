@@ -216,7 +216,7 @@
       "title": "A session ends when the user ends it, or after five minutes idle",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "A session ends once: when the product ends it, or after five minutes with no turn started and none of the user's speech heard. Every instance sweeps once a minute, and an ended session takes no turns and gets no audio connection.",
+      "decision": "A session ends once: when the product ends it, or after five minutes with no turn started, none of the user's speech heard and no screen change. Every instance sweeps once a minute, and an ended session takes no turns and gets no audio connection.",
       "why": "A closed tab never presses End and a page can't reliably say it is closing, so a time limit kept by the server is the only guarantee.",
       "tradeoff": "A user who steps away for five minutes finds the session over, and every turn writes the session's row as well as its own."
     },
@@ -1274,7 +1274,7 @@
           "protocol": "call",
           "send": "words heard · how much of the reply was heard",
           "back": "the reply's text as it streams",
-          "detail": "speech calls conversation's service directly: Session to check a session before an offer, TakeTurn for every typed or spoken turn, Interrupted to save a cut reply as far as it was heard, TakeBack and Settle for talking on, Active to mark the user's speech (as often as SessionIdle allows), CheckScreenInput for screen input sent ahead of a turn, RecordTiming once a turn is saved. conversation never imports speech.",
+          "detail": "speech calls conversation's service directly: Session to check a session before an offer, TakeTurn for every typed or spoken turn, Interrupted to save a cut reply as far as it was heard, TakeBack and Settle for talking on, Active to mark the user's speech or screen change (as often as SessionIdle allows), CheckScreenInput for screen input sent ahead of a turn, RecordTiming once a turn is saved. conversation never imports speech.",
           "considerations": ["one-service-four-modules", "heard", "talking-on"]
         },
         {

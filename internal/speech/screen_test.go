@@ -12,6 +12,7 @@ import (
 
 	"github.com/mikaclements/voice-guide/internal/conversation"
 	modelfake "github.com/mikaclements/voice-guide/internal/conversation/model/fake"
+	sessionsfake "github.com/mikaclements/voice-guide/internal/conversation/store/fake"
 	endofturnfake "github.com/mikaclements/voice-guide/internal/speech/endofturn/fake"
 	"github.com/mikaclements/voice-guide/internal/speech/transport/fake"
 	ttsfake "github.com/mikaclements/voice-guide/internal/speech/tts/fake"
@@ -231,5 +232,58 @@ func TestABlockATurnCarriesCountsAgainstTheLimitUntilTheTurnIsSaved(t *testing.T
 	showScreen(t, c, 3, notes)
 	if saved := h.turns.All(); !maps.Equal(screenOf(saved[0]), map[string]string{"board": strings.Repeat("b", 600)}) {
 		t.Errorf("saved %+v, want the first turn with the board", saved)
+	}
+}
+
+// The user draws on the board for nearly the idle time without a word: the screen change marks
+// the session active, so the sweep that would have ended it leaves it live.
+func TestAScreenChangeKeepsTheSessionFromIdlingOut(t *testing.T) {
+	sessions := touching{Sessions: sessionsfake.New(), touched: make(chan uuid.UUID, 1)}
+	h := newStoredTurnHarness(t, sessions, sessionsfake.NewTurnsFor(sessions.Sessions), &modelfake.Model{Pieces: replyPieces}, ttsfake.TextToSpeech{PacketsPerWord: 1},
+		slog.New(slog.DiscardHandler), speechThenQuiet, saying, endofturnfake.EndOfTurn{Answer: true})
+	started, err := h.conv.Session(context.Background(), h.caller, h.session)
+	if err != nil {
+		t.Fatalf("Session: %v", err)
+	}
+	clock := started.StartedAt.Add(4*time.Minute + 50*time.Second)
+	sessions.SetClock(func() time.Time { return clock })
+	c := h.connect(t)
+	c.Say(screenMessage(1, blockJSON("board", "Cache -> Database")))
+	select {
+	case <-sessions.touched:
+	case <-time.After(wait):
+		t.Fatalf("the session wasn't marked active within %s of the screen change", wait)
+	}
+	clock = started.StartedAt.Add(5*time.Minute + 30*time.Second)
+	if ended, err := sessions.EndIdle(context.Background(), 5*time.Minute); err != nil || len(ended) != 0 {
+		t.Errorf("EndIdle = %v, %v; want the session left live, active 40 s ago", ended, err)
+	}
+}
+
+// As for speech heard: the mark finds the session ended and passes over it, saying nothing, and
+// the connection learns of the end from its next turn, refused.
+func TestAScreenChangeInAnEndedSessionIsLeftForTheNextTurnToRefuse(t *testing.T) {
+	sessions := touching{Sessions: sessionsfake.New(), touched: make(chan uuid.UUID, 1)}
+	warned := &logged{message: "mark the session active"}
+	h := newStoredTurnHarness(t, sessions, sessionsfake.NewTurnsFor(sessions.Sessions), &modelfake.Model{Pieces: replyPieces}, ttsfake.TextToSpeech{PacketsPerWord: 1},
+		slog.New(warned), speechThenQuiet, saying, endofturnfake.EndOfTurn{Answer: true})
+	c := h.connect(t)
+	if _, err := h.conv.EndSession(context.Background(), h.caller, h.session); err != nil {
+		t.Fatalf("EndSession: %v", err)
+	}
+	showScreen(t, c, 1, blockJSON("board", "Cache -> Database"))
+	select {
+	case <-sessions.touched:
+	case <-time.After(wait):
+		t.Fatalf("the session wasn't asked to be marked active within %s of the screen change", wait)
+	}
+	id := uuid.NewV7()
+	c.Say(turnMessage(id, "Is this right?"))
+	if m := next(t, c); m.Type != "refused" || m.Reason != "ended" || m.RequestID != id.String() {
+		t.Errorf("got %+v, want the turn refused as the session ended, nothing said of the screen change", m)
+	}
+	closeService(t, h.svc) // returns once the mark has run its course
+	if _, ok := warned.first(); ok {
+		t.Error("warned of marking the ended session active, want it passed over as for speech")
 	}
 }

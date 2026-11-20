@@ -373,7 +373,7 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 | `VOICE_SPEECH_THRESHOLD` | 0.5 | How sure speech detection must be that a sound is speech |
 | `VOICE_MAX_SPEECH` | 1 min | The longest one turn of speech |
 | `VOICE_TURN_TIMEOUT` | 20 s | The longest a reply may take |
-| `VOICE_SESSION_IDLE` | 5 min | How long a session sits with no turn or speech before it ends |
+| `VOICE_SESSION_IDLE` | 5 min | How long a session sits with no turn, speech or screen change before it ends |
 
 The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings block comes first:
 - `id`, `name` and `description`: which agent it is; a product's server names it by `id` when it starts a session;
