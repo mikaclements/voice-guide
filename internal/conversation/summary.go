@@ -134,7 +134,10 @@ func (s *Service) writeSummary(ctx context.Context, v agents.Version, turns []Tu
 	if err != nil {
 		return "", nil, fmt.Errorf("encode the summary's schema: %w", err)
 	}
-	prompt := summaryDataPrompt(v.Summary, schema, turns)
+	prompt, err := summaryDataPrompt(v.Summary, schema, turns)
+	if err != nil {
+		return "", nil, err
+	}
 	var summary string
 	for range summaryAsks {
 		answer, err := s.ask(ctx, s.summaryModelOf(v), prompt, schema)

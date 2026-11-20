@@ -395,7 +395,7 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `model`: the model that answers its turns, and writes its summary unless the summary names its own, the server's `VOICE_MODEL` unless set;
 - `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
 
-The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary and a `schema`: a JSON Schema of your own, written as YAML, whose top level is `type: object`, for a structured part of the summary. An agent that should steer toward what the schema asks says so in its persona. For example, a score from 1 to 100 for each area, with a reason:
+The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary and a `schema`: a JSON Schema of your own, written as YAML, whose top level is `type: object`, and every part of it with a `type`, or `anyOf`, `enum` and the like, for a structured part of the summary. An agent that should steer toward what the schema asks says so in its persona. For example, a score from 1 to 100 for each area, with a reason:
 
 ```yaml
 summary:

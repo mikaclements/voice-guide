@@ -6,14 +6,17 @@ import { isIP } from "node:net";
 export const DEFAULT_REPLY_TIMEOUT_MS = 15_000;
 
 // How long an ask outside any session may run unless set: a session's summary, which may run on a
-// slower model over a long transcript, and nobody waits for it. A round guess, to be measured on the
-// subscription with Opus; voice's summary job allows one such ask and 30 s around it in one run.
+// slower model over a long transcript, and nobody waits for it. Measured on the subscription with
+// Opus 5.5, a summary with data was saved 8 s after a two-turn session ended and 12 s after a five-turn
+// one, so 2 min leaves ten times that for a long session. voice's summary job allows two such asks,
+// a summary with data asked again, and 30 s around them in one run.
 export const DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS = 120_000;
 
 // The longest answer, in tokens, to an ask outside any session on a model whose thinking stays on, or
 // to any ask with a schema: a summary of up to 2,000 characters, some 500 tokens, the agent's own data,
-// and room for the thinking before them, so the thinking never cuts the text short. A round guess,
-// measured with the first summaries on Opus.
+// and room for the thinking before them, so the thinking never cuts the text short. Answers with data
+// measured on Opus 5.5 ran 1,500 to 2,000 characters, some 500 tokens; the thinking the subscription
+// doesn't show gets the rest, a round guess until the API's usage is measured.
 export const BACKGROUND_MAX_TOKENS = 16_000;
 
 // The port voice calls unless told otherwise, so the two meet with neither set.

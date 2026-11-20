@@ -233,8 +233,8 @@ function detailOf(err: unknown): ProviderError["detail"] {
 // The API holds an answer only to the keywords its structured outputs take: the SDK's own transform
 // moves the rest, such as minimum, maximum or a pattern, into the description, where the model still
 // reads them and voice and the agent's author check the answer, instead of the API refusing every
-// request. A schema the transform can't take, a part with no type say, is a bad request, which voice
-// answers by asking for the summary without data.
+// request. Publishing refuses the one schema the transform can't take, a part with no type; one that
+// reaches it anyway is a bad request, which voice answers by asking for the summary without data.
 function heldTo(schema: Record<string, unknown>): Anthropic.OutputConfig {
   try {
     return { format: { type: "json_schema", schema: transformJSONSchema(schema) } };
