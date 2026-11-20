@@ -32,10 +32,12 @@ export const DEFAULT_MAX_CONCURRENT_REPLIES = 4;
 export const MAX_BACKGROUND_REPLIES = 1;
 export const DEFAULT_MAX_SESSION_PROCESSES = 4;
 
-// The largest request body. A turn's prompt with a full session context and a long conversation
-// stays far below it; a conversation that outgrows it is refused as too large until conversations
-// are shortened. A round guess.
-export const DEFAULT_MAX_BODY_BYTES = 1 << 20;
+// The largest request body. 400,000 characters of session context, the most voice's limit is
+// sized for when an operator raises it, take 2.4 MB at JSON's worst, 6 bytes a character for one
+// sent escaped, which leaves some 1.8 MB for the agent's layer, what user context loaded and a long
+// conversation; a conversation that outgrows it is refused as too large until conversations are
+// shortened. Derived from that size; the rest a round guess.
+export const DEFAULT_MAX_BODY_BYTES = 4 << 20;
 
 // How long an unused session process is kept: the prompt cache it reads from lasts 5 minutes by
 // default, so a process idle for longer would read its whole prompt again anyway.

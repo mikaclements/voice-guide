@@ -128,11 +128,11 @@ curl https://voice.example.com/v1/sessions \
   }'
 ```
 
-- `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description` and the `session_context` it needs.
+- `agent_id`: the `id` in the agent's file; this one is the mock interviewer. `GET /v1/agents`, with the same key, lists each agent's `id`, `name`, `description`, the `session_context` it needs and the `summary_documents` it may also take.
 - `request_id`: a UUID the server makes for each start. Sending it again returns the same session, so a retry after a lost reply starts nothing new. A repeat must carry the same `agent_id` and `session_context`, or it is refused with `422` and the problem type `/v1/problems/request-reused`.
 - `user`: the product's own stable ID for the user, not a name or an email address. It is at most 200 printable characters, on one line. The same ID is the same user every time, so the agent remembers them.
 - `voice` and `speed` (optional): the voice the agent speaks in, such as `bf_emma`, and how fast, from `0.5` to `2` with `1` the voice's own pace. They override the agent file's, which override the server's. `GET /v1/voices` with the same key lists the voices on offer as `{"voices": [...]}`. A voice that isn't a language and a style (`af_heart`), or a speed out of range, is refused with `422` and the problem type `/v1/problems/voice-settings`; a voice not on the list, with `422` and `/v1/problems/unknown-voice`. A start naming a voice while the text-to-speech service can't be reached is refused with `503`; a start naming none never asks it. A repeat keeps the first start's voice and speed, which the reply names.
-- `session_context`: what the product already knows about the user, as named text blocks. It holds exactly the names the agent's file lists under `session_context`, each once and not empty. Its blocks hold at most 20,000 characters in all (`VOICE_SESSION_CONTEXT_MAX_CHARS`); more is refused with `413`.
+- `session_context`: what the product already knows about the user, as named documents. It holds every name the agent's file lists under `session_context`, and any of those its summary lists under `documents`, each once and not empty; a name the file lists in neither is refused. A document listed only under the summary's `documents` never reaches the agent while it talks, only the summary's call at the end. The summary is told not to restate it, since the notes reach the agent's next session, but what the notes say of it can. Its documents hold at most 280,000 characters in all by default, about 100,000 tokens (`VOICE_SESSION_CONTEXT_MAX_CHARS`); more is refused with `413`.
 
 The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
 
@@ -183,7 +183,7 @@ The element opens the audio, asks for the microphone, plays the agent and shows 
 | | |
 |---|---|
 | Methods | `join({ session, ticket })` joins the session, letting any session before go without ending it, as removing the element does. `end()` ends it, as End does: it resolves once voice-guide has ended it, and rejects when End didn't reach voice-guide, which leaves it live |
-| Attribute and properties | the `api` attribute, voice-guide's base URL, when the script came from somewhere else; the `session` property, the session it holds; the `screenInput` property, what the page's screen shows as a list of `{ name, content }` text blocks (names in lower-case letters, digits and `_`, at most 32, other than `instructions`, `transcript` and `screen`), set whenever it changes: each block changed goes to the agent with the user's next turn, spoken or typed, or the agent's opening, at most 40,000 characters at once (`VOICE_SCREEN_INPUT_MAX_CHARS`), more refused, and a block left out is not sent again; the agent reads the newest block of each name, and earlier ones only as where they changed |
+| Attribute and properties | the `api` attribute, voice-guide's base URL, when the script came from somewhere else; the `session` property, the session it holds; the `screenInput` property, what the page's screen shows as a list of `{ name, content }` text blocks (names in lower-case letters, digits and `_`, at most 32, other than `instructions`, `transcript`, `screen` and `documents`), set whenever it changes: each block changed goes to the agent with the user's next turn, spoken or typed, or the agent's opening, at most 40,000 characters at once (`VOICE_SCREEN_INPUT_MAX_CHARS`), more refused, and a block left out is not sent again; the agent reads the newest block of each name, and earlier ones only as where they changed |
 | Events | `voice-guide-ended`, once the session is over for the element: `detail.reason` is `ended`, `expired` (past the ticket's four hours) or `unusable`, with `detail.session`. `voice-guide-error` comes just before an `unusable` end, with `detail.message`, and voice-guide's `status` and problem `type` when it answered. `voice-guide-screen-refused`, with `detail.name` and `detail.message`, says a `screenInput` block can't be used, as over its limit; the session goes on without it, and over HTTP too until the block changes. `voice-guide-ready`, once, with `detail.session`, when the session can take the user's words: at the agent's greeting's first sound, for an agent that speaks first, or once voice-guide says so; at once without audio, or when the browser won't play the agent until the user presses; at most 30 s after the audio connection opens. Until then the status line says "Getting ready" and the microphone stays muted. A page may show its own loading screen until the event, and must take it down then, so the user can see the element's press to hear the agent |
 | Styling | custom properties `--voice-guide-font`, `-color`, `-background`, `-border`, `-radius`, `-accent`, `-accent-text`, `-quiet-color`, `-height`; parts `frame`, `status`, `hear`, `transcript`, `message` (with `you` or `agent`), `who`, `notes`, `note`, `form`, `input`, `send`, `mute`, `end`, styled with `voice-guide-session::part(send)` |
 
@@ -390,12 +390,12 @@ The agent itself is tuned in its file, `agents/mock-interviewer.md`. A settings 
 - `id`, `name` and `description`: which agent it is; a product's server names it by `id` when it starts a session;
 - `opens`: who speaks first, `agent` or `user`;
 - `reads`: what the agent may know about the user from earlier sessions;
-- `session_context`: what the product must send at the start, such as the resume;
+- `session_context`: the documents the product must send at the start, by name;
 - `summary`: how the agent sums up a session for next time, as a string, or as a mapping that adds its own model and a schema (below);
 - `model`: the model that answers its turns, and writes its summary unless the summary names its own, the server's `VOICE_MODEL` unless set;
 - `voice` and `speed`: the voice its replies are spoken in, and how fast, `0.5` to `2`, the server's own unless set. Publishing refuses a voice the text-to-speech service doesn't list, when it can ask; when it can't, it publishes with a warning.
 
-The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary and a `schema`: a JSON Schema of your own, written as YAML, whose top level is `type: object`, and every part of it with a `type`, or `anyOf`, `enum` and the like, for a structured part of the summary. An agent that should steer toward what the schema asks says so in its persona. For example, a score from 1 to 100 for each area, with a reason:
+The summary's mapping form holds the `instruction`, and optionally the `model` that writes the summary and a `schema`: a JSON Schema of your own, written as YAML, whose top level is `type: object`, and every part of it with a `type`, or `anyOf`, `enum` and the like, for a structured part of the summary; and the `documents` the summary reads, by name: one also under `session_context` reaches the agent too, one only here only the summary. An agent that should steer toward what the schema asks says so in its persona. For example, a score from 1 to 100 for each area, with a reason, judged against a document of the answers the session should have covered, which the agent never sees:
 
 ```yaml
 summary:
@@ -414,6 +414,7 @@ summary:
             area: {type: string}
             score: {type: integer, minimum: 1, maximum: 100}
             reason: {type: string}
+  documents: [answer_key]
 ```
 
 When a session ends, the summary's one call writes the text and the data; the data reaches the product as the session's `summary_data` ([the delivery](#webhook), [past sessions](#past-sessions)). On the Claude API, bounds such as `minimum` and `maximum` guide the model without holding it to them, so check them on your server.

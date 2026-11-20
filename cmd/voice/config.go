@@ -100,7 +100,7 @@ func (cfg *config) loadConversation(getenv func(string) string) (err error) {
 	if cfg.settings.UserContextChars, err = positive(getenv, "VOICE_USER_CONTEXT_MAX_CHARS", defaultContextLimit); err != nil {
 		return err
 	}
-	if cfg.settings.SessionContextChars, err = positive(getenv, "VOICE_SESSION_CONTEXT_MAX_CHARS", defaultContextLimit); err != nil {
+	if cfg.settings.SessionContextChars, err = positive(getenv, "VOICE_SESSION_CONTEXT_MAX_CHARS", defaultSessionContextLimit); err != nil {
 		return err
 	}
 	if cfg.settings.ScreenInputChars, err = positive(getenv, "VOICE_SCREEN_INPUT_MAX_CHARS", defaultScreenInputLimit); err != nil {

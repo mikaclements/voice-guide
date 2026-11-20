@@ -234,6 +234,18 @@ func TestTheSessionContextIsSavedInOrderAndARepeatReturnsIt(t *testing.T) {
 	}
 }
 
+func TestAListOfSessionsReadsNoSessionContext(t *testing.T) {
+	s, _ := storeWithTwoWorkspaces(t)
+	sess := sessionOn(workspace, user)
+	sess.SessionContext = []conversation.SessionContextBlock{{Name: "page", Content: "Harbour charts"}}
+	started, _ := start(t, s, sess, uuid.NewV7())
+
+	list, err := s.ListForUser(context.Background(), workspace, user, uuid.Nil(), 10)
+	if err != nil || len(list) != 1 || list[0].ID != started.ID || len(list[0].SessionContext) != 0 {
+		t.Errorf("ListForUser = %+v, %v; want the session without its session context", list, err)
+	}
+}
+
 func TestASessionStartedWithoutSessionContextHoldsAnEmptyList(t *testing.T) {
 	s, pool := storeWithTwoWorkspaces(t)
 	got, _ := start(t, s, sessionOn(workspace, user), uuid.NewV7())

@@ -33,6 +33,11 @@ type Agent struct {
 	// SummarySchema is a JSON Schema of the agent author's own, an object,
 	// for a structured part of the summary; nil, the summary is text alone.
 	SummarySchema json.RawMessage
+	// SummaryDocuments names the documents the summary's call reads. One
+	// also under SessionContext reaches the agent too; one only here is a
+	// document a start may send that the conversation's prompt never holds:
+	// what the agent must not see while it talks, but the summary draws on.
+	SummaryDocuments []string
 	// Opens says the agent speaks first in its sessions, rather than waiting
 	// for the user.
 	Opens bool
@@ -235,6 +240,9 @@ const (
 // included. NaN is not a speed.
 func IsSpeed(speed float64) bool { return speed >= MinSpeed && speed <= MaxSpeed }
 
+// summaryRecordTags are the tags the summary's record renders its own parts in.
+var summaryRecordTags = []string{"instructions", "transcript", "documents", "screen"}
+
 var blockName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 
 // IsBlockName reports whether name can name a block of text a product sends,
@@ -263,8 +271,20 @@ func validate(a Agent) error {
 	if a.SummaryModel != "" && !IsModelName(a.SummaryModel) {
 		return fmt.Errorf("agent %s: summary model %q must be lower-case letters, digits, dots and dashes, starting with a letter or digit, at most 64", a.ID, a.SummaryModel)
 	}
-	if a.Summary == "" && (a.SummaryModel != "" || a.SummarySchema != nil) {
-		return fmt.Errorf("agent %s: a summary model or schema needs a summary instruction", a.ID)
+	if a.Summary == "" && (a.SummaryModel != "" || a.SummarySchema != nil || len(a.SummaryDocuments) > 0) {
+		return fmt.Errorf("agent %s: a summary model, schema or documents need a summary instruction", a.ID)
+	}
+	for i, name := range a.SummaryDocuments {
+		switch {
+		case !IsBlockName(name):
+			return fmt.Errorf("agent %s: summary document %q must be lower-case letters, digits and _, at most 32", a.ID, name)
+		case slices.Contains(a.SummaryDocuments[:i], name):
+			return fmt.Errorf("agent %s: summary document %q listed twice", a.ID, name)
+		case slices.Contains(summaryRecordTags, name):
+			// The summary's record renders each document as a tag beside these, so one of these
+			// names would read as the wrong part.
+			return fmt.Errorf("agent %s: summary document %q is a name the summary's record uses for its own parts", a.ID, name)
+		}
 	}
 	if a.SummarySchema != nil {
 		if err := CheckSummarySchema(a.SummarySchema); err != nil {
@@ -290,5 +310,6 @@ func (a Agent) copy() Agent {
 	a.Reads = slices.Clone(a.Reads)
 	a.SessionContext = slices.Clone(a.SessionContext)
 	a.SummarySchema = slices.Clone(a.SummarySchema)
+	a.SummaryDocuments = slices.Clone(a.SummaryDocuments)
 	return a
 }

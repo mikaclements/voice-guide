@@ -11,7 +11,7 @@ import (
 )
 
 // The kinds of context item user context holds. An agent declares which of them it reads. What a
-// product already knows, such as a resume, arrives as session context instead.
+// product already knows, a document, arrives as session context instead.
 const (
 	KindProfile        = "profile"
 	KindSessionSummary = "session_summary"

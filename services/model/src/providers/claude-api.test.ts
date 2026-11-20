@@ -7,7 +7,7 @@ import { claudeApiProvider, type StreamFn, sdkClient } from "./claude-api.ts";
 const request: ReplyRequest = {
   model: "claude-sonnet-5-5",
   sessionId: "s1",
-  stableLayers: ["You are an interviewer.", "<resume>Built a queue.</resume>"],
+  stableLayers: ["You are an interviewer.", "<document>Built a queue.</document>"],
   conversation: [
     { role: "user", text: "(The user has just joined.)" },
     { role: "agent", text: "Tell me about the queue." },
@@ -100,7 +100,7 @@ test("sends the layers as cached system blocks and the conversation with the new
   // the new words, with any screen input in them, come after it.
   assert.deepEqual(params?.system, [
     { type: "text", text: "You are an interviewer.", cache_control: cached },
-    { type: "text", text: "<resume>Built a queue.</resume>", cache_control: cached },
+    { type: "text", text: "<document>Built a queue.</document>", cache_control: cached },
   ]);
   assert.equal("cache_control" in (params ?? {}), false);
   assert.deepEqual(params?.messages, [

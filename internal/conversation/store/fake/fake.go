@@ -126,13 +126,15 @@ func (f *Sessions) InWorkspace(_ context.Context, workspace, id uuid.UUID) (conv
 }
 
 // ListForUser returns up to limit of the user's sessions in the workspace, newest first, those
-// started before the session before, or from the newest for the nil UUID.
+// started before the session before, or from the newest for the nil UUID, each without its
+// session context, as the database's store lists them.
 func (f *Sessions) ListForUser(_ context.Context, workspace, user, before uuid.UUID, limit int) ([]conversation.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	var list []conversation.Session
 	for _, s := range f.byRequest {
 		if s.Workspace == workspace && s.User == user && (before == uuid.Nil() || s.ID.Compare(before) < 0) {
+			s.SessionContext = nil
 			list = append(list, s)
 		}
 	}

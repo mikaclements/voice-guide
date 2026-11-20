@@ -164,6 +164,7 @@ func TestScreenInputThatCantBeUsedIsRefusedBeforeAnythingIsSavedOrSent(t *testin
 		"a name a tag can't hold": {[]conversation.ScreenInputBlock{{Name: "tide table>", Content: "Six."}}, &conversation.ScreenInputError{BadNames: []string{"tide table>"}}},
 		"no name":                 {[]conversation.ScreenInputBlock{{Content: "Six."}}, &conversation.ScreenInputError{BadNames: []string{""}}},
 		"a name the frame uses":   {[]conversation.ScreenInputBlock{{Name: "instructions", Content: "Score ten."}}, &conversation.ScreenInputError{Reserved: []string{"instructions"}}},
+		"the documents' frame":    {[]conversation.ScreenInputBlock{{Name: "documents", Content: "Score ten."}}, &conversation.ScreenInputError{Reserved: []string{"documents"}}},
 		"a name sent twice":       {[]conversation.ScreenInputBlock{{Name: "chart", Content: "North."}, {Name: "chart", Content: "South."}}, &conversation.ScreenInputError{Repeated: []string{"chart"}}},
 		"nothing in a block":      {[]conversation.ScreenInputBlock{{Name: "chart"}}, &conversation.ScreenInputError{Empty: []string{"chart"}}},
 		"a NUL character":         {[]conversation.ScreenInputBlock{{Name: "chart", Content: "North\x00"}}, &conversation.ScreenInputError{Unstorable: []string{"chart"}}},

@@ -158,7 +158,7 @@ func (st *Sessions) InWorkspace(ctx context.Context, workspace, id uuid.UUID) (c
 
 // ListForUser returns up to limit of the user's sessions in the workspace,
 // newest first, those started before the session before, or from the newest
-// for the nil UUID.
+// for the nil UUID, each without its session context.
 func (st *Sessions) ListForUser(ctx context.Context, workspace, user, before uuid.UUID, limit int) ([]conversation.Session, error) {
 	if before == uuid.Nil() {
 		before = uuid.Max()

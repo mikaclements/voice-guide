@@ -25,7 +25,7 @@ type ScreenInputError struct {
 // reservedNames are the tags that frame what the summary's model reads: a
 // screen input block named for one would read as part of the frame, its
 // instructions say, rather than as what the user showed.
-var reservedNames = map[string]bool{"instructions": true, "transcript": true, "screen": true}
+var reservedNames = map[string]bool{"instructions": true, "transcript": true, "screen": true, "documents": true}
 
 func (e *ScreenInputError) Error() string {
 	var parts []string

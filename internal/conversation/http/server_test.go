@@ -393,12 +393,13 @@ func TestAStartBodyOverTheLimitIsA413(t *testing.T) {
 	assertProblem(t, f.send("POST", "/v1/sessions", f.productKey(t), body), nethttp.StatusRequestEntityTooLarge)
 }
 
-// keeperExpectingResume is a fixture whose keeper expects the user's resume from the product.
-func keeperExpectingResume(t *testing.T, sessionContextChars int) fixture {
+// keeperExpectingDocuments is a fixture whose keeper expects a document named resume from the
+// product, and may be sent one named ship_log that only its summary reads.
+func keeperExpectingDocuments(t *testing.T, sessionContextChars int) fixture {
 	t.Helper()
 	store := fake.New()
 	if _, err := agents.Publish(context.Background(), store, workspace, []agents.Agent{
-		{ID: keeperID, Name: "Lighthouse keeper", SessionContext: []string{"resume"}, Persona: "secret persona"},
+		{ID: keeperID, Name: "Lighthouse keeper", SessionContext: []string{"resume"}, Persona: "secret persona", Summary: "Note the ships.", SummaryDocuments: []string{"ship_log"}},
 	}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
@@ -418,7 +419,7 @@ func startWithSessionContext(blocks string) string {
 }
 
 func TestStartingWithTheExpectedSessionContextAnswers201(t *testing.T) {
-	f := keeperExpectingResume(t, 1000)
+	f := keeperExpectingDocuments(t, 1000)
 	rec := f.send("POST", "/v1/sessions", f.productKey(t),
 		startWithSessionContext(`[{"name":"resume","content":"Deckhand, two seasons."}]`))
 	if rec.Code != nethttp.StatusCreated {
@@ -427,7 +428,7 @@ func TestStartingWithTheExpectedSessionContextAnswers201(t *testing.T) {
 }
 
 func TestSessionContextThatDoesntMatchTheAgentIsA422NamingTheProblem(t *testing.T) {
-	f := keeperExpectingResume(t, 1000)
+	f := keeperExpectingDocuments(t, 1000)
 	rec := f.send("POST", "/v1/sessions", f.productKey(t),
 		startWithSessionContext(`[{"name":"page","content":"Pricing"}]`))
 	p := assertProblemType(t, rec, nethttp.StatusUnprocessableEntity, "/v1/problems/session-context-mismatch")
@@ -439,7 +440,7 @@ func TestSessionContextThatDoesntMatchTheAgentIsA422NamingTheProblem(t *testing.
 func TestTheBodyLimitAlwaysFitsTheSessionContextLimit(t *testing.T) {
 	// The worst case: characters outside the basic plane, each escaped as 12 bytes of JSON.
 	const chars = 30_000
-	f := keeperExpectingResume(t, chars)
+	f := keeperExpectingDocuments(t, chars)
 	content := strings.Repeat(`\ud83d\ude00`, chars)
 	rec := f.send("POST", "/v1/sessions", f.productKey(t),
 		startWithSessionContext(`[{"name":"resume","content":"`+content+`"}]`))
@@ -448,8 +449,21 @@ func TestTheBodyLimitAlwaysFitsTheSessionContextLimit(t *testing.T) {
 	}
 }
 
+func TestSessionContextAtTheLimitStartsAndOneCharacterMoreIsA413(t *testing.T) {
+	// The service's default, 280,000 characters, split between a document the conversation reads
+	// and one only the summary reads, since the limit counts both.
+	const limit = 280_000
+	f := keeperExpectingDocuments(t, limit)
+	for extra, want := range map[int]int{0: nethttp.StatusCreated, 1: nethttp.StatusRequestEntityTooLarge} {
+		blocks := `[{"name":"resume","content":"` + strings.Repeat("a", limit/2) + `"},{"name":"ship_log","content":"` + strings.Repeat("b", limit/2+extra) + `"}]`
+		if rec := f.send("POST", "/v1/sessions", f.productKey(t), startWithSessionContext(blocks)); rec.Code != want {
+			t.Errorf("%d characters: status = %d, want %d: %.200s", limit+extra, rec.Code, want, rec.Body)
+		}
+	}
+}
+
 func TestSessionContextOverTheCharacterLimitIsA413(t *testing.T) {
-	f := keeperExpectingResume(t, 10)
+	f := keeperExpectingDocuments(t, 10)
 	assertProblem(t, f.send("POST", "/v1/sessions", f.productKey(t),
 		startWithSessionContext(`[{"name":"resume","content":"Deckhand, two seasons."}]`)), nethttp.StatusRequestEntityTooLarge)
 }
@@ -466,7 +480,7 @@ func TestARequestIDReusedForAnotherAgentIsA422(t *testing.T) {
 }
 
 func TestARepeatWithDifferentSessionContextIsA422(t *testing.T) {
-	f := keeperExpectingResume(t, 1000)
+	f := keeperExpectingDocuments(t, 1000)
 	bearer := f.productKey(t)
 	request := uuid.NewV7()
 	start := func(resume string) *httptest.ResponseRecorder {
@@ -611,6 +625,19 @@ func TestAProductSeesAndStartsOnlyItsOwnWorkspacesAgents(t *testing.T) {
 	}
 	body := `{"agent_id":"` + keeperID.String() + `","request_id":"` + uuid.NewV7().String() + `","user":"aiko-42"}`
 	assertProblem(t, f.send("POST", "/v1/sessions", key.Reveal(), body), nethttp.StatusNotFound)
+}
+
+func TestTheAgentListNamesTheDocumentsOnlyTheSummaryReads(t *testing.T) {
+	f := keeperExpectingDocuments(t, 1000)
+	rec := f.do("GET", "/v1/agents", f.productKey(t))
+	var got struct {
+		Agents []struct {
+			SummaryDocuments []string `json:"summary_documents"`
+		} `json:"agents"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil || len(got.Agents) != 1 || !slices.Equal(got.Agents[0].SummaryDocuments, []string{"ship_log"}) {
+		t.Errorf("listed %+v, %v; want the keeper's ship_log", got, err)
+	}
 }
 
 func TestTheAgentListSaysWhatAProductMustSendAtStart(t *testing.T) {

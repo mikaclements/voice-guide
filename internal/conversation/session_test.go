@@ -287,9 +287,9 @@ func TestAFailedLoadStartsNothingAndTheSameRequestCanBeTriedAgain(t *testing.T) 
 	}
 }
 
-// keeperExpectingResume is the service with the lighthouse keeper expecting the user's resume and the
-// page they are on from the product, within limit characters of session context.
-func keeperExpectingResume(t *testing.T, limit int) serviceOverFakes {
+// keeperExpectingDocuments is the service with the lighthouse keeper expecting two documents from
+// the product, named resume and page, within limit characters of session context.
+func keeperExpectingDocuments(t *testing.T, limit int) serviceOverFakes {
 	t.Helper()
 	h := newServiceOverFakes(t)
 	h.publish(t, agents.Agent{ID: keeperID, Name: "Lighthouse keeper", SessionContext: []string{"resume", "page"}, Persona: "You read every log."})
@@ -303,7 +303,7 @@ func block(name, content string) conversation.SessionContextBlock {
 }
 
 func TestTheSessionContextIsRecordedInOrder(t *testing.T) {
-	h := keeperExpectingResume(t, 1000)
+	h := keeperExpectingDocuments(t, 1000)
 	sent := []conversation.SessionContextBlock{block("resume", "Deckhand, two seasons."), block("page", "Harbour charts")}
 
 	s, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), SessionContext: sent})
@@ -327,7 +327,7 @@ func TestSessionContextThatDoesntMatchTheAgentIsRefusedAndNothingSaved(t *testin
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			h := keeperExpectingResume(t, 1000)
+			h := keeperExpectingDocuments(t, 1000)
 			_, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), SessionContext: tt.sent})
 			var got *conversation.SessionContextMismatchError
 			if !errors.As(err, &got) || !reflect.DeepEqual(*got, tt.want) {
@@ -344,7 +344,7 @@ func TestSessionContextOverTheLimitIsRefusedCountingCharacters(t *testing.T) {
 	// Twelve characters in all, 36 bytes in UTF-8: within a limit of 12, over one of 11.
 	sent := []conversation.SessionContextBlock{block("resume", "夜の見張り番を二年"), block("page", "海図。")}
 	for limit, refused := range map[int]bool{12: false, 11: true} {
-		h := keeperExpectingResume(t, limit)
+		h := keeperExpectingDocuments(t, limit)
 		_, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: uuid.NewV7(), SessionContext: sent})
 		if refused != errors.Is(err, conversation.ErrSessionContextTooLarge) || (refused && h.sessions.Count() != 0) {
 			t.Errorf("limit %d: StartSession = %v with %d sessions saved; refused should be %v", limit, err, h.sessions.Count(), refused)
@@ -365,7 +365,7 @@ func TestAnAgentThatExpectsNothingTakesNoSessionContext(t *testing.T) {
 }
 
 func TestARepeatWithTheSameSessionContextGetsTheFirstSession(t *testing.T) {
-	h := keeperExpectingResume(t, 1000)
+	h := keeperExpectingDocuments(t, 1000)
 	request := uuid.NewV7()
 	first := []conversation.SessionContextBlock{block("resume", "Deckhand, two seasons."), block("page", "Harbour charts")}
 	if _, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: request, SessionContext: first}); err != nil {
@@ -390,7 +390,7 @@ func TestARepeatWithDifferentSessionContextIsRefused(t *testing.T) {
 	}
 	for name, repeat := range tests {
 		t.Run(name, func(t *testing.T) {
-			h := keeperExpectingResume(t, 1000)
+			h := keeperExpectingDocuments(t, 1000)
 			request := uuid.NewV7()
 			started, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: request, SessionContext: first})
 			if err != nil {
@@ -429,7 +429,7 @@ func TestAStartThatLosesARaceIsAnsweredLikeARepeat(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			h := keeperExpectingResume(t, 1000)
+			h := keeperExpectingDocuments(t, 1000)
 			request := uuid.NewV7()
 			winner, _, err := h.startAs(caller, conversation.StartRequest{Agent: keeperID, RequestID: request, SessionContext: sent})
 			if err != nil {
@@ -449,7 +449,7 @@ func TestAStartThatLosesARaceIsAnsweredLikeARepeat(t *testing.T) {
 }
 
 func TestAMismatchNamesAtMostFiveNamesEachCutShort(t *testing.T) {
-	h := keeperExpectingResume(t, 1000)
+	h := keeperExpectingDocuments(t, 1000)
 	long := strings.Repeat("x", 50)
 	sent := []conversation.SessionContextBlock{block("resume", "Deckhand."), block("page", "Charts."), block(long, "a")}
 	for _, name := range []string{"b", "c", "d", "e", "f", "g"} {
@@ -474,7 +474,7 @@ func (r rewritingSessions) Start(ctx context.Context, s conversation.Session, re
 }
 
 func TestANewSessionIsNotComparedWithItselfAsStored(t *testing.T) {
-	h := keeperExpectingResume(t, 1000)
+	h := keeperExpectingDocuments(t, 1000)
 	h.svc = conversation.NewService(agents.NewCatalog(h.agents), rewritingSessions{h.sessions}, h.turns, h.model, usercontext.NewService(h.items),
 		conversation.Settings{UserContextChars: contextLimit, SessionContextChars: 1000})
 	sent := []conversation.SessionContextBlock{block("resume", "Deckhand."), block("page", "Charts.")}

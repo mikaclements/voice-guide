@@ -462,6 +462,19 @@ test("a body over the size limit is refused with a 413 problem", async () => {
   );
 });
 
+test("a turn with 400,000 characters of session context, every one escaped, fits the default body limit", async () => {
+  // Voice's JSON escapes <, > and & as six bytes each: 400,000 of them is session context raised to
+  // the most it is sized for, at its worst, sent with 200 turns of 4,000 characters each way.
+  const document = "\\u003c".repeat(400_000);
+  const turn = `{"role":"user","text":"${"a".repeat(4_000)}"},{"role":"agent","text":"${"b".repeat(4_000)}"}`;
+  const body = `{"model":"test-model","session_id":"s1","stable_layers":["You are an agent.","${document}"],"conversation":[${Array(200).fill(turn).join(",")}],"new_words":"Go on."}`;
+  await withServer(scripted([{ type: "text", text: "Go on, then." }]), async (url) => {
+    const res = await post(url, body);
+    assert.equal(res.status, 200);
+    await res.body?.cancel();
+  });
+});
+
 test("shutting down cancels the replies in flight", cancelWithin, async (t) => {
   const { provider, cancelled } = waiting();
   await withServer(

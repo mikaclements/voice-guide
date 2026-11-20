@@ -81,5 +81,6 @@ func clone(v agents.Version) agents.Version {
 	v.Reads = slices.Clone(v.Reads)
 	v.SessionContext = slices.Clone(v.SessionContext)
 	v.SummarySchema = slices.Clone(v.SummarySchema)
+	v.SummaryDocuments = slices.Clone(v.SummaryDocuments)
 	return v
 }
