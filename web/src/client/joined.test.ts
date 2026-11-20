@@ -19,6 +19,7 @@ afterEach(() => {
 function joining(f = fakeVoice(), session = "s1", ticket = "tk1", secure = true) {
   const shown: Shown[] = [];
   const told: string[] = [];
+  let readies = 0;
   const joined = new JoinedSession(
     {
       session,
@@ -28,13 +29,14 @@ function joining(f = fakeVoice(), session = "s1", ticket = "tk1", secure = true)
       giveBack: (words) => told.push(`back ${words}`),
       ended: (reason) => told.push(`ended ${reason}`),
       refused: (r) => told.push(`refused ${r.status ?? "-"} ${r.message}`),
+      ready: () => readies++,
     },
     f.open,
     f.play,
   );
   joined.join(secure);
   joinedSessions.push(joined);
-  return { f, joined, shown, told, last: () => shown.at(-1) as Shown };
+  return { f, joined, shown, told, last: () => shown.at(-1) as Shown, readies: () => readies };
 }
 
 const turn = "POST https://voice.example/v1/sessions/s1/turns Bearer tk1";
@@ -220,7 +222,7 @@ test("audio that fails sends the opening over HTTP, once, and a 409 for it shows
   assert.deepEqual([s.told, s.last().lines, s.last().notes], [[], [], []]);
 });
 
-const greetingStatus = "Agent is about to greet you: your microphone opens when it starts";
+const greetingStatus = "Getting ready…";
 
 test("Mute silences the microphone and says so", async () => {
   const s = joining();
@@ -601,4 +603,141 @@ test("a page on plain http holds no session, and says why", () => {
   assert.equal(s.f.offers.length, 0);
   assert.deepEqual(s.told, [`refused - ${insecureMessage}`, "ended unusable"]);
   assert.deepEqual([s.last().notes, s.last().over], [[insecureMessage], unusableMessage]);
+});
+
+// A session whose first audio connection opened with voice yet to say it is ready, the microphone
+// given, and the agent's opening sent once the browser plays it.
+async function gettingReady() {
+  const s = joining();
+  const c = s.f.offers[0].open(true);
+  c.give(true);
+  await settle();
+  s.f.played[0].blocked(false);
+  const from = async (m: object) => {
+    c.audio.turns.receive(JSON.stringify({ request_id: c.sent[0].request_id, ...m }));
+    await settle();
+  };
+  return { s, c, from };
+}
+
+test("for an agent that waits, the microphone holds until voice is ready, then the page is told once", async () => {
+  const { s, c, from } = await gettingReady();
+  await from({ type: "refused", reason: "opening-refused" });
+  assert.deepEqual([c.muted.at(-1), s.last().status, s.readies()], [true, greetingStatus, 0]);
+  assert.equal(s.last().locked, false, "typing goes meanwhile");
+  c.ready();
+  await settle();
+  assert.deepEqual([c.muted.at(-1), s.last().status, s.readies()], [false, "Listening", 1]);
+});
+
+test("for an agent that opens, the page is told at the greeting's first sound", async () => {
+  const { s, c, from } = await gettingReady();
+  c.ready(); // voice reads nothing ahead of a greeting, so says ready at once
+  await from({ type: "text", text: "Welcome back" });
+  assert.deepEqual([c.muted.at(-1), s.readies()], [true, 0], "nothing sounds yet");
+  s.f.played[0].level(true, 1);
+  await settle();
+  assert.deepEqual([c.muted.at(-1), s.readies()], [false, 1]);
+  await from({ type: "done", turn_id: "t1", seq: 1 });
+  assert.equal(s.readies(), 1, "told once");
+});
+
+test("a session in text, with no audio, is ready at once", async () => {
+  const s = joining();
+  s.f.offers[0].fail(new TypeError("Failed to fetch"));
+  await settle();
+  assert.equal(s.readies(), 1);
+});
+
+test("a session voice never says is ready opens the microphone and tells the page after 30 s", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { s, c, from } = await gettingReady();
+  await from({ type: "refused", reason: "opening-refused" });
+  t.mock.timers.tick(29_999);
+  assert.deepEqual([c.muted.at(-1), s.readies()], [true, 0]);
+  t.mock.timers.tick(1);
+  assert.deepEqual([c.muted.at(-1), s.readies()], [false, 1]);
+});
+
+test("audio dropping before the session is ready tells nothing; the next connection holds and tells once", async () => {
+  const { s, from } = await gettingReady();
+  await from({ type: "refused", reason: "opening-refused" });
+  s.f.offers[0].closing("dropped");
+  await settle();
+  assert.equal(s.readies(), 0);
+  const next = s.f.offers[1].open(true);
+  next.give(true);
+  await settle();
+  assert.deepEqual([next.muted, s.last().status], [[true], greetingStatus]);
+  s.f.played[1].blocked(false);
+  next.audio.turns.receive(
+    JSON.stringify({
+      type: "refused",
+      request_id: next.sent[0].request_id,
+      reason: "opening-refused",
+    }),
+  );
+  next.ready();
+  await settle();
+  assert.deepEqual([next.muted.at(-1), s.readies()], [false, 1]);
+});
+
+test("the browser refusing to play the agent during the hold tells the page at once, so the press to hear shows, and the microphone holds until the greeting sounds", async () => {
+  const s = joining();
+  const c = s.f.offers[0].open(true);
+  c.give(true);
+  await settle();
+  s.f.played[0].blocked(true);
+  assert.deepEqual([c.muted.at(-1), s.last().blocked, s.readies()], [true, true, 1]);
+  s.joined.playAfterPress();
+  await settle();
+  c.ready();
+  c.audio.turns.receive(
+    JSON.stringify({ type: "text", request_id: c.sent[0].request_id, text: "Welcome" }),
+  );
+  await settle();
+  assert.equal(c.muted.at(-1), true, "held until the greeting sounds");
+  s.f.played[0].level(true, 1);
+  await settle();
+  assert.deepEqual([c.muted.at(-1), s.readies()], [false, 1]);
+});
+
+test("audio closed before ready for a reason that leaves the session in text, as another tab taking it, tells the page", async () => {
+  const s = joining();
+  s.f.offers[0].open(true);
+  await settle();
+  s.f.offers[0].closing("replaced");
+  await settle();
+  assert.equal(s.readies(), 1);
+});
+
+test("a connection that holds nothing, as when the user typed first, tells the page at voice's ready, or after 30 s if it never comes", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const voiceAnswers of [true, false]) {
+    const s = joining();
+    await s.joined.send("Hi");
+    const c = s.f.offers[0].open(true);
+    c.give(true);
+    await settle();
+    assert.deepEqual([c.muted, s.readies()], [[false], 0], "nothing held");
+    if (voiceAnswers) c.ready();
+    else t.mock.timers.tick(30_000);
+    await settle();
+    assert.equal(s.readies(), 1, String(voiceAnswers));
+  }
+});
+
+test("the page leaving, or the session ending, before ready tells nothing", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const left = await gettingReady();
+  left.s.joined.leave();
+  left.c.ready();
+  t.mock.timers.tick(30_000);
+  await settle();
+  const ended = await gettingReady();
+  ended.s.f.offers[0].closing("ended");
+  ended.c.ready();
+  t.mock.timers.tick(30_000);
+  await settle();
+  assert.deepEqual([left.s.readies(), ended.s.readies()], [0, 0]);
 });

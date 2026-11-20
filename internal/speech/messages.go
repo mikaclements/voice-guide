@@ -9,8 +9,9 @@ import (
 	"github.com/mikaclements/voice-guide/internal/conversation"
 )
 
-// turnIn is what the browser sends on its data channel: a turn, or, as screen,
-// what the product's screen shows now, sent on its own, numbered n.
+// turnIn is what the browser sends on its data channel: a turn; or, as screen,
+// what the product's screen shows now, sent on its own, numbered n; or warm,
+// asking for the session to be readied for the user's words.
 type turnIn struct {
 	Type        string    `json:"type"`
 	RequestID   uuid.UUID `json:"request_id"`
@@ -31,7 +32,8 @@ type turnIn struct {
 // user spoke, how long after their speech ended the reply's first audio went
 // out. How a turn ended, done or lost, says in screen_taken the last screen
 // message whose blocks went with a turn; screen_refused says screen message n
-// can't be used.
+// can't be used. ready says the session can take the user's words, once per
+// connection the page asked on with warm.
 type out struct {
 	Type         string  `json:"type"`
 	RequestID    string  `json:"request_id,omitempty"`
