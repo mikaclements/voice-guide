@@ -220,3 +220,25 @@ func TestAFencedAnswerIsRead(t *testing.T) {
 		t.Errorf("saved %s and %q, want the fenced answer read whole", got.SummaryData, h.summaries(t, keeperID))
 	}
 }
+
+func TestTheRecordSaysWhatTheScreenShowedAndWhereTheUserCutInInFieldsOfTheirOwn(t *testing.T) {
+	h := newServiceOverFakes(t)
+	h.publish(t, agents.Agent{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea.", Summary: instruction, SummarySchema: json.RawMessage(recipeSchema)})
+	s, _ := h.start(t, caller, keeperID, uuid.NewV7())
+	turn := turnIn(s.ID, "Is the lamp lit?")
+	turn.ScreenInput = []conversation.ScreenInputBlock{{Name: "chart", Content: "Rocks to the north."}}
+	h.takeTurn(t, turn)
+	if _, err := h.svc.Interrupted(context.Background(), h.turns.All()[0], len("  **Bearing")); err != nil {
+		t.Fatalf("Interrupted: %v", err)
+	}
+	_, _ = h.svc.EndSession(context.Background(), caller, s.ID)
+	h.model.Answers = []string{validAnswer}
+	if err := h.svc.Summarize(context.Background(), workspace, user, conversation.SummaryArgs{Session: s.ID}); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	asked, _ := h.model.Requests()
+	want := `{"turns":[{"user":"Is the lamp lit?","screen":["chart"],"agent":"  **Bearing—","interrupted":true}],"screen":[{"name":"chart","content":"Rocks to the north."}]}`
+	if got := asked[len(asked)-1].NewWords; got != want {
+		t.Errorf("the record is %s, want %s: the screen's names and the cut each in a field, never in the user's words, and the screen whole once at the end", got, want)
+	}
+}
