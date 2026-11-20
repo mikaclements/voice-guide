@@ -23,7 +23,8 @@ said_lines=("Hi, I'm ready. Please start the interview."
   "I led the rebuild of shipment tracking at Harbourline, moving status updates from nightly batch files to an event stream; I mostly kept the team aligned.")
 if [ -n "${SAID:-}" ]; then
   said_lines=()
-  while IFS= read -r line; do said_lines+=("$line"); done <"$SAID"
+  while IFS= read -r line || [ -n "$line" ]; do said_lines+=("$line"); done <"$SAID"
+  [ ${#said_lines[@]} -gt 0 ] || { echo "SAID names an empty file" >&2; exit 1; }
 fi
 for said in "${said_lines[@]}"; do
   echo "you: $said"
