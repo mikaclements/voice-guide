@@ -381,3 +381,79 @@ func TestATurnLeftInFlightPastTheDeadlineIsCutOffAsLost(t *testing.T) {
 		t.Error("a turn within the deadline was cut off")
 	}
 }
+
+func TestAnEndedSessionsSummaryIsPendingThenSettlesOnce(t *testing.T) {
+	sessions, pool := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	ctx := context.Background()
+	if s.SummaryStatus != "" {
+		t.Errorf("a live session's status is %q, want none", s.SummaryStatus)
+	}
+	ended, _, err := sessions.End(ctx, workspace, user, s.ID)
+	if err != nil || ended.SummaryStatus != conversation.SummaryPending {
+		t.Fatalf("End = %q, %v; want the summary pending", ended.SummaryStatus, err)
+	}
+	// Another workspace, or another user, changes nothing while it is pending.
+	_ = sessions.SettleSummary(ctx, elsewhere, user, s.ID, conversation.SummaryNone)
+	_ = sessions.SettleSummary(ctx, workspace, uuid.NewV7(), s.ID, conversation.SummaryNone)
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryStatus != conversation.SummaryPending {
+		t.Errorf("after settling from elsewhere: %q, want still pending", got.SummaryStatus)
+	}
+	for _, status := range []conversation.SummaryStatus{conversation.SummaryWritten, conversation.SummaryNone} {
+		if err := sessions.SettleSummary(ctx, workspace, user, s.ID, status); err != nil {
+			t.Fatalf("SettleSummary: %v", err)
+		}
+	}
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryStatus != conversation.SummaryWritten {
+		t.Errorf("read back %q, want written, never moved back", got.SummaryStatus)
+	}
+	// The job that settles the status waits on the summary's job.
+	var waits bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT FROM jobs j JOIN jobs s ON s.id = j.after_id
+		WHERE j.kind = $1 AND s.kind = $2 AND j.args = s.args)`, conversation.SummarySettleJob, conversation.SummaryJob).Scan(&waits); err != nil || !waits {
+		t.Errorf("a settle job waiting on the summary's: %v, %v", waits, err)
+	}
+}
+
+func TestTheIdleSweepMarksTheSummaryPendingAndQueuesTheJobThatSettlesIt(t *testing.T) {
+	sessions, pool := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	idleFor(t, pool, s.ID, time.Hour)
+	if _, err := sessions.EndIdle(context.Background(), idle); err != nil {
+		t.Fatalf("EndIdle: %v", err)
+	}
+	if got, _, _ := sessions.ByID(context.Background(), workspace, user, s.ID); got.SummaryStatus != conversation.SummaryPending {
+		t.Errorf("status %q after the idle end, want pending", got.SummaryStatus)
+	}
+	var settles int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM jobs j JOIN jobs s ON s.id = j.after_id
+		WHERE j.kind = $1 AND s.kind = $2 AND j.args = s.args AND j.args->>'session_id' = $3`, conversation.SummarySettleJob, conversation.SummaryJob, s.ID.String()).Scan(&settles); err != nil || settles != 1 {
+		t.Errorf("%d settle jobs after the summary's, %v; want one", settles, err)
+	}
+}
+
+func TestAnEndedSessionKeepsTheFirstSummaryDataSavedOnIt(t *testing.T) {
+	sessions, _ := storeWithTwoWorkspaces(t)
+	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	ctx := context.Background()
+	first := json.RawMessage(`{"steps":3,"recipe":"bread"}`)
+	if err := sessions.SaveSummaryData(ctx, workspace, user, s.ID, first); err != nil {
+		t.Fatalf("SaveSummaryData while live: %v", err)
+	}
+	if got, _, _ := sessions.ByID(ctx, workspace, user, s.ID); got.SummaryData != nil {
+		t.Errorf("a live session holds %s, want no data", got.SummaryData)
+	}
+	if _, _, err := sessions.End(ctx, workspace, user, s.ID); err != nil {
+		t.Fatalf("End: %v", err)
+	}
+	for _, data := range []json.RawMessage{first, json.RawMessage(`{"recipe":"soup"}`)} {
+		if err := sessions.SaveSummaryData(ctx, workspace, user, s.ID, data); err != nil {
+			t.Fatalf("SaveSummaryData: %v", err)
+		}
+	}
+	_ = sessions.SaveSummaryData(ctx, elsewhere, user, s.ID, json.RawMessage(`{}`))
+	got, _, _ := sessions.ByID(ctx, workspace, user, s.ID)
+	if string(got.SummaryData) != string(first) {
+		t.Errorf("read back %s, want the first data as it was written, its keys in order", got.SummaryData)
+	}
+}

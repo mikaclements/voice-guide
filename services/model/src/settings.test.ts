@@ -10,6 +10,7 @@ test("unset settings take their defaults", () => {
   assert.equal(s.host, "127.0.0.1");
   assert.equal(s.port, 8091);
   assert.equal(s.replyTimeoutMs, 15_000);
+  assert.equal(s.backgroundReplyTimeoutMs, 120_000);
   assert.equal(s.maxConcurrentReplies, 4);
   assert.equal(s.maxBodyBytes, 1 << 20);
   assert.equal(s.maxSessionProcesses, 4);
@@ -22,12 +23,14 @@ test("set values are used", () => {
     ...base,
     MODEL_MAX_CONCURRENT_REPLIES: "8",
     MODEL_REPLY_TIMEOUT_MS: "5000",
+    MODEL_BACKGROUND_REPLY_TIMEOUT_MS: "60000",
     MODEL_MAX_SESSION_PROCESSES: "0",
     MODEL_HOST: "0.0.0.0",
   });
   assert.equal(s.host, "0.0.0.0");
   assert.equal(s.maxConcurrentReplies, 8);
   assert.equal(s.replyTimeoutMs, 5000);
+  assert.equal(s.backgroundReplyTimeoutMs, 60_000);
   assert.equal(s.maxSessionProcesses, 0);
 });
 
@@ -40,6 +43,7 @@ test("an unusable value stops startup with a message naming the setting", () => 
     ["MODEL_MAX_CONCURRENT_REPLIES", "1"],
     ["MODEL_REPLY_TIMEOUT_MS", "30s"],
     ["MODEL_REPLY_TIMEOUT_MS", "-1"],
+    ["MODEL_BACKGROUND_REPLY_TIMEOUT_MS", "2m"],
     ["MODEL_PORT", "99999"],
     ["MODEL_MAX_SESSION_PROCESSES", "65"],
     ["MODEL_SESSION_PROCESS_IDLE_MS", "0"],

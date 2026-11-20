@@ -42,9 +42,10 @@ const answered = {
 type Reply = { events: (Anthropic.MessageStreamEvent | Error | "hang")[]; final?: object };
 
 function fakeApi(...replies: Reply[]) {
-  const calls: { params: Anthropic.MessageStreamParams; signal: AbortSignal }[] = [];
-  const stream: StreamFn = (params, { signal }) => {
-    calls.push({ params, signal });
+  const calls: { params: Anthropic.MessageStreamParams; signal: AbortSignal; timeout: number }[] =
+    [];
+  const stream: StreamFn = (params, { signal, timeout }) => {
+    calls.push({ params, signal, timeout });
     const { events, final = answered } = replies.shift() ?? { events: [] };
     const messages = (async function* () {
       for (const item of events) {
@@ -306,4 +307,79 @@ test("a request with blank new words is refused before any call", async () => {
     kind: "bad_request",
   });
   assert.equal(calls.length, 0);
+});
+
+test("an ask outside any session has the background deadline; a turn keeps its own", async () => {
+  const { stream, calls } = fakeApi({ events: [] }, { events: [] });
+  const api = claudeApiProvider(
+    { apiKey: "sk-ant-test", timeoutMs: 15_000, backgroundTimeoutMs: 120_000 },
+    stream,
+  );
+  await collect(api.reply({ ...request, sessionId: undefined }, never));
+  await collect(api.reply(request, never));
+  assert.deepEqual(
+    calls.map((c) => c.timeout),
+    [120_000, 15_000],
+  );
+});
+
+test("an ask outside any session on a model with no thinking rule thinks by default, with room; a live reply is still refused", async () => {
+  const { stream, calls } = fakeApi({ events: [delta("Covered the lamp.")] }, { events: [] });
+  const summary = { ...request, model: "claude-opus-5-5", sessionId: undefined };
+  const events = await collect(provider(stream).reply(summary, never));
+  assert.equal("thinking" in (calls[0]?.params ?? {}), false);
+  assert.equal(calls[0]?.params.max_tokens, 16_000);
+  assert.deepEqual(events[0], { type: "text", text: "Covered the lamp." });
+
+  // A model with a rule keeps it, and the limit, outside a session too.
+  await collect(provider(stream).reply({ ...request, sessionId: undefined }, never));
+  assert.deepEqual(calls[1]?.params.thinking, { type: "between_tools" });
+  assert.equal(calls[1]?.params.max_tokens, 512);
+
+  await assert.rejects(
+    collect(provider(stream).reply({ ...request, model: "claude-opus-5-5" }, never)),
+    (err) => err instanceof ProviderError && err.kind === "bad_request",
+  );
+  assert.equal(calls.length, 2);
+});
+
+test("an ask with a schema asks for JSON held to what the API takes, at the model's own thinking, with room", async () => {
+  const { stream, calls } = fakeApi(
+    { events: [delta('{"summary":"Kind."}')] },
+    { events: [] },
+    { events: [] },
+  );
+  const score = { type: "integer", minimum: 1, maximum: 100 };
+  const schema = { type: "object", properties: { score }, required: ["score"] };
+  const background = { ...request, model: "claude-opus-5-5", sessionId: undefined, schema };
+  const events = await collect(provider(stream).reply(background, never));
+
+  const params = calls[0]?.params;
+  // Bounds the API's structured outputs don't take move into the description, so no request fails.
+  assert.deepEqual(params?.output_config, {
+    format: {
+      type: "json_schema",
+      schema: {
+        type: "object",
+        properties: { score: { type: "integer", description: "{minimum: 1, maximum: 100}" } },
+        additionalProperties: false,
+        required: ["score"],
+      },
+    },
+  });
+  assert.equal("thinking" in (params ?? {}), false);
+  assert.equal(params?.max_tokens, 16_000);
+  assert.deepEqual(events[0], { type: "text", text: '{"summary":"Kind."}' });
+
+  // A model with a thinking rule keeps it, still with room for the answer.
+  await collect(provider(stream).reply({ ...background, model: "claude-sonnet-5-5" }, never));
+  assert.deepEqual(calls[1]?.params.thinking, { type: "between_tools" });
+  assert.equal(calls[1]?.params.max_tokens, 16_000);
+
+  // A schema the transform can't take is a bad request, which voice answers without data.
+  const untyped = { type: "object", properties: { note: { description: "anything" } } };
+  await assert.rejects(
+    collect(provider(stream).reply({ ...background, schema: untyped }, never)),
+    (err) => err instanceof ProviderError && err.kind === "bad_request",
+  );
 });

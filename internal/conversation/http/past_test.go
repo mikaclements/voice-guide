@@ -2,6 +2,7 @@ package http_test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -255,4 +256,38 @@ func TestATwoHourSessionIsReadWholeAndItsSizeIsSeen(t *testing.T) {
 		t.Fatalf("read: %d with %d turns, want all %d", rec.Code, len(got.Turns), turns)
 	}
 	t.Logf("a session of %d turns of about 900 characters is read as %d KiB (%d bytes)", turns, size>>10, size)
+}
+
+func TestBothPastSessionRoutesSayWhetherASummaryIsStillComing(t *testing.T) {
+	f := newProductFixture(t)
+	ids := f.sessionsFor(t, "aiko-42", 2)
+	f.do("POST", "/v1/sessions/"+ids[0]+"/end", f.product)
+
+	list := f.send("GET", "/v1/users/aiko-42/sessions", f.product, "").Body.String()
+	if !strings.Contains(list, `"summary":null,"summary_status":null,`) || !strings.Contains(list, `"summary_status":"pending"`) {
+		t.Errorf("list = %s, want the running session with a null status, the ended one pending", list)
+	}
+	if read := f.send("GET", "/v1/sessions/"+ids[0], f.product, "").Body.String(); !strings.Contains(read, `"summary_status":"pending"`) {
+		t.Errorf("read = %s, want the summary pending", read)
+	}
+}
+
+func TestBothPastSessionRoutesCarryTheSummaryData(t *testing.T) {
+	f := newProductFixture(t)
+	ids := f.sessionsFor(t, "aiko-42", 2)
+	f.do("POST", "/v1/sessions/"+ids[0]+"/end", f.product)
+	ended := uuid.MustParse(ids[0])
+	session, _, _ := f.sessions.InWorkspace(context.Background(), workspace, ended)
+	if err := f.sessions.SaveSummaryData(context.Background(), workspace, session.User, ended, json.RawMessage(`{"shopping_list":["flour","yeast"]}`)); err != nil {
+		t.Fatalf("SaveSummaryData: %v", err)
+	}
+	const shape = `"summary_data":{"shopping_list":["flour","yeast"]}`
+
+	list := f.send("GET", "/v1/users/aiko-42/sessions", f.product, "").Body.String()
+	if !strings.Contains(list, `"summary_status":null,"summary_data":null}`) || !strings.Contains(list, shape) {
+		t.Errorf("list = %s, want the running session with null data, the ended one with its own", list)
+	}
+	if read := f.send("GET", "/v1/sessions/"+ids[0], f.product, "").Body.String(); !strings.Contains(read, shape) {
+		t.Errorf("read = %s, want the summary data", read)
+	}
 }

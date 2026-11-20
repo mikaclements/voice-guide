@@ -18,10 +18,13 @@ import (
 	"github.com/mikaclements/voice-guide/internal/conversation"
 )
 
-// maxLineBytes bounds one event of a reply. A text event holds a few words and
-// the final event a few numbers, so a longer line means a broken stream, and
-// reading on would only fill memory.
-const maxLineBytes = 64 << 10
+// maxLineBytes bounds one event of a reply. A text event holds a few words of
+// a spoken reply, or a structured answer whole, as the subscription sends a
+// summary with data: the summary's data of at most 64 KiB, which escaping as
+// the event's text can at most double, and its text; the final event holds a
+// few numbers. A longer line means a broken stream, and reading on would only
+// fill memory.
+const maxLineBytes = 256 << 10
 
 // Model asks the model service for replies.
 type Model struct {
@@ -177,6 +180,8 @@ type requestJSON struct {
 	NewWordsSaved string `json:"new_words_saved,omitempty"`
 	// Left out when the new words hold only this turn's own screen input.
 	NewWordsOwn string `json:"new_words_own,omitempty"`
+	// Left out for a reply in plain text.
+	Schema json.RawMessage `json:"schema,omitempty"`
 }
 
 type messageJSON struct {
@@ -187,7 +192,7 @@ type messageJSON struct {
 func requestOf(r conversation.ModelRequest) requestJSON {
 	out := requestJSON{
 		Model: r.Model, StableLayers: r.StableLayers,
-		Conversation: make([]messageJSON, 0, len(r.Conversation)), NewWords: r.NewWords,
+		Conversation: make([]messageJSON, 0, len(r.Conversation)), NewWords: r.NewWords, Schema: r.Schema,
 	}
 	if r.Session != uuid.Nil() {
 		out.SessionID = r.Session.String()

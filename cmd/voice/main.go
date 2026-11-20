@@ -101,9 +101,10 @@ const sweepTimeout = 10 * time.Second
 //     at a time, so live turns keep its other places; more workers would only wait on it;
 //   - Poll 1 s: a summary is wanted within seconds of the end (4 to 8 s measured), and one indexed
 //     query a second costs the database nothing worth measuring;
-//   - Timeout 30 s: twice the model service's 15 s deadline on a reply, so a run whose reply ran
-//     to it still reads and saves around it;
-//   - Lease 1 min: 30 s past the timeout, so a job still running is never taken by another;
+//   - Timeout 4.5 min: a summary with data asks at most twice, each ask up to the model service's
+//     2 min deadline on an ask outside any session, and 30 s more reads and saves around them; a
+//     round guess, to be measured on the subscription with Opus over a long session;
+//   - Lease 5 min: 30 s past the timeout, so a job still running is never taken by another;
 //   - Attempts 5, FirstWait 10 s, four times longer each time (10 s, 40 s, 160 s, 640 s): about 14
 //     minutes in all, through a model service restarting or a short outage, and the summary is only
 //     needed by the user's next session; a round guess;
@@ -112,13 +113,13 @@ const sweepTimeout = 10 * time.Second
 //   - BusyWait 5 s, so 5 to 10 s with jitter: about a summary's own time (3 to 5 s measured), so
 //     the place the model service keeps for background asks has likely freed. A round guess.
 var jobSettings = jobs.Settings{
-	Workers: 1, Poll: time.Second, Timeout: 30 * time.Second, Lease: time.Minute,
+	Workers: 1, Poll: time.Second, Timeout: 270 * time.Second, Lease: 5 * time.Minute,
 	Attempts: 5, FirstWait: 10 * time.Second, KeepDone: 7 * 24 * time.Hour, BusyWait: 5 * time.Second,
 }
 
 // deliverySettings say how each instance runs deliveries to products' servers, on a runner of
-// their own, so a slow product's server never holds up a summary; the rest are as jobSettings, a
-// run's 30 s twice a delivery's 15 s deadline:
+// their own, so a slow product's server never holds up a summary; the rest are as jobSettings but
+// Timeout 30 s, twice a delivery's 15 s deadline, and Lease 1 min, 30 s past it:
 //   - Workers 4: a delivery waits on another server, not on this machine, so several run at once;
 //     four let three slow products' servers hold one each for their 15 s while a fourth still
 //     delivers, for one idle poll a second each. A round guess, measured once products receive
@@ -330,7 +331,7 @@ func summaryJob(svc *conversation.Service) func(context.Context, uuid.UUID, uuid
 }
 
 // jobRunners returns this instance's job runners over store, each claiming only the kinds it
-// has handlers for: one for summaries, run by summaries' settings, which wait on the model
+// has handlers for: one for summaries and settling their status, run by summaries' settings, which wait on the model
 // service's one place for background asks, and one for deliveries, run by deliveries', which wait
 // on products' servers, so neither waits behind the other.
 func jobRunners(store jobs.Store, summaries, deliveries jobs.Settings, svc *conversation.Service, d *conversation.Deliveries, log *slog.Logger) ([]*jobs.Runner, error) {
@@ -339,6 +340,7 @@ func jobRunners(store jobs.Store, summaries, deliveries jobs.Settings, svc *conv
 		return nil, fmt.Errorf("the summaries' runner: %w", err)
 	}
 	jobs.Handle(summary, conversation.SummaryJob, summaryJob(svc))
+	jobs.Handle(summary, conversation.SummarySettleJob, svc.SettleSummary)
 	delivery, err := jobs.NewRunner(store, deliveries, log)
 	if err != nil {
 		return nil, fmt.Errorf("the deliveries' runner: %w", err)

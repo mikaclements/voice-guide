@@ -7,6 +7,7 @@ import {
 } from "node:http";
 import { type ErrorKind, type Provider, ProviderError, parseRequest, type Usage } from "./api.ts";
 import {
+  DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
   DEFAULT_MAX_BODY_BYTES,
   DEFAULT_MAX_CONCURRENT_REPLIES,
   DEFAULT_REPLY_TIMEOUT_MS,
@@ -19,6 +20,7 @@ export interface ServerOptions {
   log?: (record: Record<string, unknown>) => void;
   // Limits, from settings: how long one reply may run, how many run at once, how big a request is.
   replyTimeoutMs?: number;
+  backgroundReplyTimeoutMs?: number;
   maxConcurrentReplies?: number;
   maxBackgroundReplies?: number;
   maxBodyBytes?: number;
@@ -33,6 +35,7 @@ export function createServer(provider: Provider, options: ServerOptions = {}) {
   const log = options.log ?? ((record) => console.log(JSON.stringify(record)));
   const {
     replyTimeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    backgroundReplyTimeoutMs = DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
     maxConcurrentReplies = DEFAULT_MAX_CONCURRENT_REPLIES,
     maxBackgroundReplies = MAX_BACKGROUND_REPLIES,
     maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
@@ -72,9 +75,10 @@ export function createServer(provider: Provider, options: ServerOptions = {}) {
     }
 
     // A caller that goes away stops the provider, so nothing is spent on an unheard answer;
-    // a reply past its deadline stops it too, and the caller hears why.
+    // a reply past its deadline stops it too, and the caller hears why. An ask outside any session
+    // has a longer one: nobody waits for it, and it may run on a slower model.
     const callerGone = new AbortController();
-    const deadline = startDeadline(replyTimeoutMs);
+    const deadline = startDeadline(isBackground ? backgroundReplyTimeoutMs : replyTimeoutMs);
     const signal = AbortSignal.any([callerGone.signal, deadline]);
 
     inFlight++;

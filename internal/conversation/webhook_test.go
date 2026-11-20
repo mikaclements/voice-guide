@@ -98,8 +98,10 @@ type body struct {
 			Reply string `json:"reply"`
 			Cut   bool   `json:"cut"`
 		} `json:"turns"`
-		TurnsLeftOut int     `json:"turns_left_out"`
-		Summary      *string `json:"summary"`
+		TurnsLeftOut  int             `json:"turns_left_out"`
+		Summary       *string         `json:"summary"`
+		SummaryStatus string          `json:"summary_status"`
+		SummaryData   json.RawMessage `json:"summary_data"`
 	} `json:"data"`
 }
 
@@ -396,5 +398,62 @@ func TestAWebhookSecretShowsItselfRedacted(t *testing.T) {
 		if strings.Contains(shown, "bGln") {
 			t.Errorf("the secret shows in %s", shown)
 		}
+	}
+}
+
+func TestADeliveryCarriesTheSummarysStatusSettledAsTheJobLeftIt(t *testing.T) {
+	d := newDelivering(t)
+	// The summary job failed for good, leaving the summary pending: the delivery says none.
+	if err := d.deliver(conversation.DeliveryArgs{Session: d.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if b := read(t, d.poster.Posted()[0]); b.Data.SummaryStatus != "none" {
+		t.Errorf("status %q, want none", b.Data.SummaryStatus)
+	}
+}
+
+func TestADeliverySettlesAPendingSummaryFromWhetherItWasSavedAndKeepsOneSettled(t *testing.T) {
+	ctx := context.Background()
+	d := newDelivering(t)
+	if _, err := usercontext.NewService(d.items).SaveSummary(ctx, usercontext.SummaryRequest{
+		Workspace: workspace, User: d.session.User, Agent: keeperID, Session: d.session.ID, SessionEnded: d.session.EndedAt, Content: "Covered the lamp.",
+	}); err != nil {
+		t.Fatalf("SaveSummary: %v", err)
+	}
+	if err := d.deliver(conversation.DeliveryArgs{Session: d.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if b := read(t, d.poster.Posted()[0]); b.Data.SummaryStatus != "written" {
+		t.Errorf("pending with its summary saved: %q, want written", b.Data.SummaryStatus)
+	}
+
+	settled := newDelivering(t)
+	if err := settled.sessions.SettleSummary(ctx, workspace, settled.session.User, settled.session.ID, conversation.SummaryNone); err != nil {
+		t.Fatalf("SettleSummary: %v", err)
+	}
+	if _, err := usercontext.NewService(settled.items).SaveSummary(ctx, usercontext.SummaryRequest{
+		Workspace: workspace, User: settled.session.User, Agent: keeperID, Session: settled.session.ID, SessionEnded: settled.session.EndedAt, Content: "Late.",
+	}); err != nil {
+		t.Fatalf("SaveSummary: %v", err)
+	}
+	if err := settled.deliver(conversation.DeliveryArgs{Session: settled.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if b := read(t, settled.poster.Posted()[0]); b.Data.SummaryStatus != "none" {
+		t.Errorf("settled none: %q, want it as recorded", b.Data.SummaryStatus)
+	}
+}
+
+func TestADeliveryCarriesTheSummaryDataAsItIs(t *testing.T) {
+	d := newDelivering(t)
+	data := json.RawMessage(`{"areas":[{"name":"seasoning","score":72,"reason":"Salted the soup twice."}]}`)
+	if err := d.sessions.SaveSummaryData(context.Background(), workspace, d.session.User, d.session.ID, data); err != nil {
+		t.Fatalf("SaveSummaryData: %v", err)
+	}
+	if err := d.deliver(conversation.DeliveryArgs{Session: d.session.ID, Delivery: uuid.NewV7()}); err != nil {
+		t.Fatalf("Deliver: %v", err)
+	}
+	if posted := d.poster.Posted()[0]; !strings.Contains(string(posted.Body), `"summary_data":`+string(data)) {
+		t.Errorf("body %s, want the summary data as saved", posted.Body)
 	}
 }

@@ -336,6 +336,13 @@ func (d *Deliveries) body(ctx context.Context, workspace, user uuid.UUID, args D
 	} else if found {
 		ended.Summary = &summary.Content
 	}
+	// The delivery runs once the summary job is done or failed for good, so a status still pending
+	// is one the settling job hasn't got to yet, and none at all one ended before the status was
+	// kept: either settles as that job would.
+	ended.SummaryStatus, ended.SummaryData = session.SummaryStatus, session.SummaryData
+	if ended.SummaryStatus != SummaryWritten && ended.SummaryStatus != SummaryNone {
+		ended.SummaryStatus = settled(found)
+	}
 	all := make([]turnJSON, 0, len(turns))
 	for _, t := range turns {
 		all = append(all, turnJSON{Seq: t.Seq, Words: t.Words, Reply: t.HeardReply(), Cut: t.Status == TurnCut})
@@ -358,17 +365,20 @@ type deliveryJSON struct {
 
 // endedSession is a session as its product hears of it once ended: the user
 // by the product's own reference, never voice-guide's user ID; its turns in
-// order, as the user heard them; and its summary, null when none was written.
+// order, as the user heard them; its summary, null when none was written,
+// with whether one was; and its summary data, null when none was saved.
 type endedSession struct {
-	ID           uuid.UUID  `json:"id"`
-	User         string     `json:"user"`
-	AgentID      uuid.UUID  `json:"agent_id"`
-	AgentVersion int        `json:"agent_version"`
-	StartedAt    time.Time  `json:"started_at"`
-	EndedAt      time.Time  `json:"ended_at"`
-	Turns        []turnJSON `json:"turns"`
-	TurnsLeftOut int        `json:"turns_left_out"`
-	Summary      *string    `json:"summary"`
+	ID            uuid.UUID       `json:"id"`
+	User          string          `json:"user"`
+	AgentID       uuid.UUID       `json:"agent_id"`
+	AgentVersion  int             `json:"agent_version"`
+	StartedAt     time.Time       `json:"started_at"`
+	EndedAt       time.Time       `json:"ended_at"`
+	Turns         []turnJSON      `json:"turns"`
+	TurnsLeftOut  int             `json:"turns_left_out"`
+	Summary       *string         `json:"summary"`
+	SummaryStatus SummaryStatus   `json:"summary_status"`
+	SummaryData   json.RawMessage `json:"summary_data"`
 }
 
 // turnJSON is one turn as the user heard it: their words, and the reply as

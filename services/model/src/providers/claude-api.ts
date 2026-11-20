@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { transformJSONSchema } from "@anthropic-ai/sdk/lib/transform-json-schema";
 import {
   type ErrorKind,
   type Message,
@@ -6,7 +7,12 @@ import {
   ProviderError,
   type ReplyRequest,
 } from "../api.ts";
-import { DEFAULT_MAX_TOKENS, DEFAULT_REPLY_TIMEOUT_MS } from "../settings.ts";
+import {
+  BACKGROUND_MAX_TOKENS,
+  DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_REPLY_TIMEOUT_MS,
+} from "../settings.ts";
 
 // What the provider needs of the SDK: a reply streamed event by event, then the whole message, for
 // why it stopped and its usage.
@@ -15,12 +21,14 @@ export interface ReplyStream extends AsyncIterable<Anthropic.MessageStreamEvent>
 }
 export type StreamFn = (
   params: Anthropic.MessageStreamParams,
-  options: { signal: AbortSignal },
+  options: { signal: AbortSignal; timeout: number },
 ) => ReplyStream;
 
 // Thinking before the first word adds seconds to every spoken reply, and each model turns it off
 // its own way: Sonnet 5.5 refuses "disabled" and answers without thinking under "between_tools". A
-// model missing here is refused rather than left thinking.
+// live reply on a model missing here is refused rather than left thinking; an ask outside any
+// session, which nobody waits for, thinks as its model does by default, Opus 5.5 say, which can't
+// turn thinking off.
 const thinkingOff: Record<string, Anthropic.ThinkingConfigParam> = {
   "claude-sonnet-5-5": { type: "between_tools" },
   "claude-haiku-5-5": { type: "disabled" },
@@ -36,6 +44,8 @@ export interface ClaudeApiSettings {
   apiKey: string;
   maxTokens?: number;
   timeoutMs?: number;
+  // The deadline of an ask outside any session, which the SDK then gives up at instead.
+  backgroundTimeoutMs?: number;
   // Receives a record for a reply the model refused; never what was said.
   log?: (record: Record<string, unknown>) => void;
 }
@@ -47,6 +57,7 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
   const {
     maxTokens = DEFAULT_MAX_TOKENS,
     timeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    backgroundTimeoutMs = DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
     log = (record) => console.log(JSON.stringify(record)),
   } = settings;
   const send = stream ?? sdkStream(settings.apiKey, timeoutMs);
@@ -60,13 +71,15 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
           reason: "the new words are blank",
         });
       const thinking = thinkingOff[request.model];
-      if (!thinking)
+      if (!thinking && request.sessionId !== undefined)
         throw new ProviderError("bad_request", "claude-api: no rule turns thinking off", {
           reason: `no rule turns thinking off for this model; known: ${Object.keys(thinkingOff).join(", ")}`,
         });
+      const params = paramsFor(request, maxTokens, thinking);
       let message: Anthropic.Message;
       try {
-        const reply = send(paramsFor(request, maxTokens, thinking), { signal });
+        const timeout = request.sessionId === undefined ? backgroundTimeoutMs : timeoutMs;
+        const reply = send(params, { signal, timeout });
         for await (const event of reply) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta")
             yield { type: "text", text: event.delta.text };
@@ -127,11 +140,12 @@ function sdkStream(apiKey: string, timeoutMs: number): StreamFn {
 // after its last saved message, so the next turn reads it all from the cache; then the new message,
 // after the cache point, since the newest screen input in it changes from turn to turn. Three cache
 // points of the four the API takes. An ask outside any session is asked once, so caching its
-// conversation would only pay to write it.
+// conversation would only pay to write it. An ask with a
+// schema answers in JSON the API holds to the schema, at the model's own effort (see heldTo).
 function paramsFor(
   r: ReplyRequest,
   maxTokens: number,
-  thinking: Anthropic.ThinkingConfigParam,
+  thinking: Anthropic.ThinkingConfigParam | undefined,
 ): Anthropic.MessageStreamParams {
   const last = r.stableLayers.length - 1;
   const system = r.stableLayers.flatMap((text, i): Anthropic.TextBlockParam[] =>
@@ -141,12 +155,15 @@ function paramsFor(
   );
   return {
     model: r.model,
-    max_tokens: maxTokens,
+    // Thinking left on counts against the limit, and a schema's answer carries the author's data, so
+    // either gets room enough to leave the text whole.
+    max_tokens: thinking && !r.schema ? maxTokens : BACKGROUND_MAX_TOKENS,
     ...(system.length > 0 && { system }),
     messages: messagesFor(r.conversation, r.newWords, r.sessionId !== undefined),
-    thinking,
+    ...(thinking && { thinking }),
     // A spoken reply is short and plain; the least effort reaches its first word soonest.
-    output_config: { effort: "low" },
+    // An ask with a schema is a summary nobody waits for, so it keeps the model's own effort.
+    output_config: r.schema ? heldTo(r.schema) : { effort: "low" },
   };
 }
 
@@ -211,4 +228,19 @@ function detailOf(err: unknown): ProviderError["detail"] {
   if (Number.isInteger(err.status)) detail.status = err.status as number;
   if (typeof err.type === "string" && /^[a-z_]+$/.test(err.type)) detail.error_type = err.type;
   return detail;
+}
+
+// The API holds an answer only to the keywords its structured outputs take: the SDK's own transform
+// moves the rest, such as minimum, maximum or a pattern, into the description, where the model still
+// reads them and voice and the agent's author check the answer, instead of the API refusing every
+// request. A schema the transform can't take, a part with no type say, is a bad request, which voice
+// answers by asking for the summary without data.
+function heldTo(schema: Record<string, unknown>): Anthropic.OutputConfig {
+  try {
+    return { format: { type: "json_schema", schema: transformJSONSchema(schema) } };
+  } catch {
+    throw new ProviderError("bad_request", "claude-api: a schema the API can't take", {
+      reason: "a part of the schema has no type",
+    });
+  }
 }

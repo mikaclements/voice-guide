@@ -18,7 +18,9 @@ export function fakeProvider(
     name: "fake",
     async *reply(request, signal) {
       await sleep(settings.firstTextMs, signal);
-      for (const [i, word] of words.entries()) {
+      // An answer to a schema that voice's check always takes: the reply as the summary, no data.
+      const answer = request.schema && JSON.stringify({ summary: settings.reply, data: {} });
+      for (const [i, word] of (answer ? [answer] : words).entries()) {
         if (signal.aborted) return;
         if (i > 0) await sleep(Math.round((word.length * 1000) / settings.charsPerSecond), signal);
         yield { type: "text", text: word };

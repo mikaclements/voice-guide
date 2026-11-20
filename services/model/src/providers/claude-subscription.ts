@@ -18,6 +18,7 @@ import {
   type Usage,
 } from "../api.ts";
 import {
+  DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
   DEFAULT_MAX_SESSION_PROCESSES,
   DEFAULT_REPLY_TIMEOUT_MS,
   DEFAULT_SESSION_PROCESS_IDLE_MS,
@@ -48,12 +49,14 @@ export function claudeSubscriptionProvider(
   env: NodeJS.ProcessEnv = process.env,
   limits: {
     apiTimeoutMs?: number;
+    backgroundApiTimeoutMs?: number;
     maxSessionProcesses?: number;
     sessionProcessIdleMs?: number;
   } = {},
 ): Provider {
   const {
     apiTimeoutMs = DEFAULT_REPLY_TIMEOUT_MS,
+    backgroundApiTimeoutMs = DEFAULT_BACKGROUND_REPLY_TIMEOUT_MS,
     maxSessionProcesses = DEFAULT_MAX_SESSION_PROCESSES,
     sessionProcessIdleMs = DEFAULT_SESSION_PROCESS_IDLE_MS,
   } = limits;
@@ -93,7 +96,9 @@ export function claudeSubscriptionProvider(
       strictMcpConfig: true,
       mcpServers: {},
       persistSession: false,
-      env: childEnv(env, apiTimeoutMs),
+      // Claude Code holds the answer to the schema and retries an answer that misses it.
+      ...(request.schema && { outputFormat: { type: "json_schema", schema: request.schema } }),
+      env: childEnv(env, request.sessionId === undefined ? backgroundApiTimeoutMs : apiTimeoutMs),
     });
     live.add(started);
     started.exited.then(() => live.delete(started));
@@ -244,7 +249,9 @@ class SessionProcess {
     if (signal.aborted) cancel();
     try {
       for (let msg = await this.next(cancelled); msg; msg = await this.next(cancelled)) {
+        // An answer to a schema arrives whole with the result; text before it is the model's aside.
         if (
+          !request.schema &&
           msg.type === "stream_event" &&
           msg.event.type === "content_block_delta" &&
           msg.event.delta.type === "text_delta"
@@ -269,6 +276,14 @@ class SessionProcess {
             { role: "user", text: request.newWordsSaved ?? request.newWords },
             { role: "agent", text: reply },
           ];
+          // An answer held to the schema, or, without one, the result's own text for voice to check.
+          if (request.schema) {
+            const answer =
+              msg.structured_output === undefined
+                ? msg.result
+                : JSON.stringify(msg.structured_output);
+            yield { type: "text", text: answer };
+          }
           yield { type: "usage", ...usage };
           return true;
         }
