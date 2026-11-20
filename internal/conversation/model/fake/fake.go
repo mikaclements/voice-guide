@@ -19,7 +19,10 @@ type Model struct {
 	// Answers, when set, are sent one whole per request, in order, in place of
 	// Pieces, until they run out.
 	Answers []string
-	Fail    conversation.ModelErrorKind
+	// Fails, when set, fail one request each, in order, with its kind, before
+	// Answers or Pieces; an empty kind fails none.
+	Fails []conversation.ModelErrorKind
+	Fail  conversation.ModelErrorKind
 	// Report goes with done; unset, it names the fake as the provider and the
 	// model asked for.
 	Report *conversation.ModelReport
@@ -34,9 +37,16 @@ type Model struct {
 func (m *Model) Reply(ctx context.Context, r conversation.ModelRequest) <-chan conversation.ModelEvent {
 	m.mu.Lock()
 	m.requests = append(m.requests, r)
-	pieces := m.Pieces
-	if len(m.Answers) > 0 {
-		pieces, m.Answers = m.Answers[:1], m.Answers[1:]
+	pieces, fail := m.Pieces, m.Fail
+	if len(m.Fails) > 0 && m.Fails[0] != "" {
+		pieces, fail, m.Fails = nil, m.Fails[0], m.Fails[1:]
+	} else {
+		if len(m.Fails) > 0 {
+			m.Fails = m.Fails[1:]
+		}
+		if len(m.Answers) > 0 {
+			pieces, m.Answers = m.Answers[:1], m.Answers[1:]
+		}
 	}
 	m.mu.Unlock()
 	events := make(chan conversation.ModelEvent)
@@ -51,7 +61,7 @@ func (m *Model) Reply(ctx context.Context, r conversation.ModelRequest) <-chan c
 		if m.Report != nil {
 			report = *m.Report
 		}
-		m.send(ctx, events, conversation.ModelEvent{Done: m.Fail == "", Report: &report, Error: m.Fail})
+		m.send(ctx, events, conversation.ModelEvent{Done: fail == "", Report: &report, Error: fail})
 	}()
 	return events
 }

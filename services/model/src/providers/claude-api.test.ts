@@ -376,8 +376,10 @@ test("an ask with a schema asks for JSON held to what the API takes, at the mode
   assert.deepEqual(calls[1]?.params.thinking, { type: "between_tools" });
   assert.equal(calls[1]?.params.max_tokens, 16_000);
 
-  // A schema the transform can't take is asked for without the format, never refused.
+  // A schema the transform can't take is a bad request, which voice answers without data.
   const untyped = { type: "object", properties: { note: { description: "anything" } } };
-  await collect(provider(stream).reply({ ...background, schema: untyped }, never));
-  assert.deepEqual(calls[2]?.params.output_config, {});
+  await assert.rejects(
+    collect(provider(stream).reply({ ...background, schema: untyped }, never)),
+    (err) => err instanceof ProviderError && err.kind === "bad_request",
+  );
 });

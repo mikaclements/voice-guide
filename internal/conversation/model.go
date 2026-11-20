@@ -19,7 +19,7 @@ type Model interface {
 // Session is the nil UUID for an ask outside any session, such as a summary
 // written once a session ends, for which the model service keeps nothing.
 // Schema, when not nil, is the JSON schema the reply answers in, as a
-// summary that grades the session does.
+// summary with data does.
 type ModelRequest struct {
 	Model   string
 	Session uuid.UUID

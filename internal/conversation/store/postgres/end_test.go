@@ -436,7 +436,7 @@ func TestAnEndedSessionKeepsTheFirstSummaryDataSavedOnIt(t *testing.T) {
 	sessions, _ := storeWithTwoWorkspaces(t)
 	s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
 	ctx := context.Background()
-	first := json.RawMessage(`{"recipe":"bread","steps":3}`)
+	first := json.RawMessage(`{"steps":3,"recipe":"bread"}`)
 	if err := sessions.SaveSummaryData(ctx, workspace, user, s.ID, first); err != nil {
 		t.Fatalf("SaveSummaryData while live: %v", err)
 	}
@@ -453,8 +453,7 @@ func TestAnEndedSessionKeepsTheFirstSummaryDataSavedOnIt(t *testing.T) {
 	}
 	_ = sessions.SaveSummaryData(ctx, elsewhere, user, s.ID, json.RawMessage(`{}`))
 	got, _, _ := sessions.ByID(ctx, workspace, user, s.ID)
-	var read map[string]any
-	if err := json.Unmarshal(got.SummaryData, &read); err != nil || read["recipe"] != "bread" || read["steps"] != 3.0 {
-		t.Errorf("read back %s, want the first data", got.SummaryData)
+	if string(got.SummaryData) != string(first) {
+		t.Errorf("read back %s, want the first data as it was written, its keys in order", got.SummaryData)
 	}
 }

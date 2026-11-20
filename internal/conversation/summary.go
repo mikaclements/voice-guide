@@ -128,14 +128,7 @@ func (s *Service) Summarize(ctx context.Context, workspace, user uuid.UUID, args
 // alone.
 func (s *Service) writeSummary(ctx context.Context, v agents.Version, turns []Turn) (string, json.RawMessage, error) {
 	if v.SummarySchema == nil {
-		written, err := s.ask(ctx, s.summaryModelOf(v), summaryPrompt(v.Summary, turns), nil)
-		if err != nil {
-			return "", nil, err
-		}
-		if summary := capSummary(written); summary != "" {
-			return summary, nil, nil
-		}
-		return "", nil, errors.New("the model wrote an empty summary")
+		return s.writePlainSummary(ctx, v, turns)
 	}
 	schema, err := summaryDataSchema(v.SummarySchema)
 	if err != nil {
@@ -145,6 +138,11 @@ func (s *Service) writeSummary(ctx context.Context, v agents.Version, turns []Tu
 	var summary string
 	for range summaryAsks {
 		answer, err := s.ask(ctx, s.summaryModelOf(v), prompt, schema)
+		if refused := (*ReplyFailedError)(nil); errors.As(err, &refused) && refused.Kind == ModelBadRequest {
+			// The provider refused the schema itself, past its limits say: no run would get the
+			// data, so the text is written the plain way rather than lost with it.
+			return s.writePlainSummary(ctx, v, turns)
+		}
 		if err != nil {
 			return "", nil, err
 		}
@@ -160,6 +158,19 @@ func (s *Service) writeSummary(ctx context.Context, v agents.Version, turns []Tu
 		return "", nil, errNoSummaryText
 	}
 	return summary, nil, nil
+}
+
+// writePlainSummary asks the summary's model for the session's summary, text
+// alone.
+func (s *Service) writePlainSummary(ctx context.Context, v agents.Version, turns []Turn) (string, json.RawMessage, error) {
+	written, err := s.ask(ctx, s.summaryModelOf(v), summaryPrompt(v.Summary, turns), nil)
+	if err != nil {
+		return "", nil, err
+	}
+	if summary := capSummary(written); summary != "" {
+		return summary, nil, nil
+	}
+	return "", nil, errors.New("the model wrote an empty summary")
 }
 
 // SummarySettleJob is the kind of background job that settles an ended

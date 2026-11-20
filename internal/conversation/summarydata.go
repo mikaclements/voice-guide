@@ -67,7 +67,8 @@ func readSummaryData(answer string) (string, json.RawMessage) {
 	}
 	text := capSummary(got.Summary)
 	var compact bytes.Buffer
-	if text == "" || !bytes.HasPrefix(bytes.TrimSpace(got.Data), []byte("{")) || json.Compact(&compact, got.Data) != nil || compact.Len() > maxSummaryData {
+	if text == "" || !bytes.HasPrefix(bytes.TrimSpace(got.Data), []byte("{")) || json.Compact(&compact, got.Data) != nil ||
+		compact.Len() > maxSummaryData || bytes.Contains(compact.Bytes(), []byte(`\u0000`)) { // PostgreSQL refuses a NUL in JSON
 		return text, nil
 	}
 	return text, compact.Bytes()

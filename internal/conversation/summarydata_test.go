@@ -66,6 +66,7 @@ func TestAnAnswerFailingTheCheckIsAskedOnceMoreThenTheDataIsDroppedAndTheTextKep
 		"data a string": `{"summary":"Covered the lamp.","data":"bread"}`,
 		"data null":     `{"summary":"Covered the lamp.","data":null}`,
 		"data too big":  `{"summary":"Covered the lamp.","data":{"steps":"` + strings.Repeat("knead ", 11_000) + `"}}`,
+		"data with NUL": `{"summary":"Covered the lamp.","data":{"dish":"bre\u0000ad"}}`,
 	}
 	for name, answer := range failing {
 		t.Run(name, func(t *testing.T) {
@@ -168,5 +169,20 @@ func TestTheUsersWordsAreOnlyTheRecordAndNeverSitAmongTheInstructions(t *testing
 		if strings.Contains(ask.NewWords, instructs) || !strings.Contains(layers, instructs) {
 			t.Errorf("%q in the user's message, or missing from the layers; want it in the layers alone", instructs)
 		}
+	}
+}
+
+func TestASchemaTheProviderRefusesFallsBackToThePlainSummary(t *testing.T) {
+	h, s := withData(t)
+	h.model.Fails = []conversation.ModelErrorKind{conversation.ModelBadRequest}
+	h.model.Answers = []string{"Covered the lamp."}
+	if err := h.svc.Summarize(context.Background(), workspace, user, conversation.SummaryArgs{Session: s.ID}); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	asked, _ := h.model.Requests()
+	got := h.read(t, s.ID)
+	if len(asked) != 3 || asked[1].Schema == nil || asked[2].Schema != nil || got.SummaryData != nil || got.SummaryStatus != conversation.SummaryWritten ||
+		!slices.Equal(h.summaries(t, keeperID), []string{"Covered the lamp."}) {
+		t.Errorf("asked %d times, data %s, status %q, summaries %q; want the schema refused, the plain ask after it, the text written with no data", len(asked)-1, got.SummaryData, got.SummaryStatus, h.summaries(t, keeperID))
 	}
 }

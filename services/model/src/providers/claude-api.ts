@@ -75,10 +75,11 @@ export function claudeApiProvider(settings: ClaudeApiSettings, stream?: StreamFn
         throw new ProviderError("bad_request", "claude-api: no rule turns thinking off", {
           reason: `no rule turns thinking off for this model; known: ${Object.keys(thinkingOff).join(", ")}`,
         });
+      const params = paramsFor(request, maxTokens, thinking);
       let message: Anthropic.Message;
       try {
         const timeout = request.sessionId === undefined ? backgroundTimeoutMs : timeoutMs;
-        const reply = send(paramsFor(request, maxTokens, thinking), { signal, timeout });
+        const reply = send(params, { signal, timeout });
         for await (const event of reply) {
           if (event.type === "content_block_delta" && event.delta.type === "text_delta")
             yield { type: "text", text: event.delta.text };
@@ -161,6 +162,7 @@ function paramsFor(
     messages: messagesFor(r.conversation, r.newWords, r.sessionId !== undefined),
     ...(thinking && { thinking }),
     // A spoken reply is short and plain; the least effort reaches its first word soonest.
+    // An ask with a schema is a summary nobody waits for, so it keeps the model's own effort.
     output_config: r.schema ? heldTo(r.schema) : { effort: "low" },
   };
 }
@@ -231,12 +233,14 @@ function detailOf(err: unknown): ProviderError["detail"] {
 // The API holds an answer only to the keywords its structured outputs take: the SDK's own transform
 // moves the rest, such as minimum, maximum or a pattern, into the description, where the model still
 // reads them and voice and the agent's author check the answer, instead of the API refusing every
-// request. A schema the transform can't take, a property with no type say, is asked for without the
-// format: the shape is in the prompt, and voice checks the answer either way.
+// request. A schema the transform can't take, a part with no type say, is a bad request, which voice
+// answers by asking for the summary without data.
 function heldTo(schema: Record<string, unknown>): Anthropic.OutputConfig {
   try {
     return { format: { type: "json_schema", schema: transformJSONSchema(schema) } };
   } catch {
-    return {};
+    throw new ProviderError("bad_request", "claude-api: a schema the API can't take", {
+      reason: "a part of the schema has no type",
+    });
   }
 }
