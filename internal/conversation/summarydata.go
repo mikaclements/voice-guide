@@ -116,7 +116,7 @@ func readSummaryData(answer string) (string, json.RawMessage) {
 		Summary string          `json:"summary"`
 		Data    json.RawMessage `json:"data"`
 	}
-	dec := json.NewDecoder(strings.NewReader(answer))
+	dec := json.NewDecoder(strings.NewReader(unfenced(answer)))
 	dec.DisallowUnknownFields()
 	if dec.Decode(&got) != nil || dec.Decode(&struct{}{}) != io.EOF {
 		return "", nil
@@ -128,4 +128,18 @@ func readSummaryData(answer string) (string, json.RawMessage) {
 		return text, nil
 	}
 	return text, compact.Bytes()
+}
+
+// unfenced is the answer without one code fence around it, which a model
+// answering without the provider holding it to the schema often adds.
+func unfenced(answer string) string {
+	s := strings.TrimSpace(answer)
+	if !strings.HasPrefix(s, "```") || !strings.HasSuffix(s, "```") || len(s) < 6 {
+		return answer
+	}
+	s = strings.TrimSuffix(s, "```")
+	if line := strings.IndexByte(s, '\n'); line >= 0 {
+		return s[line+1:]
+	}
+	return answer
 }

@@ -58,6 +58,15 @@ func TestPublishRefusesASummaryModelOrSchemaOutOfForm(t *testing.T) {
 		"a schema of an array":           func(a *agents.Agent) { a.SummarySchema = json.RawMessage(`{"type":"array"}`) },
 		"a schema with no type":          func(a *agents.Agent) { a.SummarySchema = json.RawMessage(`{"properties":{}}`) },
 		"a schema of nothing":            func(a *agents.Agent) { a.SummarySchema = json.RawMessage(`null`) },
+		"a property with no type": func(a *agents.Agent) {
+			a.SummarySchema = json.RawMessage(`{"type":"object","properties":{"note":{"description":"anything"}}}`)
+		},
+		"an item with no type": func(a *agents.Agent) {
+			a.SummarySchema = json.RawMessage(`{"type":"object","properties":{"areas":{"type":"array","items":{"description":"one area"}}}}`)
+		},
+		"an alternative with no type": func(a *agents.Agent) {
+			a.SummarySchema = json.RawMessage(`{"type":"object","properties":{"score":{"anyOf":[{"type":"integer"},{}]}}}`)
+		},
 		"a schema over the cap": func(a *agents.Agent) {
 			a.SummarySchema = json.RawMessage(`{"type":"object","description":"` + strings.Repeat("a", agents.MaxSummarySchemaChars) + `"}`)
 		},

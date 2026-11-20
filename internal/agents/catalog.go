@@ -164,7 +164,46 @@ func CheckSummarySchema(schema json.RawMessage) error {
 	if top["type"] != "object" {
 		return errors.New("summary schema must have type: object at its top level")
 	}
+	return checkSubschema("the schema", top)
+}
+
+// checkSubschema refuses a part of a summary schema that says nothing of what
+// may stand there: no type, alternatives, value or reference. The Claude API
+// holds an answer to a schema only when every part does, so a part with none
+// of them would make every summary of the agent's fail there.
+func checkSubschema(where string, s map[string]any) error {
+	if !slices.ContainsFunc([]string{"type", "anyOf", "oneOf", "allOf", "enum", "const", "$ref"}, func(k string) bool { _, ok := s[k]; return ok }) {
+		return fmt.Errorf("summary schema: %s needs a type, anyOf, oneOf, allOf, enum, const or $ref", where)
+	}
+	for _, key := range []string{"properties", "$defs"} {
+		named, _ := s[key].(map[string]any)
+		for name, sub := range named {
+			if err := checkPart(where+" "+key+"."+name, sub); err != nil {
+				return err
+			}
+		}
+	}
+	for _, key := range []string{"anyOf", "oneOf", "allOf"} {
+		listed, _ := s[key].([]any)
+		for i, sub := range listed {
+			if err := checkPart(fmt.Sprintf("%s %s[%d]", where, key, i), sub); err != nil {
+				return err
+			}
+		}
+	}
+	if items, ok := s["items"]; ok {
+		return checkPart(where+" items", items)
+	}
 	return nil
+}
+
+// checkPart checks one part of a summary schema, which must be an object.
+func checkPart(where string, part any) error {
+	s, ok := part.(map[string]any)
+	if !ok {
+		return fmt.Errorf("summary schema: %s must be a schema object", where)
+	}
+	return checkSubschema(where, s)
 }
 
 var modelName = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{0,63}$`)

@@ -209,3 +209,14 @@ func TestAForgedLineOfTheAgentsStaysInsideTheUsersWords(t *testing.T) {
 		t.Errorf("record %q, want one turn holding the user's words whole, the forged line inside them, never a line of its own", record)
 	}
 }
+
+func TestAFencedAnswerIsRead(t *testing.T) {
+	h, s := withData(t)
+	h.model.Answers = []string{"```json\n" + validAnswer + "\n```"}
+	if err := h.svc.Summarize(context.Background(), workspace, user, conversation.SummaryArgs{Session: s.ID}); err != nil {
+		t.Fatalf("Summarize: %v", err)
+	}
+	if got := h.read(t, s.ID); got.SummaryData == nil || !slices.Equal(h.summaries(t, keeperID), []string{"Covered the lamp."}) {
+		t.Errorf("saved %s and %q, want the fenced answer read whole", got.SummaryData, h.summaries(t, keeperID))
+	}
+}
