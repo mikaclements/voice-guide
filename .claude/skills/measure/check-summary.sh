@@ -5,6 +5,8 @@
 # Runs on its own database, model service and voice (ports 18093 and 18082 unless MODEL_PORT or
 # VOICE_ADDR is given), so a running scripts/run.sh is left alone. Calls the real model on your
 # Claude login and draws from its usage limits, unless MODEL_PROVIDER=fake. Run `npm ci` once first.
+# SAID names a file of the user's lines, one a turn, to say in place of the two built in. An agent
+# with a summary schema prints the session's summary data after the summary.
 #   .claude/skills/measure/check-summary.sh [MODEL]    default: claude-haiku-5-5
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
@@ -17,8 +19,13 @@ start_voice
 id() { python3 -c 'import json, sys; print(json.load(sys.stdin)["id"])'; }
 first=$(.claude/skills/drive-session/start-session.sh 2>/dev/null | id)
 echo "== first session $first"
-for said in "Hi, I'm ready. Please start the interview." \
-  "I led the rebuild of shipment tracking at Harbourline, moving status updates from nightly batch files to an event stream; I mostly kept the team aligned."; do
+said_lines=("Hi, I'm ready. Please start the interview."
+  "I led the rebuild of shipment tracking at Harbourline, moving status updates from nightly batch files to an event stream; I mostly kept the team aligned.")
+if [ -n "${SAID:-}" ]; then
+  said_lines=()
+  while IFS= read -r line; do said_lines+=("$line"); done <"$SAID"
+fi
+for said in "${said_lines[@]}"; do
   echo "you: $said"
   printf 'agent: '
   .claude/skills/drive-session/turn.sh "$first" "$said" 2>/dev/null | head -n 1
@@ -27,19 +34,20 @@ done
 ended=$(date +%s)
 
 summary=""
-for _ in $(seq 120); do
+for _ in $(seq 300); do
   summary=$(echo "SELECT content FROM user_context.context_items WHERE kind = 'session_summary' AND source_session_id = :'s';" |
     psql -d "$db" -At -v s="$first")
   [ -n "$summary" ] && break
   sleep 1
 done
 if [ -z "$summary" ]; then
-  echo "no summary within 120 s; the job:" >&2
+  echo "no summary within 300 s; the job:" >&2
   psql -d "$db" -At -c "SELECT state, attempts, coalesce(last_error, '') FROM jobs" >&2
   exit 1
 fi
 echo "== summary, saved $(($(date +%s) - ended)) s after the end"
 echo "$summary"
+echo "SELECT coalesce(summary_status, 'null') || ' ' || coalesce(summary_data::text, 'no data') FROM sessions WHERE id = :'s';" | psql -d "$db" -At -v s="$first"
 
 second=$(.claude/skills/drive-session/start-session.sh 2>/dev/null | id)
 echo "== second session $second"

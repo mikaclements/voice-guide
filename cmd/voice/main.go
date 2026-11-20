@@ -103,7 +103,8 @@ const sweepTimeout = 10 * time.Second
 //     query a second costs the database nothing worth measuring;
 //   - Timeout 4.5 min: a summary with data asks at most twice, each ask up to the model service's
 //     2 min deadline on an ask outside any session, and 30 s more reads and saves around them; a
-//     round guess, to be measured on the subscription with Opus over a long session;
+//     summary with data on Opus 5.5 measured 8 to 12 s over sessions of two and five turns, so the
+//     limit holds a long session's slower read;
 //   - Lease 5 min: 30 s past the timeout, so a job still running is never taken by another;
 //   - Attempts 5, FirstWait 10 s, four times longer each time (10 s, 40 s, 160 s, 640 s): about 14
 //     minutes in all, through a model service restarting or a short outage, and the summary is only
