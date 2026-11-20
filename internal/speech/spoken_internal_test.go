@@ -178,15 +178,21 @@ func (h *hearingHarness) asked(t *testing.T) question {
 	}
 }
 
-// answer answers the next check asked, and passes the answer on as the connection's loop does.
+// answer answers the next check asked, and passes answers on as the connection's loop does until
+// that one comes back: a check stopped before it may still send its cancellation first.
 func (h *hearingHarness) answer(t *testing.T, finished bool, err error) {
 	t.Helper()
 	h.asked(t).answer <- checkAnswer{finished: finished, err: err}
-	select {
-	case c := <-h.st.checks:
-		h.st.receiveCheck(h.ctx, c)
-	case <-time.After(time.Second):
-		t.Fatal("the check's answer didn't come back")
+	for {
+		select {
+		case c := <-h.st.checks:
+			h.st.receiveCheck(h.ctx, c)
+			if !errors.Is(c.err, context.Canceled) {
+				return
+			}
+		case <-time.After(time.Second):
+			t.Fatal("the check's answer didn't come back")
+		}
 	}
 }
 

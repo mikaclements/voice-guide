@@ -195,7 +195,11 @@ func TestATypedTurnIsAnsweredInTextAtOnceAndSpokenInRealTime(t *testing.T) {
 	}
 	// A packet holds 20 ms of audio, so packets sent faster than that would
 	// pile up in the browser, and the reply would end before it was heard.
-	if took, least := played[len(played)-1].At.Sub(played[0].At), time.Duration(len(played)-1)*speech.PacketDuration; took < least {
+	// The pace is kept when each packet is sent, but the times here are when
+	// each arrived, so a first packet handed over late shortens the span: half
+	// a packet of slack takes that, and a packet sent a whole slot early still
+	// fails.
+	if took, least := played[len(played)-1].At.Sub(played[0].At), time.Duration(len(played)-1)*speech.PacketDuration-speech.PacketDuration/2; took < least {
 		t.Errorf("%d packets went out over %s, want at least %s: one every %s", len(played), took, least, speech.PacketDuration)
 	}
 }
