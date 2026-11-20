@@ -120,7 +120,8 @@ export function claudeSubscriptionProvider(
       let answered = false;
       try {
         if (process?.continues(request)) {
-          answered = yield* process.turn(request, request.newWords, signal);
+          // Only what changed: the process holds every earlier screen input block already.
+          answered = yield* process.turn(request, request.newWordsOwn ?? request.newWords, signal);
           if (answered || signal.aborted) return;
           if (process.spoke) throw ended(process.crash);
           // The process died between turns. Nothing has reached the caller yet, so a fresh one
@@ -261,9 +262,11 @@ class SessionProcess {
             throw new ProviderError(reported() ?? "unknown", `agent SDK: ${msg.subtype}`);
           const usage = usageOf(msg.modelUsage, this.totals);
           this.totals = msg.modelUsage;
+          // The words as voice will save them, so the next turn's conversation matches: a screen
+          // input block becomes a marker there. The process still holds the block it was shown.
           this.seen = [
             ...request.conversation,
-            { role: "user", text: request.newWords },
+            { role: "user", text: request.newWordsSaved ?? request.newWords },
             { role: "agent", text: reply },
           ];
           yield { type: "usage", ...usage };

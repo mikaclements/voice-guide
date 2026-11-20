@@ -79,8 +79,8 @@ func TestASummaryIsWrittenFromTheTurnsWithTheAgentsInstructionOutsideAnySession(
 	asked, _ := h.model.Requests()
 	last := asked[len(asked)-1]
 	if last.Session != uuid.Nil() || !strings.Contains(last.NewWords, "User: Is the lamp lit?") || !strings.Contains(last.NewWords, "Agent: "+reply) ||
-		!strings.Contains(last.NewWords, instruction) || len(last.Conversation) != 0 {
-		t.Errorf("asked %+v, want the transcript and the instruction, outside any session", last)
+		!slices.Contains(last.StableLayers, instruction) || len(last.Conversation) != 0 {
+		t.Errorf("asked %+v, want the transcript, the instruction in the layers, outside any session", last)
 	}
 	if got := h.summaries(t, keeperID); !slices.Equal(got, []string{"Covered the lamp. Weak on bearings."}) {
 		t.Errorf("the keeper would load %q, want the summary written", got)

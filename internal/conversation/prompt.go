@@ -1,6 +1,7 @@
 package conversation
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 
@@ -34,6 +35,13 @@ const interruptedSilentNote = "(The user interrupted you before you said anythin
 // turns after it.
 const openingCue = "(The user has just joined and hasn't said anything yet. Open the conversation as your instructions say.)"
 
+// screenChanged stands in a saved turn's message for each screen input block
+// it carried, in place of the content. The line is the same bytes every turn,
+// so a board that changes every turn never changes the conversation before it,
+// which the model reads from its cache; the newest block of each name goes
+// whole in the new message instead.
+func screenChanged(name string) string { return "(The user's " + name + " changed here.)" }
+
 // Prompt is what the model is sent for one turn.
 type Prompt struct {
 	// StableLayers are the same, byte for byte, on every turn of a session, so
@@ -42,8 +50,18 @@ type Prompt struct {
 	StableLayers []string
 	// Conversation is the session's earlier turns, oldest first.
 	Conversation []Message
-	// NewWords is what the user sent in this turn.
+	// NewWords is what the user sent in this turn, opened by the newest screen
+	// input block of each name the session has had.
 	NewWords string
+	// NewWordsSaved is this turn as the conversation of later turns holds it:
+	// its screen input blocks as markers. A provider that keeps the
+	// conversation between turns records this, so it matches the next request.
+	NewWordsSaved string
+	// NewWordsOwn is the new message with only the screen input this turn
+	// carried, which is what changed since the turn before. A provider that
+	// keeps the conversation between turns sends this to what it kept, which
+	// already holds every earlier block whole, rather than repeating them.
+	NewWordsOwn string
 }
 
 // Role says who a message in the conversation is from.
@@ -71,16 +89,53 @@ func buildPrompt(persona string, sessionContext []SessionContextBlock, userConte
 		p.StableLayers = append(p.StableLayers, about)
 	}
 	note := ""
+	var screen []ScreenInputBlock
 	for _, t := range saved {
-		p.Conversation = append(p.Conversation, Message{Role: RoleUser, Text: userMessage(t, note)})
+		p.Conversation = append(p.Conversation, Message{Role: RoleUser, Text: userMessage(t, note, markers(t.ScreenInput))})
+		screen = newest(screen, t.ScreenInput)
 		reply := agentMessage(t)
 		if reply != "" { // a lost or cut turn may have none, and an empty message tells the model nothing
 			p.Conversation = append(p.Conversation, Message{Role: RoleAgent, Text: reply})
 		}
 		note = noteAfter(t, reply)
 	}
-	p.NewWords = userMessage(next, note)
+	p.NewWords = userMessage(next, note, whole(newest(screen, next.ScreenInput)))
+	p.NewWordsSaved = userMessage(next, note, markers(next.ScreenInput))
+	p.NewWordsOwn = userMessage(next, note, whole(next.ScreenInput))
 	return p
+}
+
+// newest returns the newest block of each name once blocks have arrived after
+// those in screen, a name keeping its place from when it first came, so the
+// order is the same on every turn. Like append, it may change screen in place.
+func newest(screen, blocks []ScreenInputBlock) []ScreenInputBlock {
+	for _, b := range blocks {
+		if i := slices.IndexFunc(screen, func(o ScreenInputBlock) bool { return o.Name == b.Name }); i >= 0 {
+			screen[i] = b
+		} else {
+			screen = append(screen, b)
+		}
+	}
+	return screen
+}
+
+// whole renders screen input blocks with their content, each tagged with its
+// name.
+func whole(blocks []ScreenInputBlock) []string {
+	out := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		out = append(out, tagged(b.Name, b.Content))
+	}
+	return out
+}
+
+// markers renders a saved turn's screen input as the line marking each change.
+func markers(blocks []ScreenInputBlock) []string {
+	out := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		out = append(out, screenChanged(b.Name))
+	}
+	return out
 }
 
 // noteAfter is the note opening the user's message after turn t, whose reply
@@ -130,20 +185,19 @@ func aboutTheUser(sessionContext []SessionContextBlock, userContext []usercontex
 }
 
 // userMessage renders what the user sent in a turn: the note that they cut
-// the reply before it short, if any, then the screen input, so the words read
-// as being about it, then the words, or the cue for the agent's opening.
-func userMessage(t Turn, note string) string {
+// the reply before it short, if any, then the screen input as rendered, so
+// the words read as being about it, then the words, or the cue for the
+// agent's opening.
+func userMessage(t Turn, note string, screen []string) string {
 	words := t.Words
 	if t.Opening {
 		words = openingCue
 	}
-	parts := make([]string, 0, len(t.ScreenInput)+2)
+	parts := make([]string, 0, len(screen)+2)
 	if note != "" {
 		parts = append(parts, note)
 	}
-	for _, b := range t.ScreenInput {
-		parts = append(parts, tagged(b.Name, b.Content))
-	}
+	parts = append(parts, screen...)
 	return strings.Join(append(parts, words), "\n\n")
 }
 

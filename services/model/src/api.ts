@@ -15,7 +15,16 @@ export interface ReplyRequest {
   // The first is the agent's, shared by every session of its version; the rest are this session's.
   stableLayers: string[];
   conversation: Message[];
+  // The new message: the newest screen input of each name, then the user's words.
   newWords: string;
+  // The new message as later requests' conversations will hold it, its screen input as markers
+  // where it changed; left out when it is the same as newWords. A provider that keeps the
+  // conversation between replies records this, so it matches the next request.
+  newWordsSaved?: string;
+  // The new message with only the screen input this turn carried, what changed since the turn
+  // before; left out when it is the same as newWords. A provider that keeps the conversation sends
+  // this to what it kept, which already holds every earlier block, rather than repeating them.
+  newWordsOwn?: string;
 }
 
 // Every provider reports the same way: inputTokens are those read fresh and exclude the cached
@@ -75,6 +84,9 @@ export function parseRequest(body: unknown): ReplyRequest | string {
     return "session_id, when sent, must be text";
   }
   if (!isText(b.new_words)) return "new_words is required";
+  for (const field of ["new_words_saved", "new_words_own"]) {
+    if (b[field] !== undefined && !isText(b[field])) return `${field}, when sent, must be text`;
+  }
   const layers = b.stable_layers;
   if (!Array.isArray(layers) || !layers.every((l) => typeof l === "string")) {
     return "stable_layers must be a list of strings";
@@ -92,5 +104,7 @@ export function parseRequest(body: unknown): ReplyRequest | string {
     stableLayers: layers,
     conversation: conversation as Message[],
     newWords: b.new_words as string,
+    ...(b.new_words_saved !== undefined && { newWordsSaved: b.new_words_saved as string }),
+    ...(b.new_words_own !== undefined && { newWordsOwn: b.new_words_own as string }),
   };
 }

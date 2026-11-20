@@ -112,6 +112,35 @@ func TestAnAskOutsideAnySessionSendsNoSessionID(t *testing.T) {
 	}
 }
 
+func TestNewWordsReadingOtherwiseOnceSavedOrToAKeptProcessAreSentToo(t *testing.T) {
+	var asked []map[string]any
+	m := serving(t, func(w http.ResponseWriter, r *http.Request) {
+		var one map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&one)
+		asked = append(asked, one)
+		for _, l := range recorded(t) {
+			_, _ = io.WriteString(w, l+"\n")
+		}
+	})
+	withBoard := request
+	// The board came with an earlier turn, the notes with this one.
+	withBoard.NewWords = "<board>\nTwo boxes.\n</board>\n\n<notes>\nTidy.\n</notes>\n\nLike this?"
+	withBoard.NewWordsSaved = "(The user's notes changed here.)\n\nLike this?"
+	withBoard.NewWordsOwn = "<notes>\nTidy.\n</notes>\n\nLike this?"
+	plain := request
+	plain.NewWordsSaved, plain.NewWordsOwn = plain.NewWords, plain.NewWords
+	collect(m.Reply(context.Background(), withBoard))
+	collect(m.Reply(context.Background(), plain))
+	if len(asked) != 2 || asked[0]["new_words_saved"] != withBoard.NewWordsSaved || asked[0]["new_words_own"] != withBoard.NewWordsOwn {
+		t.Errorf("asked %v, want new_words_saved and new_words_own sent with a board", asked)
+	}
+	for _, field := range []string{"new_words_saved", "new_words_own"} {
+		if _, sent := asked[1][field]; sent {
+			t.Errorf("asked %v, want no %s for words that read the same", asked[1], field)
+		}
+	}
+}
+
 func TestARefusalAtTheModelServicesCapIsBusyAndAnyOther503Overloaded(t *testing.T) {
 	for problem, want := range map[string]conversation.ModelErrorKind{
 		`{"type":"/v1/problems/at-capacity","title":"At capacity","status":503}`: "busy",

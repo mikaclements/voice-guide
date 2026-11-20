@@ -87,6 +87,18 @@ test("streams text in order, then done with usage and timing", async () => {
   );
 });
 
+test("the new words as saved and as a kept process takes them reach the provider when sent, and only then", async () => {
+  const seen: ReplyRequest[] = [];
+  await withServer(scripted([], seen), async (url) => {
+    const saved = "(The user's board changed here.)\n\nAsk me something.";
+    await lines(await post(url, { ...validBody, new_words_saved: saved, new_words_own: "Own." }));
+    await lines(await post(url, validBody));
+  });
+  assert.equal(seen[0]?.newWordsSaved, "(The user's board changed here.)\n\nAsk me something.");
+  assert.equal(seen[0]?.newWordsOwn, "Own.");
+  assert.equal(seen[1] && ("newWordsSaved" in seen[1] || "newWordsOwn" in seen[1]), false);
+});
+
 test("done names the model the provider says answered, not only the one requested", async () => {
   const usage = { inputTokens: 1, cachedInputTokens: 0, cacheWriteTokens: 0, outputTokens: 1 };
   const answered = scripted([
@@ -114,6 +126,8 @@ test("requests the API can't serve get problems", async () => {
       [post(url, "{not json"), 400],
       [post(url, { ...validBody, model: "" }), 400],
       [post(url, { ...validBody, session_id: "" }), 400],
+      [post(url, { ...validBody, new_words_saved: "" }), 400],
+      [post(url, { ...validBody, new_words_own: "" }), 400],
       [post(url, { ...validBody, conversation: [{ role: "bot", text: "x" }] }), 400],
       [fetch(`${url}/v1/nothing`), 404],
       [fetch(`${url}/v1/replies`), 405],

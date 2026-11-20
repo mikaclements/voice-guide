@@ -207,7 +207,7 @@
       "title": "The product sends what it knows when a session starts, and what its screen shows with each turn",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "Session context, such as a resume, arrives as named text blocks from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt; screen input arrives with each turn, or, while audio is up, as it changes, held for the next turn taken there, spoken or typed. User context holds only what voice-guide learns itself.",
+      "decision": "Session context, such as a resume, arrives as named text blocks from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt; screen input arrives with each turn, or, while audio is up, as it changes, held for the next turn taken there, spoken or typed; the newest block of each name goes after the cached conversation. User context holds only what voice-guide learns itself.",
       "why": "The product is the source of truth for its users and its screen; a second copy in voice-guide would drift.",
       "tradeoff": "A product with no store of its own must keep, or resend, what it knows each session."
     },
@@ -279,16 +279,16 @@
       "title": "A layered, cached prompt",
       "section": "Turns · The model",
       "status": "accepted",
-      "decision": "The prompt is built in layers, stable ones first: the agent's persona, the session's context, the append-only conversation, then the screen input and the new words. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
+      "decision": "The prompt is built in layers, stable ones first: the agent's persona, the session's context, the append-only conversation, then the newest screen input block of each name and the new words. A saved turn's screen input stands as one fixed line where it changed. One function renders it from what the session recorded, so every turn and instance produces the same bytes.",
       "why": "Every uncached input token adds to the time to the model's first word, and caching cuts it sharply.",
-      "tradeoff": "Changes mid-session must arrive as messages, never as edits to the layers above."
+      "tradeoff": "Changes mid-session must arrive as messages, never as edits to the layers above; the newest screen input is read fresh every turn."
     },
     "model-access": {
       "ref": "architecture.md#d25",
       "title": "Model access behind a provider-neutral swap point",
       "section": "Turns · The model",
       "status": "accepted",
-      "decision": "voice sends one request per reply (model, the session unless it is an ask outside any session such as a summary, stable layers, conversation, new words) and reads a stream of JSON events back: text, then usage and timing, or an error kind. Which model answers is a setting of the service, recorded with every turn; the model service reaches Claude through its API or the developer's subscription, a setting too.",
+      "decision": "voice sends one request per reply (model, the session unless it is an ask outside any session such as a summary, stable layers, conversation, new words, and how they will read once saved when screen input makes them differ) and reads a stream of JSON events back: text, then usage and timing, or an error kind. Which model answers is a setting of the service, recorded with every turn; the model service reaches Claude through its API or the developer's subscription, a setting too.",
       "why": "The subscription is free during development, the API serves anyone with a key, and any model can replace either behind the same interface.",
       "tradeoff": "The subscription route is for the developer alone and must be replaced before anyone else uses voice-guide; the API route bills every turn."
     },
@@ -763,7 +763,7 @@
           "protocol": "HTTP · JSON lines",
           "send": "model, session, stable layers, conversation, new words",
           "back": "text …, then done (usage, timing) or error",
-          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it.",
+          "detail": "One POST /v1/replies per reply. A session's summary is the same request with no session, so the model service keeps nothing for it. When screen input makes them differ, the request also carries the new words as they will read once saved and with only the screen input the turn carried, for a provider that keeps the conversation.",
           "considerations": ["model-access", "layered-prompt"]
         },
         {
@@ -812,7 +812,7 @@
           "protocol": "Messages API · Agent SDK",
           "send": "stable layers, conversation, new words",
           "back": "streamed text · usage",
-          "detail": "On the API route, one streamed request per reply carries everything, with the agent's layer, the session's layers and the conversation so far marked for the provider's cache; the SDK's retries are off and its timeout is the reply's deadline. On the subscription route, the Claude Agent SDK runs a Claude Code process per session, kept between turns, on the developer's login; Claude Code's own retries and compaction are off, and it gets only the environment variables it needs, so the service's secrets never reach it.",
+          "detail": "On the API route, one streamed request per reply carries everything, with the agent's layer, the session's layers and the conversation with cache points, the conversation's on its last saved message, so the newest screen input and the words come after it; the SDK's retries are off and its timeout is the reply's deadline. On the subscription route, the Claude Agent SDK runs a Claude Code process per session, kept between turns, on the developer's login, and sent only the words and the screen input the turn carried; Claude Code's own retries and compaction are off, and it gets only the environment variables it needs, so the service's secrets never reach it.",
           "considerations": ["model-access", "stateless"]
         }
       ]
@@ -1631,7 +1631,7 @@
           "name": "Prompt",
           "path": "prompt.go",
           "summary": "Renders the layered prompt from what the session recorded, stable layers first.",
-          "description": "Domain logic, called directly rather than through a port: one function renders the prompt from what the session recorded, so every turn and every instance produces the same bytes. The agent's persona and the session's context form the stable layers; the conversation follows, with a cut reply only as far as it was heard, then the screen input and the new words.",
+          "description": "Domain logic, called directly rather than through a port: one function renders the prompt from what the session recorded, so every turn and every instance produces the same bytes. The agent's persona and the session's context form the stable layers; the conversation follows, with a cut reply only as far as it was heard, each saved turn's screen input as one fixed line where it changed, then the newest block of each name and the new words.",
           "why": "One function renders every turn's prompt, stable layers first, so the model's cache is hit and every instance sends the same bytes.",
           "considerations": ["layered-prompt", "heard"],
           "drill": "types-conversation",

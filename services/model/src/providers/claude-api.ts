@@ -123,9 +123,11 @@ function sdkStream(apiKey: string, timeoutMs: number): StreamFn {
 }
 
 // The layers as system blocks, cached after the agent's, shared by every session of its version,
-// and after the last, which closes what the session keeps the same; then the conversation, the
-// newest words last, cached from there back so the next turn reads it all from the cache. An ask
-// outside any session is asked once, so caching its words would only pay to write them.
+// and after the last, which closes what the session keeps the same; then the conversation, cached
+// after its last saved message, so the next turn reads it all from the cache; then the new message,
+// after the cache point, since the newest screen input in it changes from turn to turn. Three cache
+// points of the four the API takes. An ask outside any session is asked once, so caching its
+// conversation would only pay to write it.
 function paramsFor(
   r: ReplyRequest,
   maxTokens: number,
@@ -141,26 +143,34 @@ function paramsFor(
     model: r.model,
     max_tokens: maxTokens,
     ...(system.length > 0 && { system }),
-    messages: messagesFor([...r.conversation, { role: "user", text: r.newWords }]),
+    messages: messagesFor(r.conversation, r.newWords, r.sessionId !== undefined),
     thinking,
     // A spoken reply is short and plain; the least effort reaches its first word soonest.
     output_config: { effort: "low" },
-    ...(r.sessionId !== undefined && { cache_control: cached }),
   };
 }
 
+type Side = { role: "user" | "assistant"; content: Anthropic.TextBlockParam[] };
+
 // The API takes the two sides in turn, the user first. A message with nothing in it says nothing
-// and is left out; two from the same side in a row, after a lost reply say, go as one.
-function messagesFor(conversation: Message[]): Anthropic.MessageParam[] {
-  const said = conversation.filter((m) => m.text.trim() !== "");
-  if (said[0]?.role !== "user") said.unshift({ role: "user", text: conversationStart });
-  const messages: { role: "user" | "assistant"; content: Anthropic.TextBlockParam[] }[] = [];
-  for (const m of said) {
-    const role = m.role === "agent" ? "assistant" : "user";
+// and is left out; two from the same side in a row, after a lost reply say, go as one. The last
+// saved message's last block carries the cache point when asked; the new words never do.
+function messagesFor(saved: Message[], newWords: string, cacheSaved: boolean): Side[] {
+  const said = saved.filter((m) => m.text.trim() !== "");
+  if (said.length > 0 && said[0]?.role !== "user")
+    said.unshift({ role: "user", text: conversationStart });
+  const messages: Side[] = [];
+  const add = (role: Side["role"], block: Anthropic.TextBlockParam) => {
     const previous = messages.at(-1);
-    if (previous?.role === role) previous.content.push({ type: "text", text: m.text });
-    else messages.push({ role, content: [{ type: "text", text: m.text }] });
-  }
+    if (previous?.role === role) previous.content.push(block);
+    else messages.push({ role, content: [block] });
+  };
+  said.forEach((m, i) => {
+    const block: Anthropic.TextBlockParam = { type: "text", text: m.text };
+    if (cacheSaved && i === said.length - 1) block.cache_control = cached;
+    add(m.role === "agent" ? "assistant" : "user", block);
+  });
+  add("user", { type: "text", text: newWords });
   return messages;
 }
 
