@@ -81,7 +81,10 @@ func newStoredTurnHarness(t *testing.T, sessions conversation.Sessions, store co
 ) turnHarness {
 	t.Helper()
 	versions := agentsfake.New()
-	if _, err := agents.Publish(context.Background(), versions, workspace, []agents.Agent{{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea."}}); err != nil {
+	if _, err := agents.Publish(context.Background(), versions, workspace, []agents.Agent{
+		{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea."},
+		{ID: openerID, Name: "Harbour pilot", Persona: "You greet every ship.", Opens: true},
+	}); err != nil {
 		t.Fatalf("Publish: %v", err)
 	}
 	conv := conversation.NewService(agents.NewCatalog(versions), sessions, store, model, usercontext.NewService(itemsfake.New()),
@@ -118,6 +121,9 @@ type message struct {
 	Model        string  `json:"model"`
 	Heard        *string `json:"heard"`
 	FirstAudioMS int64   `json:"first_audio_ms"`
+	ScreenTaken  int     `json:"screen_taken"`
+	N            int     `json:"n"`
+	Detail       string  `json:"detail"`
 }
 
 // next returns the next message speech sends the browser.

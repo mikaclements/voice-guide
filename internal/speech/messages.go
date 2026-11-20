@@ -9,7 +9,8 @@ import (
 	"github.com/mikaclements/voice-guide/internal/conversation"
 )
 
-// turnIn is a turn the browser sends on its data channel.
+// turnIn is what the browser sends on its data channel: a turn, or, as screen,
+// what the product's screen shows now, sent on its own, numbered n.
 type turnIn struct {
 	Type        string    `json:"type"`
 	RequestID   uuid.UUID `json:"request_id"`
@@ -19,6 +20,7 @@ type turnIn struct {
 		Content string `json:"content"`
 	} `json:"screen_input"`
 	Opening bool `json:"opening"`
+	N       int  `json:"n"`
 }
 
 // out is a message to the browser: the words heard of a turn the user speaks,
@@ -27,7 +29,9 @@ type turnIn struct {
 // audio has all played, or interrupted, with the reply's text as far as the
 // user heard it, when they cut in. Either of the last says, for a turn the
 // user spoke, how long after their speech ended the reply's first audio went
-// out.
+// out. How a turn ended, done or lost, says in screen_taken the last screen
+// message whose blocks went with a turn; screen_refused says screen message n
+// can't be used.
 type out struct {
 	Type         string  `json:"type"`
 	RequestID    string  `json:"request_id,omitempty"`
@@ -41,6 +45,8 @@ type out struct {
 	Model        string  `json:"model,omitempty"`
 	Heard        *string `json:"heard,omitempty"`
 	FirstAudioMS int64   `json:"first_audio_ms,omitempty"`
+	ScreenTaken  int     `json:"screen_taken,omitempty"`
+	N            int     `json:"n,omitempty"`
 }
 
 // Why a turn was refused, so the page knows what to do with the words: send

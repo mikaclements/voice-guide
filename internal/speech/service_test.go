@@ -21,6 +21,8 @@ var (
 	workspace = uuid.MustParse("01a1de8a-0000-7000-8000-000000000001")
 	user      = uuid.MustParse("01a1de8a-0000-7000-8000-0000000000a1")
 	keeperID  = uuid.MustParse("01a1de8a-0000-7000-8000-0000000000b1")
+	// openerID is an agent that speaks first in its sessions.
+	openerID = uuid.MustParse("01a1de8a-0000-7000-8000-0000000000b2")
 	// expires is when the callers' tickets expire, as every caller on speech's
 	// routes holds one: an hour after the tests start, by the system clock the
 	// service reads unless a test sets one, so no test outlasts it.

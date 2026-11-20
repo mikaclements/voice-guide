@@ -68,7 +68,7 @@ export function fakeVoice() {
           const muted: boolean[] = [];
           let give = (_given: boolean) => {};
           const audio: Audio = {
-            turns: new ChannelTurns((m) => sent.push(JSON.parse(m))),
+            turns: new ChannelTurns((m) => sent.push(JSON.parse(m)), undefined, options?.screen),
             stream: Promise.resolve({} as MediaStream),
             microphone: {
               stop() {},
@@ -83,6 +83,7 @@ export function fakeVoice() {
               audio.turns.closed();
             },
           };
+          audio.turns.opened();
           resolve(audio);
           return { audio, sent, closed, muted, give: (given: boolean) => give(given) };
         },

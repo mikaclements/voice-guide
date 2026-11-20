@@ -125,7 +125,7 @@
       "title": "HTTP for agents and sessions, WebRTC for audio",
       "section": "Platform · API conventions",
       "status": "accepted",
-      "decision": "Agents, starting and ending sessions and typed turns go over HTTP, the reply streamed back as server-sent events. A session's audio connection is set up with one WHIP-shaped request, and while it is open, typed turns travel on its data channel so the server playing the reply takes them.",
+      "decision": "Agents, starting and ending sessions and typed turns go over HTTP, the reply streamed back as server-sent events. A session's audio connection is set up with one WHIP-shaped request, and while it is open, typed turns travel on its data channel so the server playing the reply takes them, and so does what the product's screen shows, held for the next turn taken there.",
       "why": "Request and reply suit sessions, live audio needs WebRTC, and turns on the data channel reach the server that plays the reply with no messages passed between servers.",
       "tradeoff": "Two transports to handle."
     },
@@ -207,7 +207,7 @@
       "title": "The product sends what it knows when a session starts, and what its screen shows with each turn",
       "section": "Sessions",
       "status": "accepted",
-      "decision": "Session context, such as a resume, arrives as named text blocks from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt; screen input arrives with each turn. User context holds only what voice-guide learns itself.",
+      "decision": "Session context, such as a resume, arrives as named text blocks from the product's server, which starts the session with its key, so the user can't change it, and sits in the cached part of the prompt; screen input arrives with each turn, or, while audio is up, as it changes, held for the next turn taken there, spoken or typed. User context holds only what voice-guide learns itself.",
       "why": "The product is the source of truth for its users and its screen; a second copy in voice-guide would drift.",
       "tradeoff": "A product with no store of its own must keep, or resend, what it knows each session."
     },
@@ -534,7 +534,7 @@
             {
               "nodes": ["browser", "voice"],
               "edges": ["browser-voice-webrtc", "browser-voice-http"],
-              "caption": "You type and send; the page puts your words on the audio connection's data channel, or posts them with the ticket when there is no audio connection"
+              "caption": "You type and send; the page puts your words on the audio connection's data channel, after any change to the screen, or posts them with the ticket and the screen input no turn has taken"
             },
             {
               "nodes": ["voice", "postgres", "model"],
@@ -597,10 +597,10 @@
           "name": "Product's page",
           "tech": "the drop-in client · <voice-guide-session>",
           "summary": "A product's page holding <voice-guide-session>: joined with a session's ticket, it talks, types and ends.",
-          "description": "Where a product puts an agent in front of its users: a page on the product's own site, which loads the drop-in client from voice at /client/voice-guide.js and puts a <voice-guide-session> element on it. The element holds the session with the same code as the web page, without React (npm run build:client writes web/dist-client/). The page hands it the session ID and ticket its server's start answered with by join({ session, ticket }), never an attribute, which session-replay scripts copy; it never holds a product key or starts a session. It opens the session's audio connection at once, adds the microphone once allowed, asks for the agent's opening once the browser plays the agent (over HTTP if the audio connection fails), streams the transcript, offers typing, Mute and End, reconnects with the same ticket, and fires voice-guide-ended and voice-guide-error. Its requests to voice are cross-origin, which a session's routes answer for any site; a closed shadow root keeps the product's styles and scripts out.",
+          "description": "Where a product puts an agent in front of its users: a page on the product's own site, which loads the drop-in client from voice at /client/voice-guide.js and puts a <voice-guide-session> element on it. The element holds the session with the same code as the web page, without React (npm run build:client writes web/dist-client/). The page hands it the session ID and ticket its server's start answered with by join({ session, ticket }), never an attribute, which session-replay scripts copy; it never holds a product key or starts a session. It opens the session's audio connection at once, adds the microphone once allowed, asks for the agent's opening once the browser plays the agent (over HTTP if the audio connection fails), streams the transcript, offers typing, Mute and End, reconnects with the same ticket, and fires voice-guide-ended and voice-guide-error. The page sets its screenInput to what its screen shows; each block changed goes on the data channel, the newest of each name once its buffer has room, or with a typed turn over HTTP, and is sent again after a reconnect until a turn takes it (screen.ts). Its requests to voice are cross-origin, which a session's routes answer for any site; a closed shadow root keeps the product's styles and scripts out.",
           "why": "The drop-in client runs in the product's own page, not a frame, so the microphone prompt names the product's site and the ticket goes through join(), never an attribute.",
           "considerations": ["any-origin", "product-keys", "api-for-products", "http-and-webrtc"],
-          "path": "web/src/client/client.ts · element.ts · joined.ts"
+          "path": "web/src/client/client.ts · element.ts · joined.ts · screen.ts"
         },
         {
           "id": "voice",
@@ -1274,7 +1274,7 @@
           "protocol": "call",
           "send": "words heard · how much of the reply was heard",
           "back": "the reply's text as it streams",
-          "detail": "speech calls conversation's service directly: Session to check a session before an offer, TakeTurn for every typed or spoken turn, Interrupted to save a cut reply as far as it was heard, TakeBack and Settle for talking on, Active to mark the user's speech (as often as SessionIdle allows), RecordTiming once a turn is saved. conversation never imports speech.",
+          "detail": "speech calls conversation's service directly: Session to check a session before an offer, TakeTurn for every typed or spoken turn, Interrupted to save a cut reply as far as it was heard, TakeBack and Settle for talking on, Active to mark the user's speech (as often as SessionIdle allows), CheckScreenInput for screen input sent ahead of a turn, RecordTiming once a turn is saved. conversation never imports speech.",
           "considerations": ["one-service-four-modules", "heard", "talking-on"]
         },
         {
@@ -2181,7 +2181,7 @@
                 "webrtc-transport",
                 "webrtc-browser"
               ],
-              "caption": "With the final text in and the check saying you've finished, or the maximum wait up, your page is shown your words and the turn is taken in conversation"
+              "caption": "With the final text in and the check saying you've finished, or the maximum wait up, your page is shown your words and the turn is taken in conversation, with the screen input your page sent ahead"
             }
           ]
         },

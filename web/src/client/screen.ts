@@ -1,0 +1,132 @@
+// What the product's screen shows, as named text blocks for the agent. A block voice hasn't saved
+// with a turn as it is now is pending: with audio up, each change goes at once on the data channel,
+// held by voice for the next turn there, and again on the next connection until a turn takes it;
+// over HTTP, a typed turn carries the pending blocks itself.
+
+export type ScreenBlock = { name: string; content: string };
+
+// The most that may wait in the data channel's buffer for a screen change to go: 64 KiB, a round
+// guess, well under a second of sending on a slow uplink, so a turn queued behind changes waits
+// little, far under the 16 MiB a browser holds; checked once a large board drives the element.
+export const screenSendBelow = 64 * 1024;
+
+// The blocks a page hands the element, copied, or a TypeError for a list voice could never take.
+export function screenBlocks(blocks: readonly ScreenBlock[]): ScreenBlock[] {
+  if (!Array.isArray(blocks)) throw new TypeError("screenInput takes a list of { name, content }");
+  const names = new Set<string>();
+  return blocks.map((b) => {
+    if (typeof b?.name !== "string" || typeof b.content !== "string") {
+      throw new TypeError("each screenInput block has a name and a content, both text");
+    }
+    if (names.has(b.name)) throw new TypeError(`screenInput names ${b.name} twice`);
+    names.add(b.name);
+    return { name: b.name, content: b.content };
+  });
+}
+
+// What one data channel tells back about the screen messages sent on it: the last whose blocks
+// went with a turn voice saved, one refused, with why, and that its buffer has drained. It acts
+// only while its channel is the session's, so a connection let go late can't mark another's.
+export type ScreenReplies = {
+  taken(n: number): void;
+  refused(n: number, detail: string): void;
+  drained(): void;
+  closed(): void;
+};
+
+// One data channel's share: how many screen messages went on it, and the block each carried, by
+// name, until voice says a turn took it or refused it.
+type Channel = {
+  send: (msg: string) => void;
+  buffered: () => number;
+  count: number;
+  sent: Map<string, { content: string; n: number; refused?: true }>;
+};
+
+export class Screen {
+  private current = new Map<string, string>();
+  // What voice saved with a turn, by name.
+  private readonly confirmed = new Map<string, string>();
+  // What voice refused, by name: left out of HTTP turns until it changes.
+  private readonly refusedContent = new Map<string, string>();
+  private channel: Channel | undefined;
+  private readonly onRefused: (name: string, message: string) => void;
+
+  constructor(onRefused: (name: string, message: string) => void = () => {}) {
+    this.onRefused = onRefused;
+  }
+
+  // The screen as the page shows it now; a block left out keeps what voice last had of it.
+  set(blocks: readonly ScreenBlock[]): void {
+    this.current = new Map(blocks.map((b) => [b.name, b.content]));
+    this.flush();
+  }
+
+  // The blocks voice hasn't saved with a turn, nor refused, as they are now: what an HTTP turn
+  // carries.
+  pending(): ScreenBlock[] {
+    return [...this.current]
+      .filter(([name, c]) => c !== this.confirmed.get(name) && c !== this.refusedContent.get(name))
+      .map(([name, content]) => ({ name, content }));
+  }
+
+  // An HTTP turn carrying blocks was saved: its stream starts only then.
+  carried(blocks: readonly ScreenBlock[]): void {
+    for (const b of blocks) this.confirmed.set(b.name, b.content);
+  }
+
+  // A data channel opened: changes go on it from now on, beginning with every one voice hasn't
+  // saved with a turn, a refused one tried again, numbered afresh.
+  connect(send: (msg: string) => void, buffered: () => number = () => 0): ScreenReplies {
+    const channel: Channel = { send, buffered, count: 0, sent: new Map() };
+    this.channel = channel;
+    this.flush();
+    const live = () => this.channel === channel;
+    return {
+      taken: (n) => {
+        if (!live()) return;
+        for (const [name, s] of channel.sent) {
+          if (s.n > n || s.refused) continue;
+          this.confirmed.set(name, s.content);
+          channel.sent.delete(name);
+        }
+      },
+      refused: (n, detail) => {
+        if (!live()) return;
+        // Not sent again on this channel until it changes; voice refuses it as it is.
+        for (const [name, s] of channel.sent) {
+          if (s.n !== n) continue;
+          s.refused = true;
+          this.refusedContent.set(name, s.content);
+          this.onRefused(name, detail);
+        }
+      },
+      drained: () => {
+        if (live()) this.flush();
+      },
+      closed: () => {
+        if (live()) this.channel = undefined;
+      },
+    };
+  }
+
+  // Sends each block changed since it last went on the channel, or since voice saved it, one
+  // message each, so voice refuses a block that can't be used without the others; while the
+  // channel's buffer is full, the rest wait for it to drain, the newest of each name going then.
+  private flush(): void {
+    const ch = this.channel;
+    if (!ch) return;
+    for (const [name, content] of this.current) {
+      if (content === (ch.sent.get(name)?.content ?? this.confirmed.get(name))) continue;
+      if (ch.buffered() > screenSendBelow) return;
+      const n = ch.count + 1;
+      try {
+        ch.send(JSON.stringify({ type: "screen", n, screen_input: [{ name, content }] }));
+      } catch {
+        return; // the channel is closing: what wasn't sent goes on the next
+      }
+      ch.count = n;
+      ch.sent.set(name, { content, n });
+    }
+  }
+}

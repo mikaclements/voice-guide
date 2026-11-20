@@ -79,9 +79,14 @@ func (s *Service) serve(c access.Caller, session uuid.UUID, voice voiceSettings,
 				continue
 			}
 			var m turnIn
-			if err := json.Unmarshal(raw, &m); err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {
+			err := json.Unmarshal(raw, &m)
+			if err == nil && m.Type == "screen" {
+				r.screenChanged(m)
+				continue
+			}
+			if err != nil || m.Type != "turn" || m.RequestID == uuid.Nil() {
 				s.tell(conn, out{Type: "refused", RequestID: requestOf(m), Reason: reasonUnreadable,
-					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content`})
+					Detail: `a turn is a JSON object of type "turn" with request_id, a UUID, the words, and an optional screen_input list of name and content; type "screen" sends screen_input alone, numbered n`})
 				continue
 			}
 			r.begin(ctx, m, received, nil)
@@ -113,6 +118,11 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 	for _, b := range m.ScreenInput {
 		req.ScreenInput = append(req.ScreenInput, conversation.ScreenInputBlock(b))
 	}
+	// What the screen shows, sent ahead, goes with this turn, a block the turn
+	// carries itself winning; it stays held until the turn is saved, so a turn
+	// refused or taken back leaves it for the next and no change is lost.
+	waiting, screenUpTo := r.screen.take()
+	req.ScreenInput = withNewer(waiting, req.ScreenInput)
 	text := make(chan string, textAhead)
 	var audio played
 	var playing sync.WaitGroup
@@ -150,6 +160,13 @@ func (r *replies) runTurn(ctx, speaking context.Context, m turnIn, received time
 		return
 	}
 	ending := s.ending(request, turn, err, !firstText.IsZero())
+	// Said once the turn is saved for good, as a spoken one can still be taken
+	// back after its first text: confirmed then, the page would never send a
+	// change again that the turn replacing it might not save.
+	if ending.Type == "done" || ending.Type == "lost" {
+		r.screen.saved(waiting)
+		ending.ScreenTaken = screenUpTo
+	}
 	s.tell(r.conn, ending)
 	playing.Wait()
 	if ending.Reason == reasonEnded {

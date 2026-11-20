@@ -83,6 +83,7 @@ class Host extends Fake {
 
 type Element = Host & {
   session: string;
+  screenInput: { name: string; content: string }[];
   join(given: { session: string; ticket: string }): void;
   end(): Promise<void>;
   connectedCallback(): void;
@@ -465,4 +466,26 @@ test("the element joins what it was given once it is on the page, voice at api, 
   assert.equal(other?.api, "https://v.example");
   assert.notEqual(other?.key, join?.key, "a new ticket joins again");
   assert.equal(wanted(true, given, null, "")?.api, "", "the page's own origin");
+});
+
+test("screen input set before join goes on the audio connection once it opens, and a block voice refuses is told in an event", async () => {
+  const p = page();
+  const board = { name: "board", content: "Cache -> Database" };
+  p.el.screenInput = [board];
+  assert.throws(() => {
+    p.el.screenInput = [board, board];
+  }, TypeError);
+  assert.deepEqual(p.el.screenInput, [board]);
+  p.put();
+  p.el.join({ session: "s1", ticket: "tk1" });
+  await settle();
+  const c = p.f.offers[0].open();
+  await settle();
+  assert.deepEqual(c.sent, [{ type: "screen", n: 1, screen_input: [board] }]);
+  c.audio.turns.receive(JSON.stringify({ type: "screen_refused", n: 1, detail: "too large" }));
+  const told = p.el.events.at(-1);
+  assert.deepEqual(
+    [told?.type, told?.detail],
+    ["voice-guide-screen-refused", { name: "board", message: "too large", session: "s1" }],
+  );
 });

@@ -6,6 +6,7 @@
 import { at } from "./api.ts";
 import type { openAudio, playAgent } from "./audio.ts";
 import { JoinedSession, type Shown } from "./joined.ts";
+import { type ScreenBlock, screenBlocks } from "./screen.ts";
 
 // A plain default a product restyles with the custom properties and parts. The box is drawn inside,
 // on the frame, where the product's own rules can't reach: a page rule matching the host, as a
@@ -73,6 +74,7 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
     #joined: JoinedSession | undefined;
     #key = "";
     #syncing: Promise<void> | undefined;
+    #screen: ScreenBlock[] = [];
 
     constructor() {
       super();
@@ -117,6 +119,17 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
     // The session the element holds, or "": not a secret, unlike its ticket.
     get session(): string {
       return this.#given?.session ?? "";
+    }
+
+    // What the product's screen shows, as named text blocks: each one changed goes to the agent with
+    // the user's next turn, spoken or typed, or the agent's opening, and carries over to a session
+    // joined later.
+    get screenInput(): ScreenBlock[] {
+      return this.#screen.map((b) => ({ ...b }));
+    }
+    set screenInput(blocks: ScreenBlock[]) {
+      this.#screen = screenBlocks(blocks);
+      this.#joined?.showScreen(this.#screen);
     }
 
     // Joins the session the product's server started, with the ticket its start answered with,
@@ -186,10 +199,12 @@ export function define(open?: typeof openAudio, play?: typeof playAgent): void {
             ended: (reason) => emit("voice-guide-ended", { reason }),
             refused: ({ message, status, type }) =>
               emit("voice-guide-error", { message, status, type }),
+            screenRefused: (refusal) => emit("voice-guide-screen-refused", refusal),
           },
           open,
           play,
         );
+        joined.showScreen(this.#screen);
         this.#joined = joined;
         joined.join(window.isSecureContext);
       });

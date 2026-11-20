@@ -3,6 +3,7 @@
 // WHIP (RFC 9725).
 import { authorized, problemFrom } from "./api.ts";
 import { TurnFailure } from "./retry.ts";
+import { type Screen, type ScreenReplies, screenSendBelow } from "./screen.ts";
 import { type Spoken, type TurnEnd, type Turns, turnBody } from "./turns.ts";
 
 // Why the connection ended: replaced by another tab (no reconnect), ended, expired (the session's
@@ -38,18 +39,33 @@ type OnUserSpeech = (requestId: string, words: string, follow?: Follow, lost?: b
 // sent meanwhile cut the reply short; the interrupted turn's last messages may come after the new
 // turn is sent, so each turn waits under its request ID. A voice that doesn't take interrupts
 // refuses a turn sent mid-reply as busy, and the page gives the words back. Turns the user speaks
-// come from voice, under request IDs it makes, first as the words it hears.
+// come from voice, under request IDs it makes, first as the words it hears. Once the channel opens,
+// what the product's screen shows goes on it too, ahead of the turns it goes with.
 export class ChannelTurns implements Turns {
   readonly interrupts = true;
   private readonly send: (msg: string) => void;
   private readonly onUserSpeech: OnUserSpeech;
+  private readonly screen: Screen | undefined;
+  private screenReplies: ScreenReplies | undefined;
   private readonly turns = new Map<string, Pending>();
   // The words of each spoken turn voice is still hearing, by request ID.
   private readonly userWords = new Map<string, string>();
 
-  constructor(send: (msg: string) => void, onUserSpeech: OnUserSpeech = () => {}) {
+  constructor(send: (msg: string) => void, onUserSpeech: OnUserSpeech = () => {}, screen?: Screen) {
     this.send = send;
     this.onUserSpeech = onUserSpeech;
+    this.screen = screen;
+  }
+
+  // The data channel opened: the screen's changes go on it from now on, while little waits in its
+  // buffer, as buffered says.
+  opened(buffered?: () => number): void {
+    this.screenReplies = this.screen?.connect(this.send, buffered);
+  }
+
+  // The data channel's buffer drained: screen changes held back go now.
+  drained(): void {
+    this.screenReplies?.drained();
   }
 
   take(
@@ -86,6 +102,12 @@ export class ChannelTurns implements Turns {
   // Takes one message from voice; one about no turn the page is waiting on is ignored.
   receive(raw: string): void {
     const m = JSON.parse(raw);
+    if (m.type === "screen_refused") {
+      this.screenReplies?.refused(m.n, String(m.detail ?? ""));
+      return;
+    }
+    // How a turn ended, once voice saved it, says which screen messages went with it.
+    if (typeof m.screen_taken === "number") this.screenReplies?.taken(m.screen_taken);
     if (m.type === "hearing") {
       const words = String(m.text ?? "");
       const taken = m.final && !m.failed && words;
@@ -138,6 +160,7 @@ export class ChannelTurns implements Turns {
   // The data channel closed: a reply that had started is lost; one that hadn't may have been taken.
   // Words still being heard are the user's to send or say again: no turn was taken with them.
   closed(): void {
+    this.screenReplies?.closed();
     for (const [requestId, words] of this.userWords)
       this.onUserSpeech(requestId, words, undefined, true);
     this.userWords.clear();
@@ -195,12 +218,13 @@ export async function microphone(
 }
 
 // How the page reaches voice and the microphone, hears that the microphone was refused, and what
-// voice hears the user say.
+// voice hears the user say; and what the product's screen shows, to send on the data channel.
 export type AudioOptions = {
   fetcher?: typeof fetch;
   media?: Pick<MediaDevices, "getUserMedia">;
   onRefused?: () => void;
   onUserSpeech?: OnUserSpeech;
+  screen?: Screen;
 };
 
 // The microphone on an audio connection, stopped with it: at once, or as soon as the user gives it.
@@ -253,7 +277,13 @@ export async function openAudio(
   sessionId: string,
   ticket: string,
   onClosing: (why: Closing) => void,
-  { fetcher = fetch, media = navigator.mediaDevices, onRefused, onUserSpeech }: AudioOptions = {},
+  {
+    fetcher = fetch,
+    media = navigator.mediaDevices,
+    onRefused,
+    onUserSpeech,
+    screen,
+  }: AudioOptions = {},
 ): Promise<Audio> {
   const pc = new RTCPeerConnection();
   const mic = sendMicrophone(pc, microphone(media, onRefused));
@@ -264,7 +294,7 @@ export async function openAudio(
   };
   // Made before the offer, since an offer without a data channel gets none.
   const dc = pc.createDataChannel("turns");
-  const turns = new ChannelTurns((msg) => dc.send(msg), onUserSpeech);
+  const turns = new ChannelTurns((msg) => dc.send(msg), onUserSpeech, screen);
   let told = false; // voice said why it closed, or the page closed it
   dc.onmessage = (e) => {
     told = onChannelMessage(e.data, turns, onClosing) || told;
@@ -304,6 +334,9 @@ export async function openAudio(
     if (!(await until(() => dc.readyState === "open", dc, "open", openWaitMs))) {
       throw new Error("the audio connection didn't open");
     }
+    dc.bufferedAmountLowThreshold = screenSendBelow;
+    dc.onbufferedamountlow = () => turns.drained();
+    turns.opened(() => dc.bufferedAmount);
     return {
       turns,
       stream,
