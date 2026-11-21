@@ -416,9 +416,8 @@ test("a document given empty goes to voice as it is, and voice's 422 comes back"
     ),
     res,
   );
-  assert.deepEqual((v.calls.at(-1)?.body as { session_context: unknown }).session_context, [
-    { name: "log", content: "" },
-  ]);
+  const sent = v.calls.at(-1)?.body as { session_context: unknown } | undefined;
+  assert.deepEqual(sent?.session_context, [{ name: "log", content: "" }]);
   assert.equal(res.statusCode, 422);
   assert.equal(JSON.parse(res.body).type, "/v1/problems/session-context-mismatch");
 });
