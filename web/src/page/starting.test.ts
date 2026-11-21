@@ -83,3 +83,18 @@ test("a repeat start that comes back with no ticket says the session has expired
   assert.equal(expired, first, "the repeat carried the kept request ID");
   assert.notEqual(next, expired, "after the expiry the request ID is new");
 });
+
+test("a start with other settings than the one voice may have taken is a new request", async () => {
+  const h = harness(new TypeError("Failed to fetch"), new TypeError("Failed to fetch"), session);
+  const same = { speed: 1.5, session_context: [{ name: "log", content: "a" }] };
+  await assert.rejects(h.starter.start(agent, same), TypeError);
+  await assert.rejects(h.starter.start(agent, same), TypeError);
+  await h.starter.start(agent, { ...same, speed: 1 });
+  const [first, again, other] = h.ids();
+  assert.equal(again, first, "the same settings repeat the request ID");
+  assert.notEqual(
+    other,
+    first,
+    "other settings get a new request ID, or voice would keep the first start's",
+  );
+});

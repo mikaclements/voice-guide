@@ -32,7 +32,7 @@ How voice-guide is built, in plain words. Setting up, the commands and where thi
 | `scripts/up.sh` | Starts everything in Docker, needing nothing else installed: the database, speech-to-text, Kokoro, the model service (Claude API or `MODEL_PROVIDER=fake`), the Go service and the web page at http://127.0.0.1:5173, on a database of its own (`voice_app`). Makes `.env` if missing and asks for a missing key, as `scripts/run.sh` does. Ctrl-C stops it; `scripts/up.sh down` removes the containers and keeps the data |
 | `scripts/run.sh` | Starts everything with the settings in `.env`: the database, speech-to-text, Kokoro (on the Mac's GPU with `KOKORO=mlx`), the model service, the web page at http://127.0.0.1:5173 and the Go service. The first run saves the key and settings given in the shell into `.env`, and asks for a missing key. Ctrl-C stops it |
 | `scripts/kokoro-mlx.sh` | Runs Kokoro on the Mac's GPU through Apple's MLX at http://127.0.0.1:8882; `scripts/run.sh` starts it with `KOKORO=mlx`. Needs Apple silicon and uv; installs pinned packages and the model (about 0.9 GB) under `~/Library/Caches/voice-guide/`; delete that folder to remove it |
-| `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume |
+| `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume, and publishing the agent files its Agents panel makes and edits in `seed/local/agents/` |
 | `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
 | `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
 | `scripts/publish.sh` | Publishes changed files in `agents/` as new versions; `VOICE_AGENTS_DIR` names another folder, and `VOICE_WORKSPACE_ID` another workspace, for a product's own agents |
@@ -71,7 +71,7 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
 | `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |
 | `schematic/` | The schematic's page and its hand-written levels |
-| `seed/` | The user the test embedding and the web page start sessions for: their reference and resume |
+| `seed/` | The user the test embedding and the web page start sessions for: their reference and resume; `seed/local/`, git-ignored, holds the developer's own files in their place and the web page's test agents |
 | `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds the Go service, its setup, the model service and the web page, built by `Dockerfile` |
 | `CLAUDE.md`, `.claude/` | The maintainer's setup for AI coding assistants: instructions, skills and hooks. The working notes they mention are kept outside the repository |
 
