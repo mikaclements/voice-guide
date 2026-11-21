@@ -32,14 +32,15 @@ func servedRoutes(t *testing.T) []string {
 	}
 	tts, voices := newTextToSpeech(cfg)
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc := newConversation(agents.NewCatalog(agentsfake.New()), conversationfake.New(), conversationfake.NewTurns(), nil, usercontext.NewService(itemsfake.New()), cfg, voices)
+	catalog := agents.NewCatalog(agentsfake.New())
+	svc := newConversation(catalog, conversationfake.New(), conversationfake.NewTurns(), nil, usercontext.NewService(itemsfake.New()), cfg, voices)
 	audio := speech.NewService(svc, transportfake.New(), tts, detectionfake.Detection{}, nil, nil, speech.Settings{}, log)
 	key, err := ticket.NewKey([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("NewKey: %v", err)
 	}
 	routes := api.NewRouter(key, nil, time.Now, log)
-	registerRoutes(routes, svc, audio, t.TempDir())
+	registerRoutes(routes, svc, audio, catalog, t.TempDir())
 	return routes.Routes()
 }
 
