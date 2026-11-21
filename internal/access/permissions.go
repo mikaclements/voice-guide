@@ -15,9 +15,8 @@ const (
 	// RunSessions lets a product's server run its sessions: list the agents
 	// and voices, start and end sessions and read past ones.
 	RunSessions Permissions = 1 << iota
-	// PublishAgents lets its holder publish the workspace's agents and read
-	// their newest versions. It changes what an agent says to users, so a key
-	// that runs sessions all day on a product's server need not hold it.
+	// PublishAgents lets its holder use the agent routes, those on one agent.
+	// A key that runs sessions all day on a product's server need not hold it.
 	PublishAgents
 )
 

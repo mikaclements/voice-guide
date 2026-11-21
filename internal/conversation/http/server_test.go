@@ -246,8 +246,8 @@ func TestEveryRouteInASessionButItsEndRefusesAProductKey(t *testing.T) {
 	}
 }
 
-// A key made only to publish agents runs no session, so one leaked from where
-// agents are published can't start sessions on the product's bill.
+// A key holding only publish_agents runs no session, so a key made for the
+// agent routes can't start sessions on the product's bill.
 func TestEveryProductRouteNeedsAKeyThatMayRunSessions(t *testing.T) {
 	f := newFixture(t)
 	publisher, _, err := f.keys.Create(context.Background(), workspace, access.PublishAgents)

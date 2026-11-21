@@ -360,7 +360,7 @@
       "title": "A product's server starts each session with its key; the user's browser holds only what voice-guide signed",
       "section": "Platform · Security and access",
       "status": "accepted",
-      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most. Each key holds permissions fixed when it is made, running sessions or publishing agents, and each route names the one it needs.",
+      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most. Each key holds permissions fixed when it is made, and each route that takes a key names the one it needs.",
       "why": "Every start passes the product's server, so it decides who may start a session and what the agent is told, and its key never reaches a browser; a copy of the database holds only hashes. A product signing its own tokens would need its key kept readable, and a public key in the page can be copied by anyone.",
       "tradeoff": "The product needs a server and calls voice-guide before each session; a stolen ticket works in its one session until the product ends it with its key or four hours pass; rotating the signing key drops every user."
     },

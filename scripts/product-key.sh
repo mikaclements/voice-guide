@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Makes, lists and revokes the workspace's product keys, which a product's server sends to start
-# sessions or publish agents; voice-guide keeps only each key's hash.
+# Makes, lists and revokes the workspace's product keys, which a product's server sends as its
+# credential; voice-guide keeps only each key's hash.
 #   scripts/product-key.sh create [--permissions run_sessions,publish_agents]
 #                                       prints a new key, the only time it is shown, holding the
 #                                       permissions named, run_sessions unless any are; to change
