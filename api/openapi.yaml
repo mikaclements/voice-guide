@@ -66,7 +66,7 @@ paths:
       - name: id
         in: path
         required: true
-        description: The agent's ID, as its file names it. One that isn't a UUID, another workspace's agent and one never published all answer `404`.
+        description: The agent's ID, as its file names it. On a read, one that isn't a UUID, another workspace's agent and one never published all answer `404`; a publish names the agent by it.
         schema:
           type: string
           format: uuid
@@ -91,6 +91,74 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: publishAgent
+      tags: [Agents]
+      summary: Publish an agent from its file
+      description: |
+        The body is the agent's file, Markdown opening with its settings block, sent as `text/markdown` (RFC 7763; a charset is allowed). Send it as it is on disk: with `curl`, `--data-binary @file`, never `-d`, which strips the newlines. The file's `id` must be the path's. It is checked as the publish script checks it, then saved as the agent's next version if it differs from the newest, in the key's workspace only. `201` is a new version and `200` is the newest already, with nothing saved; both are success. `voice_checked` is `false` when the text-to-speech service couldn't be asked whether it has the agent's voice, and the agent was published all the same.
+      security:
+        - productKey: [publish_agents]
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema:
+              type: string
+              maxLength: 262144
+      responses:
+        "201":
+          description: The file is the agent's new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedAgent"
+        "200":
+          description: The file is the agent's newest version already; nothing was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedAgent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Another workspace uses the agent's ID. Pick a new ID; a file copied from someone else's keeps theirs.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          description: The `Content-Type` isn't `text/markdown`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: The file can't be published as sent, and the `detail` says why, in the words of the loader or the check that refused it. Sending it again unchanged never helps.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                refused:
+                  summary: An empty body, a body that isn't UTF-8, a file a rule refuses, or an `id` other than the path's
+                  value:
+                    type: about:blank
+                    title: Unprocessable Content
+                    status: 422
+                    detail: "the agent file: settings: field colour not found"
+                unknownVoice:
+                  summary: A voice the text-to-speech service doesn't have
+                  value:
+                    type: /v1/problems/unknown-voice
+                    title: Unknown voice
+                    status: 422
         "503":
           $ref: "#/components/responses/Unavailable"
 
@@ -783,6 +851,16 @@ components:
           type: string
           description: The persona, sent to the model as written.
 
+    PublishedAgent:
+      description: The agent's version as `GET` answers it, and whether its voice was checked.
+      allOf:
+        - $ref: "#/components/schemas/AgentVersion"
+        - type: object
+          required: [voice_checked]
+          properties:
+            voice_checked:
+              type: boolean
+              description: "`false` when the text-to-speech service couldn't be asked whether it has the agent's voice."
     StartRequest:
       type: object
       required: [agent_id, request_id, user]
