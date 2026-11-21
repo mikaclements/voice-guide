@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -14,6 +14,8 @@ const template = agentFile(templateId, "Lamp keeper");
 const templateFile = "lamp-keeper.md";
 const otherId = "01900000-0000-7000-8000-000000000009";
 const newId = "01900000-0000-7000-8000-00000000000a";
+// An id as a person might write it in an agent file, upper-case; voice answers it lower-cased.
+const upperId = "0190ABCD-0000-7000-8000-00000000000B";
 
 // An agent's settings as the page's form sends them, under the agent file's names: these, and the
 // rest unset.
@@ -85,6 +87,12 @@ type Headers_ = Record<string, string | undefined>;
 
 function routes(f: { dir: string; local: string; shipped: string }, fetcher: typeof fetch) {
   return productRoutes({ voice: "http://voice", key, user: f.dir, agents: f, fetcher });
+}
+
+// When the list says a file was modified, which the page sends back with the form.
+async function modifiedOf(route: ReturnType<typeof productRoutes>, path: string): Promise<number> {
+  const { files } = JSON.parse((await send(route, "/agent-files", "GET")).body);
+  return files.find((x: { path: string }) => x.path === path).modified;
 }
 
 async function send(
@@ -221,7 +229,8 @@ test("a link in an agent folder is never followed: not listed, written over or p
 
 // Every route that writes a file or publishes one, with a body the page would send.
 const writes: [string, string, unknown][] = [
-  ["/agent", "POST", form({ id: templateId, name: "Intruder" })],
+  // A new agent, which a missing check would write and publish.
+  ["/agent", "POST", form({ name: "Intruder" })],
   ["/publish", "POST", { path: "coach.md" }],
 ];
 
@@ -413,7 +422,8 @@ const keeperId = "01a1de8a-0000-7000-8000-0000000000a1";
 const keeperForm = form({
   id: keeperId,
   name: 'Keeper: "the" #1 灯台守 🌊',
-  description: "Line one\nline two: with # and 'quotes', a tab\t, a b\u0085c\u007fd",
+  description:
+    "Line one\nline two: with # and 'quotes', a tab\t, a\u2028b\u0085c\u007fd\ufffee\uffff",
   reads: ["profile", "session_summary"],
   session_context: ["resume"],
   summary: {
@@ -436,7 +446,7 @@ const keeperFile = [
   "---",
   `id: "${keeperId}"`,
   String.raw`name: "Keeper: \"the\" #1 灯台守 🌊"`,
-  `${String.raw`description: "Line one\nline two: with # and 'quotes', a tab\t, a`} ${String.raw`b\u0085c\u007fd"`}`,
+  `${String.raw`description: "Line one\nline two: with # and 'quotes', a tab\t, a`}\u2028${String.raw`b\u0085c\u007fd\ufffee\uffff"`}`,
   `reads: ["profile","session_summary"]`,
   `session_context: ["resume"]`,
   String.raw`summary: {"instruction":"Note the ships.\nName any: aground","model":"claude-opus-5-5","schema":{"type":"object","properties":{"score":{"type":"integer","minimum":1}},"required":["score"]},"documents":["ship_log"]}`,
@@ -482,11 +492,12 @@ test("a setting left unset is left out of the file, so the loader's default appl
 
 test("the form goes to the file holding its id, else to a new file named from the agent's name, never to one the page names", async (t) => {
   const f = await folders(t);
-  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  await localFile(f, "coach.md", agentFile(upperId, "Coach"));
   const v = voice(() => Response.json({ version: 2 }, { status: 201 }));
   const route = routes(f, v.fetcher);
-  const renamed = form({ id: otherId, name: "Head coach" });
-  const res = await send(route, "/agent", "POST", { ...renamed, path: "../escaped.md" });
+  const renamed = form({ id: upperId.toLowerCase(), name: "Head coach" });
+  const modified = await modifiedOf(route, "coach.md");
+  const res = await send(route, "/agent", "POST", { ...renamed, modified, path: "../escaped.md" });
   assert.equal(res.statusCode, 201);
   assert.match(
     await readFile(join(f.local, "coach.md"), "utf8"),
@@ -499,14 +510,17 @@ test("the form goes to the file holding its id, else to a new file named from th
 
 test("a form the page may not write is refused, nothing written or sent: a shipped file's id, an id two files hold, a new agent whose file name is taken or whose name gives none", async (t) => {
   const f = await folders(t);
-  await localFile(f, "copy.md", agentFile(otherId, "Copy"));
-  await writeFile(join(f.shipped, "guide.md"), agentFile(otherId, "Guide"));
+  // One id, written in two cases.
+  await localFile(f, "copy.md", agentFile(upperId, "Copy"));
+  await writeFile(join(f.shipped, "guide.md"), agentFile(upperId.toLowerCase(), "Guide"));
   await localFile(f, "coach.md", agentFile("01900000-0000-7000-8000-000000000002", "Coach"));
   const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
   const route = routes(f, v.fetcher);
+  const listed = JSON.parse((await send(route, "/agent-files", "GET")).body).files;
+  assert.deepEqual(listed[1].same_id_as, [{ path: "guide.md", folder: "shipped" }]);
   const cases: [unknown, number, RegExp][] = [
     [form({ id: templateId }), 403, /lamp-keeper\.md is shipped/],
-    [form({ id: otherId }), 409, /copy\.md \(local\), guide\.md \(shipped\)/],
+    [form({ id: upperId.toLowerCase() }), 409, /copy\.md \(local\), guide\.md \(shipped\)/],
     [form({ name: "Coach" }), 409, /coach\.md exists/],
     [form({ name: "Lamp keeper" }), 409, /lamp-keeper\.md exists/],
     [form({ name: "面接官" }), 422, /a letter a to z or a digit/],
@@ -516,9 +530,9 @@ test("a form the page may not write is refused, nothing written or sent: a shipp
     assert.equal(res.statusCode, status, JSON.stringify(body));
     assert.match(res.body, why);
   }
-  assert.equal(v.calls.length, 0, "nothing published");
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
   assert.deepEqual((await readdir(f.local)).sort(), ["coach.md", "copy.md"]);
-  assert.equal(await readFile(join(f.local, "copy.md"), "utf8"), agentFile(otherId, "Copy"));
+  assert.equal(await readFile(join(f.local, "copy.md"), "utf8"), agentFile(upperId, "Copy"));
   assert.equal(await readFile(join(f.shipped, templateFile), "utf8"), template);
 });
 
@@ -542,6 +556,52 @@ test("a form that isn't an agent's settings under the file's names, or is over 2
   }
   assert.equal(v.calls.length, 0);
   assert.deepEqual(await readdir(f.local).catch(() => []), []);
+});
+
+test("a lone surrogate, which no text holds and YAML refuses escaped, is written as U+FFFD", async (t) => {
+  const f = await folders(t);
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const summary = { instruction: "i", model: null, schema: { "k\udc00": 1 }, documents: [] };
+  const lone = form({ description: "a\ud800b", reads: ["c\udc00"], summary, persona: "d\ud800e" });
+  await send(routes(f, v.fetcher), "/agent", "POST", lone);
+  assert.equal(
+    await readFile(join(f.local, "night-watch.md"), "utf8"),
+    `---\nid: "${newId}"\nname: "Night watch"\ndescription: "a�b"\nreads: ["c�"]\nsummary: {"instruction":"i","schema":{"k�":1}}\n---\nd�e`,
+  );
+});
+
+test("a file changed on disk since the list loaded is refused, or one sent without that time, nothing written or sent", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const modified = await modifiedOf(route, "coach.md");
+  for (const sent of [modified - 1000, undefined]) {
+    const res = await send(route, "/agent", "POST", { ...form({ id: otherId }), modified: sent });
+    assert.equal(res.statusCode, 409, String(sent));
+    assert.match(res.body, /coach\.md changed on disk since the list loaded; reload/);
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(otherId, "Coach"));
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
+});
+
+test("a write that fails leaves the old file whole and no temp file behind", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root writes into a folder it may not");
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const modified = await modifiedOf(route, "coach.md");
+  await chmod(f.local, 0o555);
+  try {
+    const res = await send(route, "/agent", "POST", { ...form({ id: otherId }), modified });
+    assert.equal(res.statusCode, 500);
+  } finally {
+    await chmod(f.local, 0o755);
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(otherId, "Coach"));
+  assert.deepEqual(await readdir(f.local), ["coach.md"]);
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
 });
 
 test("with voice down the form's file is still written, and the page told 502 with the reason", async (t) => {

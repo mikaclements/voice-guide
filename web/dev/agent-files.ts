@@ -11,6 +11,8 @@ export type AgentFolders = { local: string; shipped: string };
 // Only a bare file name, so a path from the page can't name anything outside the two folders.
 const fileName = /^[a-z0-9][a-z0-9-]*\.md$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A UUID names one agent in either case, and voice answers it lower-cased.
+const sameUUID = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 // Voice's cap on an agent file: a larger one is refused here rather than sent to be refused.
 const fileLimit = 256 * 1024;
 // A form carries the persona as a JSON string; four times the cap leaves room for its escapes.
@@ -160,7 +162,7 @@ async function scan(folders: AgentFolders): Promise<Scanned[]> {
 // shipped agent file is copied with its id kept.
 function sameId(all: Scanned[], f: { file: string; id: string }) {
   return all
-    .filter((o) => o.id !== "" && o.id === f.id && o.file !== f.file)
+    .filter((o) => o.id !== "" && sameUUID(o.id, f.id) && o.file !== f.file)
     .map((o) => ({ path: o.path, folder: o.folder }));
 }
 
@@ -205,7 +207,9 @@ const put = (call: Voice, id: string, file: Uint8Array) =>
 // Writes the form's settings to the agent file holding its id, or to a new one named from the
 // agent's name, then publishes that file, so the file on disk stays the record of every agent the
 // page made or changed. The page never names the file. A shipped file is never written, and an id
-// two files hold is refused, as a publish of either would replace the other's agent.
+// two files hold is refused, as a publish of either would replace the other's agent. The form
+// carries when the file was modified as the page's list read it: a file changed since, in an
+// editor say, is refused, so those edits aren't overwritten unseen.
 async function write(
   folders: AgentFolders,
   asked: Record<string, unknown>,
@@ -218,7 +222,7 @@ async function write(
   if (Buffer.byteLength(text) > fileLimit) {
     return fail(to, 413, "the agent file would be over 256 KiB, voice's limit");
   }
-  const holders = (await scan(folders)).filter((f) => f.id === s.id);
+  const holders = (await scan(folders)).filter((f) => sameUUID(f.id, s.id));
   if (holders.length > 1) {
     const named = holders.map((o) => `${o.path} (${o.folder})`).join(", ");
     return fail(to, 409, `${s.id} is the id of ${named}; give all but one of them a new id`);
@@ -230,6 +234,9 @@ async function write(
       403,
       `${held.path} is shipped, so the page only reads it; copy it to a test agent`,
     );
+  }
+  if (held && held.modified !== asked.modified) {
+    return fail(to, 409, `${held.path} changed on disk since the list loaded; reload`);
   }
   if (held) {
     // Renamed into place, so a crash mid-write leaves the old file whole; the dot keeps it out of
@@ -340,16 +347,29 @@ function agentFileText(s: Settings): string {
     .filter(([, value]) => value !== undefined)
     .map(([key, value]) => `${key}: ${asYAML(value)}\n`)
     .join("");
-  return `---\n${head}---\n${s.persona}`;
+  return `---\n${head}---\n${s.persona.toWellFormed()}`;
 }
 
-// JSON leaves DEL and the C1 controls raw, which YAML refuses, or for U+0085 reads as a line break,
-// so they are written as JSON's escapes, which YAML reads alike.
+// JSON leaves DEL, the C1 controls, U+FFFE and U+FFFF raw, which YAML refuses, or for U+0085 reads
+// as a line break, so they are written as JSON's escapes, which YAML reads alike. JSON escapes a
+// lone surrogate, which YAML refuses and no text holds, so it becomes U+FFFD first, as a UTF-8 file
+// would hold it.
 const asYAML = (value: unknown) =>
-  JSON.stringify(value).replace(
-    /[\u007f-\u009f]/g,
+  JSON.stringify(wellFormed(value)).replace(
+    /[\u007f-\u009f\ufffe\uffff]/g,
     (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
   );
+
+function wellFormed(value: unknown): unknown {
+  if (typeof value === "string") return value.toWellFormed();
+  if (Array.isArray(value)) return value.map(wellFormed);
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k.toWellFormed(), wellFormed(v)]),
+    );
+  }
+  return value;
+}
 
 // The file a bare name names: the local folder's when it has one, since a local file takes the
 // place of a shipped one of the same name, as the developer's own seed files do; else the shipped

@@ -297,14 +297,14 @@ func TestParseReadsABodyAsLoadReadsTheSameFileAndNamesTheFileInItsErrors(t *test
 // settings block can be the closing --- however many lines a value has.
 func TestParseReadsSettingsWrittenAsJSONExactly(t *testing.T) {
 	const name = `Keeper: "the" #1 灯台守 🌊`
-	const description = "Line one\nline two: with # and 'quotes', a tab\t, a\u2028b\u0085c\u007fd"
+	const description = "Line one\nline two: with # and 'quotes', a tab\t, a\u2028b\u0085c\u007fd\ufffee\uffff"
 	const persona = "You answer every call from the sea.\n---\nname: not a setting\n"
 	file := "---\n" +
 		`id: "` + keeperID + `"` + "\n" +
 		`name: "Keeper: \"the\" #1 灯台守 🌊"` + "\n" +
-		// A line separator as it is; a next line, which YAML would fold, and a control, which it
-		// refuses, as JSON escapes.
-		`description: "Line one\nline two: with # and 'quotes', a tab\t, a` + "\u2028" + `b\u0085c\u007fd"` + "\n" +
+		// A line separator as it is; a next line, which YAML would fold, and a control and two
+		// noncharacters, which it refuses, as JSON escapes.
+		`description: "Line one\nline two: with # and 'quotes', a tab\t, a` + "\u2028" + `b\u0085c\u007fd\ufffee\uffff"` + "\n" +
 		`reads: ["profile","session_summary"]` + "\n" +
 		`session_context: ["resume"]` + "\n" +
 		`summary: {"instruction":"Note the ships.\nName any: aground","model":"claude-opus-5-5","schema":{"type":"object","properties":{"score":{"type":"integer","minimum":1}},"required":["score"]},"documents":["ship_log"]}` + "\n" +
