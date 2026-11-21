@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -166,6 +167,32 @@ func TestEveryProductKeyMadeBeforePermissionsCanStillRunSessions(t *testing.T) {
 	var got []string
 	if err := pool.QueryRow(ctx, "SELECT permissions FROM product_keys").Scan(&got); err != nil || !slices.Equal(got, []string{"run_sessions"}) {
 		t.Errorf("permissions = %v, %v; want run_sessions alone, all such a key could do", got, err)
+	}
+}
+
+func TestRollingBackPermissionsRevokesEveryKeyThatCouldntRunSessions(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.New(t)
+	pgtest.Exec(t, pool, "INSERT INTO workspaces (id, name) VALUES ('"+workspace+"', 'Harbour')")
+	pgtest.Exec(t, pool, "INSERT INTO product_keys (id, workspace_id, hash, display, permissions) VALUES"+
+		" (uuidv7(), '"+workspace+"', sha256('runs'), 'vgk_runs', '{run_sessions,publish_agents}'),"+
+		" (uuidv7(), '"+workspace+"', sha256('agents'), 'vgk_agents', '{publish_agents}')")
+	db := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = db.Close() }()
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Files)
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+	if _, err := p.DownTo(ctx, beforePermissions); err != nil {
+		t.Fatalf("migrate down to before permissions: %v", err)
+	}
+	var working []string
+	rows, err := pool.Query(ctx, "SELECT display FROM product_keys WHERE revoked_at IS NULL")
+	if err == nil {
+		working, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	}
+	if err != nil || !slices.Equal(working, []string{"vgk_runs"}) {
+		t.Errorf("working keys = %v, %v; want only the one that could run sessions", working, err)
 	}
 }
 
