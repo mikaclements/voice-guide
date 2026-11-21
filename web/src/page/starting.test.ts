@@ -92,5 +92,9 @@ test("a start with other settings than the one voice may have taken is a new req
   await h.starter.start(agent, { ...same, speed: 1 });
   const [first, again, other] = h.ids();
   assert.equal(again, first, "the same settings repeat the request ID");
-  assert.notEqual(other, first, "other settings can't repeat it, voice would refuse the mismatch");
+  assert.notEqual(
+    other,
+    first,
+    "other settings get a new request ID, or voice would keep the first start's",
+  );
 });

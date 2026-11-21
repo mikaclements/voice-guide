@@ -7,6 +7,7 @@ import {
   listVoices,
   type PastSession,
   type StartOptions,
+  startOptions,
 } from "./product.ts";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -23,8 +24,8 @@ export type StartFormProps = {
   speed: string;
   documents: Document[];
   busy: boolean;
-  // What loading the voices or the documents failed with.
-  error: string;
+  // What loading the voices or the documents failed with, and what the last start failed with.
+  errors: string[];
   on: {
     voice(voice: string): void;
     speed(speed: string): void;
@@ -36,7 +37,7 @@ export type StartFormProps = {
 // The settings a start may carry beyond the agent: the voice and speed it speaks in, and the
 // documents of session context, which start as the placeholder user's files.
 export function StartForm(props: StartFormProps) {
-  const { voices, voice, speed, documents, busy, error, on } = props;
+  const { voices, voice, speed, documents, busy, errors, on } = props;
   const n = Number(speed);
   const badSpeed = speed.trim() !== "" && !(n >= slowest && n <= fastest);
   return (
@@ -69,7 +70,11 @@ export function StartForm(props: StartFormProps) {
           Speed is a number from {slowest} to {fastest}.
         </div>
       )}
-      {error && <div className="error">{error}</div>}
+      {errors.filter(Boolean).map((e) => (
+        <div className="error" key={e}>
+          {e}
+        </div>
+      ))}
       {documents.map((d) => (
         <label key={d.name}>
           <span className="meta">{d.name}</span>
@@ -135,13 +140,16 @@ export function SessionsPanel(props: {
   agentId: string;
   busy: boolean;
   start(options: StartOptions): void;
+  // What the last start failed with, shown here beside the form that sent it.
+  error: string;
 }) {
-  const { agents, agentId, busy, start } = props;
+  const { agents, agentId, busy, start, error } = props;
   const [voices, setVoices] = useState<string[]>([]);
   const [voice, setVoice] = useState("");
   const [speed, setSpeed] = useState("");
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [formError, setFormError] = useState("");
+  const [voicesError, setVoicesError] = useState("");
+  const [documentsError, setDocumentsError] = useState("");
   const [sessions, setSessions] = useState<PastSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState("");
@@ -161,40 +169,38 @@ export function SessionsPanel(props: {
 
   useEffect(refresh, [refresh]);
   useEffect(() => {
-    listVoices().then(setVoices, (e: unknown) => setFormError(message(e)));
+    listVoices().then(setVoices, (e: unknown) => setVoicesError(message(e)));
   }, []);
-  // The documents are the agent's to ask for, so choosing another agent shows its own.
+  // The documents are the agent's to ask for, so choosing another agent shows its own, and so does
+  // a new version of it that asks for others.
+  const asks = agents.find((a) => a.id === agentId)?.session_context.join("\n");
   useEffect(() => {
     if (!agentId) return;
     let current = true;
+    setDocuments([]);
     contextFor(agentId).then(
       (docs) => {
         if (!current) return;
         setDocuments(docs);
-        setFormError("");
+        setDocumentsError("");
       },
-      (e: unknown) => current && setFormError(message(e)),
+      (e: unknown) => current && setDocumentsError(message(e)),
     );
     return () => {
       current = false;
     };
-  }, [agentId]);
+  }, [agentId, asks]);
 
   return (
     <>
       <StartForm
-        {...{ voices, voice, speed, documents, busy, error: formError }}
+        {...{ voices, voice, speed, documents, busy, errors: [voicesError, documentsError, error] }}
         on={{
           voice: setVoice,
           speed: setSpeed,
           document: (name, content) =>
             setDocuments((docs) => docs.map((d) => (d.name === name ? { ...d, content } : d))),
-          start: () =>
-            start({
-              ...(voice && { voice }),
-              ...(speed.trim() && { speed: Number(speed) }),
-              session_context: documents,
-            }),
+          start: () => start(startOptions(voice, speed, documents)),
         }}
       />
       <PastSessions

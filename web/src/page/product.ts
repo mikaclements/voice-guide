@@ -20,7 +20,8 @@ export type PastSession = {
   started_at: string;
   ended_at: string | null;
   summary: string | null;
-  summary_status: string | null;
+  // Null while the session is live.
+  summary_status: "pending" | "written" | "none" | null;
 };
 
 export async function listAgents(fetcher: typeof fetch = fetch): Promise<Agent[]> {
@@ -41,6 +42,16 @@ export function startSession(
     request_id: requestId,
     ...options,
   });
+}
+
+// The options a start sends from the form: a voice or speed left empty is left out, so the agent's
+// own applies, and the speed, typed as text, is a number.
+export function startOptions(voice: string, speed: string, documents: Document[]): StartOptions {
+  return {
+    ...(voice && { voice }),
+    ...(speed.trim() && { speed: Number(speed) }),
+    session_context: documents,
+  };
 }
 
 // The voices a session may speak in.

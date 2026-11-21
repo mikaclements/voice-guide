@@ -21,7 +21,7 @@ const form = (rest: Partial<Parameters<typeof panel.StartForm>[0]> = {}) =>
       speed: "1.25",
       documents: [{ name: "resume", content: "Ten years of lamps." }],
       busy: false,
-      error: "",
+      errors: [],
       on: { voice: none, speed: none, document: none, start: none },
       ...rest,
     }),
@@ -46,7 +46,7 @@ test("a speed out of voice's range says so and can't be sent, and a problem show
     assert.match(html, /<button type="submit" disabled="">/, speed);
   }
   assert.doesNotMatch(form({ speed: "" }), /Speed is a number/, "empty is the agent's own");
-  assert.match(form({ error: "Unprocessable (422): resume is empty" }), /resume is empty/);
+  assert.match(form({ errors: ["Unprocessable (422): resume is empty"] }), /resume is empty/);
   assert.match(form({ busy: true }), /<button type="submit" disabled="">/);
 });
 
@@ -57,7 +57,7 @@ const past = (rest: Partial<PastSession>): PastSession => ({
   started_at: "2026-11-21T10:00:00.123Z",
   ended_at: "2026-11-21T10:05:00Z",
   summary: "Covered the resume.",
-  summary_status: "done",
+  summary_status: "written",
   ...rest,
 });
 
@@ -81,7 +81,7 @@ test("past sessions list the agent, when each started and ended, the summary's s
   assert.match(html, /"who">Mock interviewer<\/span>/);
   assert.match(
     html,
-    /started 2026-11-21 10:00:00 UTC, ended 2026-11-21 10:05:00 UTC · summary done/,
+    /started 2026-11-21 10:00:00 UTC, ended 2026-11-21 10:05:00 UTC · summary written/,
   );
   assert.match(html, /<div>Covered the resume\.<\/div>/);
   assert.match(html, /"who">a2<\/span><span class="meta">started [^<]*, still live</);

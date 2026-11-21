@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { contextFor, listAgents, listSessions, listVoices, startSession } from "./product.ts";
+import {
+  contextFor,
+  listAgents,
+  listSessions,
+  listVoices,
+  startOptions,
+  startSession,
+} from "./product.ts";
 
 test("listing agents asks the product's server, which holds the key", async () => {
   let asked: { url: string; init: RequestInit | undefined } | undefined;
@@ -82,4 +89,16 @@ test("a problem from the product's server is thrown as voice's would be", async 
     )) as typeof fetch;
   await assert.rejects(startSession("a1", "r1", fetcher), /Unprocessable \(422\): log is empty/);
   await assert.rejects(listSessions(fetcher), /422/);
+});
+
+test("the form's choices become a start's options, leaving out what is empty", () => {
+  const docs = [{ name: "log", content: "x" }];
+  assert.deepEqual(startOptions("", "", docs), { session_context: docs });
+  assert.deepEqual(startOptions("ja_jp", " ", docs), { voice: "ja_jp", session_context: docs });
+  assert.deepEqual(startOptions("", "1.25", docs), { speed: 1.25, session_context: docs });
+  assert.deepEqual(startOptions("en_us", "2", []), {
+    voice: "en_us",
+    speed: 2,
+    session_context: [],
+  });
 });

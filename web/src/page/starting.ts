@@ -18,8 +18,8 @@ export class Starter {
     this.startSession = startSession;
   }
 
-  // Options belong to the request ID: voice takes a repeat only with the same agent and documents,
-  // so a start with other settings is a new request, not a repeat.
+  // Options belong to the request ID: voice answers a repeat with the first start's session, keeping
+  // its voice and speed, so changed settings only take effect under a new request ID.
   async start(agent: Agent, options?: StartOptions): Promise<Started> {
     const key = options ? `${agent.id}\n${JSON.stringify(options)}` : agent.id;
     const requestId = requestIdFor(key, this.kept);
