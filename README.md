@@ -268,6 +268,17 @@ The reply lists the user's sessions, newest first, without their turns:
 - `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`, waiting longer each time: when writing fails, it is tried again for about 15 minutes before the status turns `none`.
 - A live session has `ended_at`, `summary` and `summary_status` null, and holds the turns finished so far.
 
+### Read an agent
+
+A key holding `publish_agents` reads one of the workspace's agents at its newest version:
+
+```sh
+curl https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a90cc \
+  -H "Authorization: Bearer <product key with publish_agents>"
+```
+
+It answers with the agent as it was published: `id`, `name`, `description`, `reads`, `session_context`, `persona`, `summary`, `summary_model`, `summary_schema`, `summary_documents`, `opens` (`true` when the agent speaks first), `model`, `voice` and `speed`, plus `version`, its number, and `published_at`. An unset setting is empty or `0`, and no summary schema is `null`. Another workspace's agent, or one never published, is `404`; a key without `publish_agents` is `403`.
+
 <a id="new-workspace"></a>
 ### One workspace for each product
 

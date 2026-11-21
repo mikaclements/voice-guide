@@ -57,7 +57,7 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `internal/conversation/` | Sessions and their turns, in text: each turn's prompt, the model's reply, the HTTP API for agents, sessions and typed turns, and the webhook at a session's end |
 | `internal/speech/` | A session's audio connection over WebRTC: the user's turns from their microphone (Silero speech detection, speech-to-text, Smart Turn) and the agent's replies spoken (Kokoro), each with a fake |
 | `internal/usercontext/` | Loads what an agent may know about the user and saves what a session learned; imports none of the other modules |
-| `internal/agents/` | The published versions of each agent file |
+| `internal/agents/` | The published versions of each agent file, and the route that reads one |
 | `internal/api/` | The one router: every route behind its credential check (a product key or a ticket); also serves the drop-in client |
 | `internal/ticket/`, `internal/productkey/`, `internal/access/` | Tickets, product keys, and the caller a credential names |
 | `internal/jobs/` | Background jobs (summaries, webhook deliveries), claimed from PostgreSQL |
