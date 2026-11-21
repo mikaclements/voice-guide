@@ -81,7 +81,7 @@ Under the form, the past sessions of the sample user, newest first: the agent, w
 The page's Agents panel lists every agent file with its folder and the version voice-guide has published, or "not published". Your test agents live in `seed/local/agents/`, git-ignored like your resume:
 - **New agent** makes one from the name you give: a copy of `agents/mock-interviewer.md` with a fresh `id`, in a file named for it.
 - Pick an agent to open its file, edit it there or in your editor, then **Save**. A file changed on disk since you opened it isn't overwritten: open it again.
-- **Publish**, beside each agent, sends its saved file to voice-guide with the development product key, which the browser never sees, and says `published version 2`, `unchanged, version 2`, or what voice-guide refused and why. Reload the page to talk to an agent you've just published for the first time. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
+- **Publish**, beside each agent, sends its saved file to voice-guide with the development product key, which the browser never sees, and says `published version 2`, `unchanged, version 2`, or what voice-guide refused and why. The agent list above then shows it, so you can talk to it at once. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
 - The shipped agents in `agents/` open read-only, so the page never changes a tracked file; Publish sends them as they are.
 
 <details>
