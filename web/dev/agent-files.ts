@@ -229,11 +229,7 @@ async function write(
   }
   const held = holders[0];
   if (held?.folder === "shipped") {
-    return fail(
-      to,
-      403,
-      `${held.path} is shipped, so the page only reads it; copy it to a test agent`,
-    );
+    return fail(to, 403, `${held.path} is shipped, so the page only reads it; Clone it`);
   }
   if (held && held.modified !== asked.modified) {
     return fail(to, 409, `${held.path} changed on disk since the list loaded; reload`);
