@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
 import { at, type Session } from "../client/api.ts";
 import { JoinedSession, type ReplyMeta, type Shown } from "../client/joined.ts";
+import { AgentsPanel } from "./AgentsPanel.tsx";
 import { type Agent, listAgents, startSession } from "./product.ts";
 import { Starter } from "./starting.ts";
 
@@ -197,6 +198,7 @@ export function SessionView(props: SessionViewProps) {
           </button>
         </form>
       )}
+      <AgentsPanel />
     </main>
   );
 }
