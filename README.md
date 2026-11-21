@@ -66,6 +66,15 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 
 [Choose your setup](#setup) explains each option.
 
+<a id="test-agents"></a>
+### Make test agents on the page
+
+The page's Agents panel lists every agent file with its folder and the version voice-guide has published, or "not published". Your test agents live in `seed/local/agents/`, git-ignored like your resume:
+- **New agent** makes one from the name you give: a copy of `agents/mock-interviewer.md` with a fresh `id`, in a file named for it.
+- Pick an agent to open its file, edit it there or in your editor, then **Save**. A file changed on disk since you opened it isn't overwritten: open it again.
+- **Publish** sends the saved file to voice-guide with the development product key, which the browser never sees, and says `published version 2`, `unchanged, version 2`, or what voice-guide refused and why. Reload the page to talk to an agent you've just published for the first time.
+- The shipped agents in `agents/` open read-only, so the page never changes a tracked file; Publish sends them as they are.
+
 <details>
 <summary>If you hear nothing, or you aren't heard</summary>
 
