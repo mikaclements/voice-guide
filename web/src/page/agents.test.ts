@@ -23,6 +23,11 @@ test("publishing says whether voice saved a new version or had it already, and t
   const cases: [Response, string][] = [
     [Response.json({ version: 2 }, { status: 201 }), "published version 2"],
     [Response.json({ version: 2 }, { status: 200 }), "unchanged, version 2"],
+    // Text-to-speech couldn't be asked, so a voice it doesn't offer could have been published.
+    [
+      Response.json({ version: 3, voice_checked: false }, { status: 201 }),
+      "published version 3, voice not checked",
+    ],
   ];
   for (const [answer, line] of cases) {
     const dev = devServer(() => answer);

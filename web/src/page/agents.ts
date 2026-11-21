@@ -40,11 +40,15 @@ export const saveAgentFile = (
 export const newAgent = (name: string, fetcher: typeof fetch = fetch) =>
   json<{ path: string }>(fetcher, "POST", "/product/agent-files", { name });
 
-// Publishes the file as it is on disk, and says how it went: voice saved a new version, or had it.
+// Publishes the file as it is on disk, and says how it went: voice saved a new version, or had it;
+// and when text-to-speech couldn't be asked, that the agent's voice went unchecked, since one it
+// doesn't offer could then have been published.
 export async function publishAgentFile(path: string, fetcher: typeof fetch = fetch) {
   const res = await send(fetcher, "POST", "/product/publish", { path });
-  const { version } = await res.json();
-  return res.status === 201 ? `published version ${version}` : `unchanged, version ${version}`;
+  const { version, voice_checked } = await res.json();
+  const line =
+    res.status === 201 ? `published version ${version}` : `unchanged, version ${version}`;
+  return voice_checked === false ? `${line}, voice not checked` : line;
 }
 
 // Calls the dev server, which answers with problems the way voice does.
