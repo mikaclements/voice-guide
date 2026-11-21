@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { runnerImport } from "vite";
 import type { AgentsViewProps } from "./AgentsPanel.tsx";
+import { formFrom } from "./agentForm.ts";
 import type { AgentFile } from "./agents.ts";
 
 // Node runs TypeScript but not JSX, so the panel is loaded through Vite, as its dev server does.
@@ -18,122 +19,139 @@ const file = (path: string, folder: AgentFile["folder"], version: AgentFile["ver
   path,
   folder,
   version,
-  id: "",
+  id: "01900000-0000-7000-8000-000000000001",
   name: path.replace(".md", ""),
   modified: 1,
   published_at: null,
   same_id_as: [],
 });
+const form = formFrom({
+  id: "01900000-0000-7000-8000-000000000001",
+  name: "Coach",
+  description: "Helps you practise.",
+  reads: ["profile"],
+  session_context: [],
+  summary: { instruction: "Note it.", model: null, schema: null, documents: [] },
+  opens: "agent",
+  model: null,
+  voice: "bf_emma",
+  speed: null,
+  persona: "You coach.",
+});
+const list = { files: [file("coach.md", "local", 3), file("lamp.md", "shipped", 1)] };
+const published = { version: 3, published_at: "2026-01-02T03:04:05.123Z" };
 
-// The panel drawn with these, and nothing loaded, open or pressed otherwise.
+// The panel drawn with these, and nothing loaded, picked or pressed otherwise.
 const drawn = (props: Partial<AgentsViewProps>) =>
   renderToStaticMarkup(
     createElement(panel.AgentsView, {
-      name: "",
-      text: "",
+      voices: [],
+      picked: "",
+      dirty: false,
       busy: false,
       result: "",
       error: "",
-      on: { publish: none, open: none, name: none, create: none, text: none, save: none },
+      on: { pick: none, form: none, publish: none, revert: none, copy: none, publishFile: none },
       ...props,
     }),
   );
+const options = (html: string) => [...html.matchAll(/<option[^>]*>([^<]*)</g)].map((m) => m[1]);
+const buttons = (html: string) =>
+  [...html.matchAll(/<button type="button"( disabled="")?>([^<]*)</g)].map(
+    (m) => m[2] + (m[1] ? " (disabled)" : ""),
+  );
 
-test("the panel lists each agent file with its folder, published version and a Publish button, and why voice couldn't say", () => {
+test("the dropdown offers every agent file with its folder and published version, then a new agent, and says why voice couldn't tell versions", () => {
   const html = drawn({
     list: {
-      files: [
-        file("coach.md", "local", 2),
-        file("guide.md", "local", null),
-        file("lamp.md", "shipped", "unknown"),
-      ],
+      files: [...list.files, file("guide.md", "local", null), file("lamp2.md", "local", "unknown")],
       problem: "the product's server couldn't reach voice: fetch failed",
     },
   });
-  assert.deepEqual(
-    [...html.matchAll(/<span class="meta">([^<]*)</g)].map((m) => m[1]),
-    [
-      "seed/local/agents/coach.md · version 2",
-      "seed/local/agents/guide.md · not published",
-      "agents/lamp.md · version unknown",
-    ],
-  );
-  assert.equal(html.match(/<button type="button">Publish<\/button>/g)?.length, 3);
+  assert.deepEqual(options(html), [
+    "Pick an agent",
+    "coach · version 3",
+    "lamp · shipped, version 1",
+    "guide · not published",
+    "lamp2 · version unknown",
+    "New agent",
+  ]);
   assert.match(html, /<div class="error">the product&#x27;s server couldn&#x27;t reach voice/);
-  assert.match(drawn({ list: { files: [] } }), /No agent files yet.*New agent<\/button>/);
 });
 
-test("a file whose id another file holds says which, as that one does", () => {
-  const html = drawn({
-    list: {
-      files: [
-        { ...file("copy.md", "local", null), same_id_as: [{ path: "lamp.md", folder: "shipped" }] },
-        { ...file("lamp.md", "shipped", 1), same_id_as: [{ path: "copy.md", folder: "local" }] },
-      ],
-    },
-  });
+test("a picked agent shows what voice holds, then one labelled field per setting in the agent file's order, the persona last", () => {
+  const html = drawn({ list, picked: "coach.md", form, published, voices: ["af_heart"] });
+  assert.match(html, /<p>Version 3 is published, since 2026-01-02 03:04:05 UTC.<\/p>/);
   assert.deepEqual(
-    [...html.matchAll(/<span class="meta">([^<]*)</g)].map((m) => m[1]),
+    [...html.matchAll(/<(?:label[^>]*|legend)>([^<]*)</g)].map((m) => m[1]),
     [
-      "seed/local/agents/copy.md · not published · same id as agents/lamp.md",
-      "agents/lamp.md · version 1 · same id as seed/local/agents/copy.md",
+      "Name",
+      "Description",
+      "Reads",
+      "Session context",
+      "Summary",
+      "Instruction",
+      "Model",
+      "Documents",
+      "Schema",
+      "Opens",
+      "Model",
+      "Voice",
+      "Speed",
+      "Persona",
     ],
   );
-});
-
-test("a local file opens to edit and save, a shipped one read-only", () => {
-  const list = { files: [file("coach.md", "local", 2)] };
-  const open = { path: "coach.md", modified: 1, content: "saved text" };
-  const local = drawn({ list, open: { ...open, folder: "local" }, text: "saved text" });
-  assert.match(local, /<textarea[^>]*>saved text<\/textarea>/);
-  assert.doesNotMatch(local, /readOnly|readonly/);
-  assert.match(local, /disabled="">Save<\/button>/);
-
-  const shipped = drawn({ list, open: { ...open, folder: "shipped" }, text: "saved text" });
-  assert.match(shipped, /<textarea[^>]*readOnly=""/i);
-  assert.doesNotMatch(shipped, />Save</);
-
-  // Publish sends the file on disk, so it waits for the open file's text to be saved.
-  const edited = drawn({ list, open: { ...open, folder: "local" }, text: "edited" });
-  assert.match(edited, /<button type="button" disabled="">Publish<\/button>/);
+  assert.match(html, /id="agent-reads"[^>]* value="profile"/);
+  assert.match(html, /<textarea id="agent-persona" class="wide" rows="18">You coach.<\/textarea>/);
+  assert.match(html, /<option value="agent" selected="">The agent speaks first/);
+  // The agent's own voice is offered beside voice-guide's list, and empty is the server's.
   assert.match(
-    edited,
-    /<button type="button">Save<\/button><span class="meta">Save before publishing/,
+    html,
+    /<option value="">The server&#x27;s<\/option><option value="bf_emma" selected="">bf_emma<\/option><option value="af_heart">af_heart</,
   );
+  assert.deepEqual(buttons(html), ["Publish", "Revert", "Publish the file as it is"]);
 });
 
-test("unsaved text holds off opening another file and New agent, which would throw it away", () => {
-  const list = { files: [file("coach.md", "local", 2), file("guide.md", "local", 1)] };
-  const open = { path: "coach.md", folder: "local" as const, modified: 1, content: "saved" };
-  const opens = (html: string) =>
-    [...html.matchAll(/<button type="button"( disabled="")?>(coach|guide)</g)].map((m) => [
-      m[2],
-      Boolean(m[1]),
-    ]);
-  const edited = drawn({ list, open, text: "edited", name: "Night watch" });
-  // The open file itself still opens, to read it again from disk after a refused save.
-  assert.deepEqual(opens(edited), [
-    ["coach", false],
-    ["guide", true],
-  ]);
-  assert.match(edited, /<input[^>]*disabled=""/);
-  assert.match(edited, /<button type="submit" disabled="">New agent/);
-  const saved = drawn({ list, open, text: "saved", name: "Night watch" });
-  assert.deepEqual(opens(saved), [
-    ["coach", false],
-    ["guide", false],
-  ]);
-  assert.match(saved, /<button type="submit">New agent/);
+test("a shipped agent shows read-only, to copy into a test agent, never to publish from the form", () => {
+  const html = drawn({ list, picked: "lamp.md", form, published });
+  assert.match(html, /agents\/lamp.md, shipped: read-only here/);
+  assert.equal(html.match(/<(input|textarea)[^>]*readOnly=""/g)?.length, 11);
+  assert.equal(html.match(/<select[^>]*disabled=""/g)?.length, 2);
+  assert.deepEqual(buttons(html), ["Copy to a test agent", "Publish the file as it is"]);
 });
 
-test("a press's result line, or its problem's title and detail, shows beneath the list", () => {
-  const list = { files: [file("coach.md", "local", 2)] };
+test("a new agent says its first publish writes its file; a file never published offers to publish it as it is, having nothing to fill the form", () => {
+  const made = drawn({ list, picked: panel.newAgent, form, published: null });
   assert.match(
-    drawn({ list, result: "coach.md: published version 2" }),
-    /"meta">coach.md: published/,
+    made,
+    /Not published yet: Publish writes its file in seed\/local\/agents\/ and version 1/,
+  );
+  assert.deepEqual(buttons(made), ["Publish", "Revert"]);
+  const never = drawn({
+    list: { files: [file("guide.md", "local", null)] },
+    picked: "guide.md",
+    published: null,
+  });
+  assert.match(never, /Not published yet, so voice-guide has nothing to fill the form from/);
+  assert.doesNotMatch(never, /<fieldset/);
+  assert.deepEqual(buttons(never), ["Publish the file as it is"]);
+});
+
+test("edits not yet published hold off picking another agent and publishing the file, which would drop them", () => {
+  const html = drawn({ list, picked: "coach.md", form, published, dirty: true });
+  assert.match(html, /<select aria-label="Agent" disabled="">/);
+  assert.match(html, /Publish or Revert the edits to pick another agent/);
+  assert.deepEqual(buttons(html), ["Publish", "Revert", "Publish the file as it is (disabled)"]);
+});
+
+test("a press's result line, or what it failed with, shows beside the form", () => {
+  const shown = { list, picked: "coach.md", form, published };
+  assert.match(
+    drawn({ ...shown, result: "published version 4" }),
+    /<\/div><p class="meta">published version 4<\/p><\/section>/,
   );
   assert.match(
-    drawn({ list, error: "Invalid agent file (422): name is missing" }),
-    /<div class="error">Invalid agent file \(422\): name is missing<\/div><\/section>/,
+    drawn({ ...shown, error: "voice-guide refused it: the agent file: name is missing" }),
+    /<\/div><div class="error">voice-guide refused it: the agent file: name is missing<\/div><\/section>/,
   );
 });
