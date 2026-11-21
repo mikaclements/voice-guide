@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { readJSON, templateFile, uuidv7 } from "./agent-files.ts";
+import { readJSON } from "./agent-files.ts";
 import { productRoutes } from "./product-server.ts";
 
 const key = "vgk_the-product-key";
@@ -11,10 +11,30 @@ const templateId = "01900000-0000-7000-8000-000000000001";
 const agentFile = (id: string, name: string) =>
   `---\nid: ${id}\nname: ${name}\nopens: agent\n---\nYou keep the lamp lit.\n`;
 const template = agentFile(templateId, "Lamp keeper");
+const templateFile = "lamp-keeper.md";
 const otherId = "01900000-0000-7000-8000-000000000009";
-const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const newId = "01900000-0000-7000-8000-00000000000a";
+// An id as a person might write it in an agent file, upper-case; voice answers it lower-cased.
+const upperId = "0190ABCD-0000-7000-8000-00000000000B";
 
-// Both agent folders in a fresh temp folder: the shipped one holds the template, and the local one
+// An agent's settings as the page's form sends them, under the agent file's names: these, and the
+// rest unset.
+const form = (over: Record<string, unknown> = {}) => ({
+  id: newId,
+  name: "Night watch",
+  description: "",
+  reads: [],
+  session_context: [],
+  summary: null,
+  opens: "user",
+  model: null,
+  voice: null,
+  speed: null,
+  persona: "You keep watch.\n",
+  ...over,
+});
+
+// Both agent folders in a fresh temp folder: the shipped one holds one agent file, and the local one
 // is missing, as on a fresh clone.
 async function folders(t: { after(fn: () => unknown): void }) {
   const dir = await mkdtemp(join(tmpdir(), "agent-files-"));
@@ -67,6 +87,12 @@ type Headers_ = Record<string, string | undefined>;
 
 function routes(f: { dir: string; local: string; shipped: string }, fetcher: typeof fetch) {
   return productRoutes({ voice: "http://voice", key, user: f.dir, agents: f, fetcher });
+}
+
+// When the list says a file was modified, which the page sends back with the form.
+async function modifiedOf(route: ReturnType<typeof productRoutes>, path: string): Promise<number> {
+  const { files } = JSON.parse((await send(route, "/agent-files", "GET")).body);
+  return files.find((x: { path: string }) => x.path === path).modified;
 }
 
 async function send(
@@ -149,20 +175,6 @@ test("with voice down the list still shows the files, each version unknown, and 
   assert.match(problem, /fetch failed/);
 });
 
-test("a file is opened by its bare name, with its text and when it was modified", async (t) => {
-  const f = await folders(t);
-  const route = routes(f, voice(notFound).fetcher);
-  const res = await send(route, `/agent-file?path=${templateFile}`, "GET");
-  assert.equal(res.statusCode, 200);
-  const opened = JSON.parse(res.body);
-  assert.deepEqual(
-    [opened.path, opened.folder, opened.content],
-    [templateFile, "shipped", template],
-  );
-  assert.equal(typeof opened.modified, "number");
-  assert.equal((await send(route, "/agent-file?path=gone.md", "GET")).statusCode, 404);
-});
-
 test("a path that isn't a bare agent file name is refused before the disk is touched", async (t) => {
   const f = await folders(t);
   // Where ../secret.md from the local folder leads.
@@ -181,21 +193,14 @@ test("a path that isn't a bare agent file name is refused before the disk is tou
     "",
   ];
   for (const path of paths) {
-    const asks: [string, string, unknown][] = [
-      [`/agent-file?path=${encodeURIComponent(path)}`, "GET", undefined],
-      ["/agent-file", "PUT", { path, content: "written", modified: 0 }],
-      ["/publish", "POST", { path }],
-    ];
-    for (const [url, method, body] of asks) {
-      const res = await send(route, url, method, body);
-      assert.equal(res.statusCode, 400, `${method} ${JSON.stringify(path)}`);
-    }
+    const res = await send(route, "/publish", "POST", { path });
+    assert.equal(res.statusCode, 400, JSON.stringify(path));
   }
   assert.equal(await readFile(join(f.dir, "secret.md"), "utf8"), "outside");
   assert.equal(v.calls.length, 0);
 });
 
-test("a link in an agent folder is never followed: not listed, read, saved over or published", async (t) => {
+test("a link in an agent folder is never followed: not listed, written over or published", async (t) => {
   const f = await folders(t);
   const outside = join(f.dir, "outside.md");
   await writeFile(outside, agentFile(templateId, "Outside"));
@@ -208,11 +213,10 @@ test("a link in an agent folder is never followed: not listed, read, saved over 
     listed.map((x: { path: string }) => x.path),
     [templateFile],
   );
+  // A new agent whose file name the link already has.
   const asks: [string, string, unknown, number][] = [
-    ["/agent-file?path=linked.md", "GET", undefined, 404],
-    ["/agent-file", "PUT", { path: "linked.md", content: "written", modified: 0 }, 404],
     ["/publish", "POST", { path: "linked.md" }, 404],
-    ["/agent-files", "POST", { name: "Linked" }, 409],
+    ["/agent", "POST", form({ name: "Linked" }), 409],
   ];
   for (const [url, method, body, status] of asks) {
     const res = await send(route, url, method, body);
@@ -223,103 +227,10 @@ test("a link in an agent folder is never followed: not listed, read, saved over 
   assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
 });
 
-test("a save replaces the local file whole and answers when it was modified", async (t) => {
-  const f = await folders(t);
-  await localFile(f, "coach.md", agentFile(templateId, "Coach"));
-  const route = routes(f, voice(notFound).fetcher);
-  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  const res = await send(route, "/agent-file", "PUT", {
-    path: "coach.md",
-    content: "saved",
-    modified,
-  });
-  assert.equal(res.statusCode, 200);
-  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "saved");
-  const reopened = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  assert.equal(JSON.parse(res.body).modified, reopened.modified);
-  assert.deepEqual(await readdir(f.local), ["coach.md"], "no temp file left behind");
-});
-
-test("a second save takes the time the first answered, so it isn't refused as changed on disk", async (t) => {
-  const f = await folders(t);
-  await localFile(f, "coach.md", "first");
-  const route = routes(f, voice(notFound).fetcher);
-  let { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  for (const content of ["second", "third"]) {
-    const res = await send(route, "/agent-file", "PUT", { path: "coach.md", content, modified });
-    assert.equal(res.statusCode, 200, content);
-    ({ modified } = JSON.parse(res.body));
-  }
-  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "third");
-});
-
-test("a save over voice's 256 KiB cap is refused, nothing written", async (t) => {
-  const f = await folders(t);
-  await localFile(f, "coach.md", "on disk");
-  const route = routes(f, voice(notFound).fetcher);
-  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  const content = "x".repeat(256 * 1024 + 1);
-  const res = await send(route, "/agent-file", "PUT", { path: "coach.md", content, modified });
-  assert.equal(res.statusCode, 413);
-  assert.match(res.body, /256 KiB/);
-  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "on disk");
-});
-
-test("a save that fails to write leaves the old file whole and no temp file behind", async (t) => {
-  if (process.getuid?.() === 0) return t.skip("root writes into a folder it may not");
-  const f = await folders(t);
-  await localFile(f, "coach.md", "on disk");
-  const route = routes(f, voice(notFound).fetcher);
-  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  await chmod(f.local, 0o555);
-  try {
-    const res = await send(route, "/agent-file", "PUT", {
-      path: "coach.md",
-      content: "new",
-      modified,
-    });
-    assert.equal(res.statusCode, 500);
-  } finally {
-    await chmod(f.local, 0o755);
-  }
-  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "on disk");
-  assert.deepEqual(await readdir(f.local), ["coach.md"]);
-});
-
-test("a save of a file changed on disk since it was opened is refused, nothing written", async (t) => {
-  const f = await folders(t);
-  await localFile(f, "coach.md", "on disk");
-  const route = routes(f, voice(notFound).fetcher);
-  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
-  const res = await send(route, "/agent-file", "PUT", {
-    path: "coach.md",
-    content: "from the page",
-    modified: modified - 1000,
-  });
-  assert.equal(res.statusCode, 409);
-  assert.match(res.body, /changed on disk/);
-  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "on disk");
-});
-
-test("a shipped file is never saved", async (t) => {
-  const f = await folders(t);
-  const route = routes(f, voice(notFound).fetcher);
-  const { modified } = JSON.parse(
-    (await send(route, `/agent-file?path=${templateFile}`, "GET")).body,
-  );
-  const res = await send(route, "/agent-file", "PUT", {
-    path: templateFile,
-    content: "x",
-    modified,
-  });
-  assert.equal(res.statusCode, 403);
-  assert.equal(await readFile(join(f.shipped, templateFile), "utf8"), template);
-});
-
 // Every route that writes a file or publishes one, with a body the page would send.
 const writes: [string, string, unknown][] = [
-  ["/agent-file", "PUT", { path: "coach.md", content: "written", modified: 0 }],
-  ["/agent-files", "POST", { name: "Intruder" }],
+  // A new agent, which a missing check would write and publish.
+  ["/agent", "POST", form({ name: "Intruder" })],
   ["/publish", "POST", { path: "coach.md" }],
 ];
 
@@ -362,7 +273,7 @@ test("a request naming a host other than this machine is refused on every route,
   };
   const asks: [string, string, unknown][] = [
     ["/agent-files", "GET", undefined],
-    ["/agent-file?path=coach.md", "GET", undefined],
+    [`/agent?id=${otherId}`, "GET", undefined],
     ...writes,
   ];
   for (const headers of [rebound, { ...fromPage, host: undefined }]) {
@@ -375,45 +286,6 @@ test("a request naming a host other than this machine is refused on every route,
   assert.deepEqual(await readdir(f.local), ["coach.md"]);
   const local = { ...fromPage, host: "localhost:5173", origin: "http://localhost:5173" };
   assert.equal((await send(route, "/agent-files", "GET", undefined, local)).statusCode, 200);
-});
-
-test("a new agent is the template with a fresh UUIDv7 id and the name given, in a file named for it", async (t) => {
-  const f = await folders(t);
-  const name = "Night Watch: Ünïcode $1";
-  const res = await send(routes(f, voice(notFound).fetcher), "/agent-files", "POST", { name });
-  assert.equal(res.statusCode, 201);
-  const made = JSON.parse(res.body);
-  assert.equal(made.path, "night-watch-unicode-1.md");
-  assert.match(made.id, uuidV7);
-  const text = await readFile(join(f.local, made.path), "utf8");
-  assert.equal(
-    text,
-    template
-      .replace(templateId, made.id)
-      .replace("name: Lamp keeper", `name: ${JSON.stringify(name)}`),
-  );
-});
-
-test("a new agent is refused when its file exists in either folder, or its name gives no file name", async (t) => {
-  const f = await folders(t);
-  await writeFile(join(f.shipped, "guide.md"), agentFile(templateId, "Guide"));
-  const route = routes(f, voice(notFound).fetcher);
-  assert.equal((await send(route, "/agent-files", "POST", { name: "Coach" })).statusCode, 201);
-  const cases: [unknown, number][] = [
-    ["Coach", 409],
-    ["Guide", 409],
-    ["", 422],
-    ["   ", 422],
-    ["!!!", 422],
-    ["面接官", 422],
-    ["two\nlines", 422],
-    [7, 422],
-  ];
-  for (const [name, status] of cases) {
-    const res = await send(route, "/agent-files", "POST", { name });
-    assert.equal(res.statusCode, status, JSON.stringify(name));
-  }
-  assert.deepEqual(await readdir(f.local), ["coach.md"]);
 });
 
 test("publishing sends the file on disk to voice as text/markdown with the key, and voice's answer passes through", async (t) => {
@@ -532,7 +404,8 @@ test("the product key never reaches a reply or a log line", async (t) => {
     const route = routes(f, fetcher);
     for (const [url, method, body] of [
       ["/agent-files", "GET", undefined],
-      ["/agent-file?path=coach.md", "GET", undefined],
+      [`/agent?id=${templateId}`, "GET", undefined],
+      ["/agent", "POST", form()],
       ...writes,
     ] as [string, string, unknown][]) {
       const res = await send(route, url, method, body);
@@ -542,12 +415,236 @@ test("the product key never reaches a reply or a log line", async (t) => {
   assert.doesNotMatch(JSON.stringify(logged), /the-product-key/);
 });
 
-test("a UUIDv7 holds its time in milliseconds, then version 7 and the RFC 9562 variant around random bits", () => {
-  assert.match(
-    uuidv7(0x0192_3456_789a),
-    /^01923456-789a-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+// An agent with every setting set, its values holding what YAML would read as its own syntax, and
+// the agent file written from it: the text the agent file loader's own test reads back value for
+// value.
+const keeperId = "01a1de8a-0000-7000-8000-0000000000a1";
+const keeperForm = form({
+  id: keeperId,
+  name: 'Keeper: "the" #1 灯台守 🌊',
+  description:
+    "Line one\nline two: with # and 'quotes', a tab\t, a\u2028b\u0085c\u007fd\ufffee\uffff",
+  reads: ["profile", "session_summary"],
+  session_context: ["resume"],
+  summary: {
+    instruction: "Note the ships.\nName any: aground",
+    model: "claude-opus-5-5",
+    schema: {
+      type: "object",
+      properties: { score: { type: "integer", minimum: 1 } },
+      required: ["score"],
+    },
+    documents: ["ship_log"],
+  },
+  opens: "agent",
+  model: "claude-sonnet-5-5",
+  voice: "bf_emma",
+  speed: 1.1,
+  persona: "You answer every call from the sea.\n---\nname: not a setting\n",
+});
+const keeperFile = [
+  "---",
+  `id: "${keeperId}"`,
+  String.raw`name: "Keeper: \"the\" #1 灯台守 🌊"`,
+  `${String.raw`description: "Line one\nline two: with # and 'quotes', a tab\t, a`}\u2028${String.raw`b\u0085c\u007fd\ufffee\uffff"`}`,
+  `reads: ["profile","session_summary"]`,
+  `session_context: ["resume"]`,
+  String.raw`summary: {"instruction":"Note the ships.\nName any: aground","model":"claude-opus-5-5","schema":{"type":"object","properties":{"score":{"type":"integer","minimum":1}},"required":["score"]},"documents":["ship_log"]}`,
+  `opens: "agent"`,
+  `model: "claude-sonnet-5-5"`,
+  `voice: "bf_emma"`,
+  "speed: 1.1",
+  "---",
+  "You answer every call from the sea.",
+  "---",
+  "name: not a setting",
+  "",
+].join("\n");
+
+test("the form is written as an agent file, each setting as JSON on one line and the persona after, then published with the key, voice's answer passed through", async (t) => {
+  const f = await folders(t);
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const res = await send(routes(f, v.fetcher), "/agent", "POST", keeperForm);
+  assert.equal(res.statusCode, 201);
+  assert.deepEqual(JSON.parse(res.body), { version: 1 });
+  assert.equal(await readFile(join(f.local, "keeper-the-1.md"), "utf8"), keeperFile);
+  assert.deepEqual(v.calls, [
+    {
+      url: `http://voice/v1/agents/${keeperId}`,
+      method: "PUT",
+      auth: `Bearer ${key}`,
+      type: "text/markdown",
+      body: keeperFile,
+    },
+  ]);
+});
+
+test("a setting left unset is left out of the file, so the loader's default applies", async (t) => {
+  const f = await folders(t);
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const summary = { instruction: "Note it.", model: null, schema: null, documents: [] };
+  await send(routes(f, v.fetcher), "/agent", "POST", form({ summary }));
+  assert.equal(
+    await readFile(join(f.local, "night-watch.md"), "utf8"),
+    `---\nid: "${newId}"\nname: "Night watch"\nsummary: {"instruction":"Note it."}\n---\nYou keep watch.\n`,
   );
-  assert.notEqual(uuidv7(0), uuidv7(0));
+});
+
+test("the form goes to the file holding its id, else to a new file named from the agent's name, never to one the page names", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(upperId, "Coach"));
+  const v = voice(() => Response.json({ version: 2 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const renamed = form({ id: upperId.toLowerCase(), name: "Head coach" });
+  const modified = await modifiedOf(route, "coach.md");
+  const res = await send(route, "/agent", "POST", { ...renamed, modified, path: "../escaped.md" });
+  assert.equal(res.statusCode, 201);
+  assert.match(
+    await readFile(join(f.local, "coach.md"), "utf8"),
+    /^---\nid: .*\nname: "Head coach"\n/,
+  );
+  assert.equal((await send(route, "/agent", "POST", form())).statusCode, 201);
+  assert.deepEqual((await readdir(f.local)).sort(), ["coach.md", "night-watch.md"]);
+  assert.deepEqual((await readdir(f.dir)).sort(), ["agents", "local"]);
+});
+
+test("a form the page may not write is refused, nothing written or sent: a shipped file's id, an id two files hold, a new agent whose file name is taken or whose name gives none", async (t) => {
+  const f = await folders(t);
+  // One id, written in two cases.
+  await localFile(f, "copy.md", agentFile(upperId, "Copy"));
+  await writeFile(join(f.shipped, "guide.md"), agentFile(upperId.toLowerCase(), "Guide"));
+  await localFile(f, "coach.md", agentFile("01900000-0000-7000-8000-000000000002", "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const listed = JSON.parse((await send(route, "/agent-files", "GET")).body).files;
+  assert.deepEqual(listed[1].same_id_as, [{ path: "guide.md", folder: "shipped" }]);
+  const cases: [unknown, number, RegExp][] = [
+    [form({ id: templateId }), 403, /lamp-keeper\.md is shipped/],
+    [form({ id: upperId.toLowerCase() }), 409, /copy\.md \(local\), guide\.md \(shipped\)/],
+    [form({ name: "Coach" }), 409, /coach\.md exists/],
+    [form({ name: "Lamp keeper" }), 409, /lamp-keeper\.md exists/],
+    [form({ name: "面接官" }), 422, /a letter a to z or a digit/],
+  ];
+  for (const [body, status, why] of cases) {
+    const res = await send(route, "/agent", "POST", body);
+    assert.equal(res.statusCode, status, JSON.stringify(body));
+    assert.match(res.body, why);
+  }
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
+  assert.deepEqual((await readdir(f.local)).sort(), ["coach.md", "copy.md"]);
+  assert.equal(await readFile(join(f.local, "copy.md"), "utf8"), agentFile(upperId, "Copy"));
+  assert.equal(await readFile(join(f.shipped, templateFile), "utf8"), template);
+});
+
+test("a form that isn't an agent's settings under the file's names, or is over 256 KiB as a file, is refused before anything is written", async (t) => {
+  const f = await folders(t);
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const cases: [unknown, number][] = [
+    [form({ id: "../sessions" }), 400],
+    [form({ reads: "profile" }), 400],
+    [form({ speed: "1.1" }), 400],
+    [form({ opens: "nobody" }), 400],
+    [form({ summary: { instruction: "Note it." } }), 400],
+    [form({ summary: { instruction: "Note it.", model: null, schema: [], documents: [] } }), 400],
+    [form({ persona: undefined }), 400],
+    [form({ persona: "x".repeat(256 * 1024) }), 413],
+  ];
+  for (const [body, status] of cases) {
+    const res = await send(route, "/agent", "POST", body);
+    assert.equal(res.statusCode, status, JSON.stringify(body).slice(0, 200));
+  }
+  assert.equal(v.calls.length, 0);
+  assert.deepEqual(await readdir(f.local).catch(() => []), []);
+});
+
+test("a lone surrogate, which no text holds and YAML refuses escaped, is written as U+FFFD", async (t) => {
+  const f = await folders(t);
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const summary = { instruction: "i", model: null, schema: { "k\udc00": 1 }, documents: [] };
+  const lone = form({ description: "a\ud800b", reads: ["c\udc00"], summary, persona: "d\ud800e" });
+  await send(routes(f, v.fetcher), "/agent", "POST", lone);
+  assert.equal(
+    await readFile(join(f.local, "night-watch.md"), "utf8"),
+    `---\nid: "${newId}"\nname: "Night watch"\ndescription: "a�b"\nreads: ["c�"]\nsummary: {"instruction":"i","schema":{"k�":1}}\n---\nd�e`,
+  );
+});
+
+test("a file changed on disk since the list loaded is refused, or one sent without that time, nothing written or sent", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const modified = await modifiedOf(route, "coach.md");
+  for (const sent of [modified - 1000, undefined]) {
+    const res = await send(route, "/agent", "POST", { ...form({ id: otherId }), modified: sent });
+    assert.equal(res.statusCode, 409, String(sent));
+    assert.match(res.body, /coach\.md changed on disk since the list loaded; reload/);
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(otherId, "Coach"));
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
+});
+
+test("a write that fails leaves the old file whole and no temp file behind", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root writes into a folder it may not");
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const modified = await modifiedOf(route, "coach.md");
+  await chmod(f.local, 0o555);
+  try {
+    const res = await send(route, "/agent", "POST", { ...form({ id: otherId }), modified });
+    assert.equal(res.statusCode, 500);
+  } finally {
+    await chmod(f.local, 0o755);
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(otherId, "Coach"));
+  assert.deepEqual(await readdir(f.local), ["coach.md"]);
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
+});
+
+test("with voice down the form's file is still written, and the page told 502 with the reason", async (t) => {
+  const f = await folders(t);
+  const res = await send(routes(f, down), "/agent", "POST", form());
+  assert.equal(res.statusCode, 502);
+  assert.match(res.body, /couldn't reach voice: fetch failed/);
+  assert.match(await readFile(join(f.local, "night-watch.md"), "utf8"), /name: "Night watch"/);
+});
+
+test("an agent's newest version is read from voice with the key and passed through, and an id that isn't a UUID is refused unasked", async (t) => {
+  const f = await folders(t);
+  const problem = { type: "about:blank", title: "no such agent", status: 404 };
+  const v = voice((c) =>
+    c.url === `http://voice/v1/agents/${templateId}`
+      ? Response.json({ id: templateId, version: 2 })
+      : Response.json(problem, {
+          status: 404,
+          headers: { "Content-Type": "application/problem+json" },
+        }),
+  );
+  const route = routes(f, v.fetcher);
+  const found = await send(route, `/agent?id=${templateId}`, "GET");
+  assert.deepEqual(
+    [found.statusCode, JSON.parse(found.body)],
+    [200, { id: templateId, version: 2 }],
+  );
+  const never = await send(route, `/agent?id=${otherId}`, "GET");
+  assert.deepEqual(
+    [never.statusCode, never.headers["Content-Type"]],
+    [404, "application/problem+json"],
+  );
+  assert.equal((await send(route, "/agent?id=../sessions", "GET")).statusCode, 400);
+  assert.deepEqual(
+    v.calls.map((c) => [c.method, c.auth]),
+    [
+      ["GET", `Bearer ${key}`],
+      ["GET", `Bearer ${key}`],
+    ],
+  );
+  const gone = await send(routes(f, down), `/agent?id=${templateId}`, "GET");
+  assert.equal(gone.statusCode, 502);
+  assert.match(gone.body, /fetch failed/);
 });
 
 // A request whose body arrives in these chunks.

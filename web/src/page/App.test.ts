@@ -63,3 +63,42 @@ test("the page draws the agents to pick, the transcript, beneath each reply what
   assert.match(html, /Listening<\/span><button type="button">Mute<\/button>/);
   assert.match(page([], { blocked: true }), />Tap to hear the agent<\/button>/);
 });
+
+test("the tab is the one the URL's hash names, Test unless it names Agents, and the tab bar marks it", () => {
+  assert.deepEqual(["", "#test", "#agents", "#elsewhere"].map(app.tabFrom), [
+    "test",
+    "test",
+    "agents",
+    "test",
+  ]);
+  assert.match(
+    renderToStaticMarkup(createElement(app.Tabs, { tab: "agents" })),
+    /<a href="#test">Test<\/a><a href="#agents" aria-current="page">Agents<\/a>/,
+  );
+});
+
+test("both tabs are drawn, the one the hash doesn't name hidden, so a session and the agent form outlive a switch", () => {
+  const drawnAt = (hash: string) => {
+    // Only the hash is read while drawing; Node has no window.
+    Object.assign(globalThis, { window: { location: { hash } } });
+    try {
+      return renderToStaticMarkup(createElement(app.App));
+    } finally {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  };
+  const panels = (html: string) =>
+    [
+      ...html.matchAll(
+        /<div( hidden="")?><section>(<div class="row"><select( aria-label="Agent")?)?/g,
+      ),
+    ].map((m) => [m[3] ? "agents" : "test", m[1] ? "hidden" : "shown"]);
+  assert.deepEqual(panels(drawnAt("#agents")), [
+    ["test", "hidden"],
+    ["agents", "shown"],
+  ]);
+  assert.deepEqual(panels(drawnAt("")), [
+    ["test", "shown"],
+    ["agents", "hidden"],
+  ]);
+});

@@ -291,3 +291,49 @@ func TestParseReadsABodyAsLoadReadsTheSameFileAndNamesTheFileInItsErrors(t *test
 		t.Errorf("Parse of a body with no settings = %v; want an error naming the file", err)
 	}
 }
+
+// A tool that writes agent files can write each setting as JSON on one line, which YAML reads as
+// flow style, so a value comes back exactly as written with no YAML writer, and no line of the
+// settings block can be the closing --- however many lines a value has.
+func TestParseReadsSettingsWrittenAsJSONExactly(t *testing.T) {
+	const name = `Keeper: "the" #1 灯台守 🌊`
+	const description = "Line one\nline two: with # and 'quotes', a tab\t, a\u2028b\u0085c\u007fd\ufffee\uffff"
+	const persona = "You answer every call from the sea.\n---\nname: not a setting\n"
+	file := "---\n" +
+		`id: "` + keeperID + `"` + "\n" +
+		`name: "Keeper: \"the\" #1 灯台守 🌊"` + "\n" +
+		// A line separator as it is; a next line, which YAML would fold, and a control and two
+		// noncharacters, which it refuses, as JSON escapes.
+		`description: "Line one\nline two: with # and 'quotes', a tab\t, a` + "\u2028" + `b\u0085c\u007fd\ufffee\uffff"` + "\n" +
+		`reads: ["profile","session_summary"]` + "\n" +
+		`session_context: ["resume"]` + "\n" +
+		`summary: {"instruction":"Note the ships.\nName any: aground","model":"claude-opus-5-5","schema":{"type":"object","properties":{"score":{"type":"integer","minimum":1}},"required":["score"]},"documents":["ship_log"]}` + "\n" +
+		`opens: "agent"` + "\n" +
+		`model: "claude-sonnet-5-5"` + "\n" +
+		`voice: "bf_emma"` + "\n" +
+		`speed: 1.1` + "\n" +
+		"---\n" + persona
+	a, err := agentfile.Parse("keeper.md", []byte(file))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if a.ID.String() != keeperID || a.Name != name || a.Description != description || a.Persona != persona {
+		t.Errorf("id %s, name %q, description %q, persona %q", a.ID, a.Name, a.Description, a.Persona)
+	}
+	if !slices.Equal(a.Reads, []string{"profile", "session_summary"}) || !slices.Equal(a.SessionContext, []string{"resume"}) {
+		t.Errorf("reads %v, session context %v", a.Reads, a.SessionContext)
+	}
+	const schema = `{"properties":{"score":{"minimum":1,"type":"integer"}},"required":["score"],"type":"object"}`
+	if a.Summary != "Note the ships.\nName any: aground" || a.SummaryModel != "claude-opus-5-5" || string(a.SummarySchema) != schema || !slices.Equal(a.SummaryDocuments, []string{"ship_log"}) {
+		t.Errorf("summary %q, model %q, schema %s, documents %v", a.Summary, a.SummaryModel, a.SummarySchema, a.SummaryDocuments)
+	}
+	if !a.Opens || a.Model != "claude-sonnet-5-5" || a.Voice != "bf_emma" || a.Speed != 1.1 {
+		t.Errorf("opens %v, model %q, voice %q, speed %v", a.Opens, a.Model, a.Voice, a.Speed)
+	}
+
+	// The settings left out take the loader's defaults.
+	bare, err := agentfile.Parse("bare.md", []byte("---\nid: \""+keeperID+"\"\nname: \"Keeper\"\n---\n"))
+	if err != nil || bare.Name != "Keeper" || bare.Reads != nil || bare.Summary != "" || bare.Opens || bare.Speed != 0 || bare.Persona != "" {
+		t.Errorf("Parse of the id and name alone = %+v, %v; want the defaults", bare, err)
+	}
+}

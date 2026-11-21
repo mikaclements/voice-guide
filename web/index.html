@@ -13,6 +13,17 @@
       .turn { margin: 0.75rem 0; white-space: pre-wrap; }
       .who { font-weight: 600; margin-right: 0.5rem; }
       .meta { color: #777; font-size: 0.85rem; }
+      header { display: flex; align-items: baseline; gap: 2rem; border-bottom: 1px solid #ddd; margin-bottom: 1.5rem; }
+      header h1 { font-size: 1.25rem; margin: 0; }
+      .tabs { display: flex; gap: 0.25rem; }
+      .tabs a { padding: 0.75rem 1rem; color: #666; text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+      .tabs a[aria-current="page"] { color: #222; border-bottom-color: #222; font-weight: 600; }
+      .fields { display: grid; grid-template-columns: 8rem 1fr; gap: 0.6rem 1rem; align-items: baseline; border: 0; padding: 0; margin: 1rem 0; }
+      .fields > label, .fields .group > label { color: #555; font-size: 0.9rem; }
+      .fields input, .fields textarea, .fields select { font: inherit; padding: 0.4rem; width: 100%; box-sizing: border-box; }
+      .fields .group { grid-column: 1 / -1; display: grid; grid-template-columns: 7rem 1fr; gap: inherit; align-items: baseline; border: 1px solid #ddd; padding: 0.5rem 1rem 1rem; margin: 0; }
+      .fields .wide { grid-column: 1 / -1; }
+      .fields .code { font: 0.85rem/1.4 ui-monospace, monospace; }
     </style>
   </head>
   <body>

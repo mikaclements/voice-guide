@@ -1,5 +1,6 @@
-// The agents panel's calls, served by the page's dev server: it reads and writes the agent files and
-// publishes them with the product key, which never reaches the page.
+// The Agents tab's calls, served by the page's dev server: it lists the agent files, reads agents
+// from voice, writes the form to an agent's file and publishes it, all with the product key, which
+// never reaches the page.
 import { problemFrom } from "../client/api.ts";
 
 export type AgentFile = {
@@ -16,41 +17,81 @@ export type AgentFile = {
 };
 // The files, and why voice couldn't say their versions when it couldn't.
 export type AgentFiles = { files: AgentFile[]; problem?: string };
-export type Opened = {
-  path: string;
-  folder: AgentFile["folder"];
-  modified: number;
-  content: string;
+
+// An agent's settings under its agent file's names and in its shapes: null or empty where the file
+// leaves a setting out.
+export type AgentSettings = {
+  id: string;
+  name: string;
+  description: string;
+  reads: string[];
+  session_context: string[];
+  summary: {
+    instruction: string;
+    model: string | null;
+    schema: Record<string, unknown> | null;
+    documents: string[];
+  } | null;
+  opens: "agent" | "user";
+  model: string | null;
+  voice: string | null;
+  speed: number | null;
+  persona: string;
 };
+// An agent's newest version, as voice answers it.
+export type AgentVersion = AgentSettings & { version: number; published_at: string };
 
 export const listAgentFiles = (fetcher: typeof fetch = fetch) =>
   json<AgentFiles>(fetcher, "GET", "/product/agent-files");
 
-export const openAgentFile = (path: string, fetcher: typeof fetch = fetch) =>
-  json<Opened>(fetcher, "GET", `/product/agent-file?path=${encodeURIComponent(path)}`);
-
-// Saves the text over the file, refused when the file changed on disk since modified, when the page
-// opened it.
-export const saveAgentFile = (
-  path: string,
-  content: string,
-  modified: number,
+// The agent's newest version as voice holds it, or null when it was never published.
+export async function readAgent(
+  id: string,
   fetcher: typeof fetch = fetch,
-) => json<{ modified: number }>(fetcher, "PUT", "/product/agent-file", { path, content, modified });
+): Promise<AgentVersion | null> {
+  const res = await fetcher(`/product/agent?id=${encodeURIComponent(id)}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await problemFrom(res);
+  return res.json();
+}
 
-// Makes a test agent from the template, named name, and answers its file's name.
-export const newAgent = (name: string, fetcher: typeof fetch = fetch) =>
-  json<{ path: string }>(fetcher, "POST", "/product/agent-files", { name });
+// Has the dev server write the settings to the agent's file and publish it, and answers how it went
+// with the version voice now holds. modified is when the page's list says the file was modified, so
+// a file changed since isn't overwritten; a new agent has none. What voice refuses in the file is
+// told as its refusal, in the loader's or the check's own words. The file is written before voice is
+// asked, so when voice refuses it or can't be reached, the file keeps what was sent.
+export async function publishAgent(
+  settings: AgentSettings & { modified?: number },
+  fetcher: typeof fetch = fetch,
+) {
+  const res = await fetcher("/product/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  const kept = "\nThe agent file keeps what was sent; Revert fills only the form again.";
+  if (res.status === 422 && res.headers.get("Content-Type")?.includes("application/problem+json")) {
+    const p = await res.json();
+    throw new Error(`voice-guide refused it: ${p.detail || p.title}${kept}`);
+  }
+  if (res.status === 502) throw new Error(`${(await problemFrom(res)).message}${kept}`);
+  if (!res.ok) throw await problemFrom(res);
+  const agent: AgentVersion & { voice_checked?: boolean } = await res.json();
+  return { line: publishedLine(res.status, agent), agent };
+}
 
-// Publishes the file as it is on disk, and says how it went: voice saved a new version, or had it;
-// and when text-to-speech couldn't be asked, that the agent's voice went unchecked, since one it
-// doesn't offer could then have been published.
+// Publishes the file as it is on disk, and says how it went.
 export async function publishAgentFile(path: string, fetcher: typeof fetch = fetch) {
   const res = await send(fetcher, "POST", "/product/publish", { path });
-  const { version, voice_checked } = await res.json();
+  return publishedLine(res.status, await res.json());
+}
+
+// Voice saved a new version, or had it; and when text-to-speech couldn't be asked, the agent's voice
+// went unchecked, since one it doesn't offer could then have been published.
+function publishedLine(status: number, p: { version: number; voice_checked?: boolean }) {
   const line =
-    res.status === 201 ? `published version ${version}` : `unchanged, version ${version}`;
-  return voice_checked === false ? `${line}, voice not checked` : line;
+    status === 201 ? `published version ${p.version}` : `unchanged, version ${p.version}`;
+  return p.voice_checked === false ? `${line}, voice not checked` : line;
 }
 
 // Calls the dev server, which answers with problems the way voice does.

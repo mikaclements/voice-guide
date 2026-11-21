@@ -9,10 +9,45 @@ import { Starter } from "./starting.ts";
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const seconds = (ms: number) => `${(ms / 1000).toFixed(2)}s`;
 
+export type Tab = "test" | "agents";
+
+// The tab a URL's hash names, Test unless it names Agents, so a reload stays on its tab.
+export const tabFrom = (hash: string): Tab => (hash === "#agents" ? "agents" : "test");
+
+function useTab(): Tab {
+  const [tab, setTab] = useState(() => tabFrom(window.location.hash));
+  useEffect(() => {
+    const changed = () => setTab(tabFrom(window.location.hash));
+    window.addEventListener("hashchange", changed);
+    return () => window.removeEventListener("hashchange", changed);
+  }, []);
+  return tab;
+}
+
+// The page's title and its two tabs: Test, to talk to an agent, and Agents, to edit them.
+export function Tabs({ tab }: { tab: Tab }) {
+  const current = (t: Tab) => (t === tab ? "page" : undefined);
+  return (
+    <header>
+      <h1>voice-guide</h1>
+      <nav className="tabs">
+        <a href="#test" aria-current={current("test")}>
+          Test
+        </a>
+        <a href="#agents" aria-current={current("agents")}>
+          Agents
+        </a>
+      </nav>
+    </header>
+  );
+}
+
 // voice-guide's own page: it lists the agents and has its dev server start a session, as a
 // product's server would, then holds the session as the drop-in element does, with JoinedSession,
-// and draws what that shows.
+// and draws what that shows. Both tabs stay mounted, so a session and the agent form outlive a
+// switch between them.
 export function App() {
+  const tab = useTab();
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentId, setAgentId] = useState("");
   const [session, setSession] = useState<Session>();
@@ -74,32 +109,37 @@ export function App() {
     then();
   };
   return (
-    <>
-      <SessionView
-        {...{ agents, agentId, session, shown, words, starting, error }}
-        onPublished={loadAgents}
-        on={{
-          agent: setAgentId,
-          start: () => start(),
-          // A failed End shows in the session's notes, and leaves it live to press again.
-          end: act(() => joined.current?.end().catch(() => {})),
-          mute: act(() => joined.current?.mute()),
-          playAfterPress: act(() => joined.current?.playAfterPress()),
-          words: setWords,
-          send: (e) => {
-            e.preventDefault();
-            setError("");
-            if (joined.current?.send(words)) setWords("");
-          },
-        }}
-      />
-      <SessionsPanel
-        {...{ agents, agentId }}
-        busy={starting || Boolean(shown?.busy)}
-        start={start}
-        error={error}
-      />
-    </>
+    <main>
+      <Tabs tab={tab} />
+      <div hidden={tab !== "test"}>
+        <SessionView
+          {...{ agents, agentId, session, shown, words, starting, error }}
+          on={{
+            agent: setAgentId,
+            start: () => start(),
+            // A failed End shows in the session's notes, and leaves it live to press again.
+            end: act(() => joined.current?.end().catch(() => {})),
+            mute: act(() => joined.current?.mute()),
+            playAfterPress: act(() => joined.current?.playAfterPress()),
+            words: setWords,
+            send: (e) => {
+              e.preventDefault();
+              setError("");
+              if (joined.current?.send(words)) setWords("");
+            },
+          }}
+        />
+        <SessionsPanel
+          {...{ agents, agentId }}
+          busy={starting || Boolean(shown?.busy)}
+          start={start}
+          error={error}
+        />
+      </div>
+      <div hidden={tab !== "agents"}>
+        <AgentsPanel onPublished={loadAgents} />
+      </div>
+    </main>
   );
 }
 
@@ -129,8 +169,6 @@ export type SessionViewProps = {
   words: string;
   starting: boolean;
   error: string;
-  // Told after the agents panel publishes, so the page lists the agents again.
-  onPublished?: () => void;
   on: Record<"start" | "end" | "mute" | "playAfterPress", () => void> & {
     agent(id: string): void;
     words(words: string): void;
@@ -139,13 +177,12 @@ export type SessionViewProps = {
 };
 
 export function SessionView(props: SessionViewProps) {
-  const { agents, agentId, session, shown, words, starting, error, on, onPublished } = props;
+  const { agents, agentId, session, shown, words, starting, error, on } = props;
   const busy = starting || Boolean(shown?.busy);
   const locked = shown?.locked ?? true;
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
   return (
-    <main>
-      <h1>voice-guide</h1>
+    <section>
       <div className="row">
         <select value={agentId} onChange={(e) => on.agent(e.target.value)} disabled={busy}>
           {agents.map((a) => (
@@ -212,7 +249,6 @@ export function SessionView(props: SessionViewProps) {
           </button>
         </form>
       )}
-      <AgentsPanel onPublished={onPublished} />
-    </main>
+    </section>
   );
 }

@@ -8,17 +8,16 @@ import type { Incoming, Reply } from "./product-server.ts";
 // never edits a tracked file.
 export type AgentFolders = { local: string; shipped: string };
 
-// What a new agent starts from, in the shipped folder.
-export const templateFile = "mock-interviewer.md";
-
 // Only a bare file name, so a path from the page can't name anything outside the two folders.
 const fileName = /^[a-z0-9][a-z0-9-]*\.md$/;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// A UUID names one agent in either case, and voice answers it lower-cased.
+const sameUUID = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 // Voice's cap on an agent file: a larger one is refused here rather than sent to be refused.
 const fileLimit = 256 * 1024;
-// A save carries the whole file as a JSON string; four times the cap leaves room for its escapes.
-const saveBodyLimit = 4 * fileLimit;
-// A name or a path, with room to spare.
+// A form carries the persona as a JSON string; four times the cap leaves room for its escapes.
+const formBodyLimit = 4 * fileLimit;
+// A path, with room to spare.
 const smallBodyLimit = 4096;
 // Long enough for a readable file name, far under any file system's limit; a round number.
 const slugLength = 64;
@@ -27,16 +26,38 @@ type Voice = (path: string, init?: RequestInit) => Promise<Response>;
 type Found = { path: string; folder: "local" | "shipped"; file: string; modified: number };
 type Scanned = Found & { id: string; name: string };
 
-// The routes behind the page's agents panel, mounted at /product beside the product's own: the
-// files in both folders with their published versions, one file's text, a save, a new agent and a
-// publish. call reaches voice with the product key, which these routes never see. Answers true when
-// the request was one of these routes.
+// An agent's settings under its agent file's names and in its shapes, as voice answers an agent's
+// version and the page's form sends one back.
+type Settings = {
+  id: string;
+  name: string;
+  description: string;
+  reads: string[];
+  session_context: string[];
+  summary: {
+    instruction: string;
+    model: string | null;
+    schema: Record<string, unknown> | null;
+    documents: string[];
+  } | null;
+  opens: "agent" | "user";
+  model: string | null;
+  voice: string | null;
+  speed: number | null;
+  persona: string;
+};
+
+// The routes behind the page's Agents tab, mounted at /product beside the product's own: the files
+// in both folders with their published versions, an agent's newest version as voice holds it, the
+// form written to its file and published, and a file published as it is on disk. call reaches voice
+// with the product key, which these routes never see. Answers true when the request was one of these
+// routes.
 export function agentFileRoutes(folders: AgentFolders, call: Voice) {
   return async (req: Incoming, to: Reply): Promise<boolean> => {
     const url = new URL(req.url ?? "/", "http://product");
     const route = `${req.method} ${url.pathname}`;
-    const writes = ["PUT /agent-file", "POST /agent-files", "POST /publish"];
-    if (!["GET /agent-files", "GET /agent-file", ...writes].includes(route)) return false;
+    const writes = ["POST /agent", "POST /publish"];
+    if (!["GET /agent-files", "GET /agent", ...writes].includes(route)) return false;
     try {
       if (fromAnotherHost(req)) return fail(to, 403, hostRefused);
       if (writes.includes(route)) {
@@ -44,23 +65,20 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
         if (refusal) return fail(to, ...refusal);
       }
       if (route === "GET /agent-files") return json(to, 200, await list(folders, call));
-      if (route === "GET /agent-file") {
-        const path = url.searchParams.get("path") ?? "";
-        if (!fileName.test(path)) return badPath(to);
-        const found = await find(folders, path);
-        if (!found) return fail(to, 404, `no agent file named ${path}`);
-        const content = await readFile(found.file, "utf8");
-        return json(to, 200, { ...shown(found), content });
+      if (route === "GET /agent") {
+        // The id goes in the path to voice, so nothing but a UUID may reach it.
+        const id = url.searchParams.get("id") ?? "";
+        if (!uuid.test(id)) return fail(to, 400, "the id must be a UUID");
+        return await answer(to, () => call(`/v1/agents/${id}`));
       }
-      const limit = route === "PUT /agent-file" ? saveBodyLimit : smallBodyLimit;
+      const limit = route === "POST /agent" ? formBodyLimit : smallBodyLimit;
       const asked = await readJSON(req, limit).catch(() => undefined);
       if (!asked) return fail(to, 413, "the request is over the limit");
-      if (route === "POST /agent-files") return await create(folders, asked.name, to);
+      if (route === "POST /agent") return await write(folders, asked, call, to);
       const path = typeof asked.path === "string" ? asked.path : "";
       if (!fileName.test(path)) return badPath(to);
       const found = await find(folders, path);
       if (!found) return fail(to, 404, `no agent file named ${path}`);
-      if (route === "PUT /agent-file") return await save(found, asked, to);
       return await publish(folders, found, call, to);
     } catch (err) {
       return fail(to, 500, `the agent files couldn't be read or written: ${message(err)}`);
@@ -144,7 +162,7 @@ async function scan(folders: AgentFolders): Promise<Scanned[]> {
 // shipped agent file is copied with its id kept.
 function sameId(all: Scanned[], f: { file: string; id: string }) {
   return all
-    .filter((o) => o.id !== "" && o.id === f.id && o.file !== f.file)
+    .filter((o) => o.id !== "" && sameUUID(o.id, f.id) && o.file !== f.file)
     .map((o) => ({ path: o.path, folder: o.folder }));
 }
 
@@ -165,55 +183,6 @@ async function published(call: Voice, id: string) {
   return { version: agent.version, published_at: agent.published_at };
 }
 
-async function save(found: Found, asked: Record<string, unknown>, to: Reply) {
-  if (found.folder === "shipped") {
-    return fail(to, 403, `${found.path} is shipped, so the page only reads it`);
-  }
-  if (typeof asked.content !== "string" || typeof asked.modified !== "number") {
-    return fail(to, 400, "a save is {path, content, modified}");
-  }
-  if (Buffer.byteLength(asked.content) > fileLimit) {
-    return fail(to, 413, "the file is over 256 KiB, voice's limit");
-  }
-  // Another editor saved it since the page opened it: writing now would lose that.
-  if (found.modified !== asked.modified) {
-    return fail(to, 409, `${found.path} changed on disk since it was opened; reload it`);
-  }
-  // Renamed into place, so a crash mid-write leaves the old file whole; the dot keeps it out of the
-  // list.
-  const temp = join(dirname(found.file), `.${found.path}.${randomBytes(4).toString("hex")}`);
-  try {
-    await writeFile(temp, asked.content);
-    await rename(temp, found.file);
-  } finally {
-    await rm(temp, { force: true });
-  }
-  return json(to, 200, { modified: (await lstat(found.file)).mtimeMs });
-}
-
-async function create(folders: AgentFolders, name: unknown, to: Reply) {
-  const given = typeof name === "string" ? name.trim() : "";
-  if (/\p{Cc}/u.test(given)) return fail(to, 422, "the name must be one line");
-  const path = `${slug(given)}.md`;
-  if (!fileName.test(path)) {
-    return fail(to, 422, "the name needs a letter a to z or a digit, to name its file");
-  }
-  if (await find(folders, path)) return fail(to, 409, `an agent file named ${path} exists`);
-  const id = uuidv7();
-  const text = fromTemplate(await readFile(join(folders.shipped, templateFile), "utf8"), id, given);
-  await mkdir(folders.local, { recursive: true });
-  try {
-    // wx: whatever has the name, a file made since the check above or a link, is kept.
-    await writeFile(join(folders.local, path), text, { flag: "wx" });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
-      return fail(to, 409, `${path} exists in the local folder`);
-    }
-    throw err;
-  }
-  return json(to, 201, { path, id, name: given });
-}
-
 async function publish(folders: AgentFolders, found: Found, call: Voice, to: Reply) {
   const file = await readFile(found.file);
   if (file.length > fileLimit) return fail(to, 413, "the file is over 256 KiB, voice's limit");
@@ -225,21 +194,181 @@ async function publish(folders: AgentFolders, found: Found, call: Voice, to: Rep
     const named = others.map((o) => `${o.path} (${o.folder})`).join(", ");
     return fail(to, 409, `${found.path} has the id of ${named}; give one of them a new id`);
   }
+  return await answer(to, () => put(call, id, file));
+}
+
+const put = (call: Voice, id: string, file: Uint8Array) =>
+  call(`/v1/agents/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "text/markdown" },
+    body: new Uint8Array(file),
+  });
+
+// Writes the form's settings to the agent file holding its id, or to a new one named from the
+// agent's name, then publishes that file, so the file on disk stays the record of every agent the
+// page made or changed. The page never names the file. A shipped file is never written, and an id
+// two files hold is refused, as a publish of either would replace the other's agent. The form
+// carries when the file was modified as the page's list read it: a file changed since, in an
+// editor say, is refused, so those edits aren't overwritten unseen.
+async function write(
+  folders: AgentFolders,
+  asked: Record<string, unknown>,
+  call: Voice,
+  to: Reply,
+) {
+  const s = settingsOf(asked);
+  if (!s) return fail(to, 400, "the agent must be its settings under the agent file's names");
+  const text = agentFileText(s);
+  if (Buffer.byteLength(text) > fileLimit) {
+    return fail(to, 413, "the agent file would be over 256 KiB, voice's limit");
+  }
+  const holders = (await scan(folders)).filter((f) => sameUUID(f.id, s.id));
+  if (holders.length > 1) {
+    const named = holders.map((o) => `${o.path} (${o.folder})`).join(", ");
+    return fail(to, 409, `${s.id} is the id of ${named}; give all but one of them a new id`);
+  }
+  const held = holders[0];
+  if (held?.folder === "shipped") {
+    return fail(
+      to,
+      403,
+      `${held.path} is shipped, so the page only reads it; copy it to a test agent`,
+    );
+  }
+  if (held && held.modified !== asked.modified) {
+    return fail(to, 409, `${held.path} changed on disk since the list loaded; reload`);
+  }
+  if (held) {
+    // Renamed into place, so a crash mid-write leaves the old file whole; the dot keeps it out of
+    // the list.
+    const temp = join(dirname(held.file), `.${held.path}.${randomBytes(4).toString("hex")}`);
+    try {
+      await writeFile(temp, text);
+      await rename(temp, held.file);
+    } finally {
+      await rm(temp, { force: true });
+    }
+  } else {
+    const path = `${slug(s.name)}.md`;
+    if (!fileName.test(path)) {
+      return fail(to, 422, "the name needs a letter a to z or a digit, to name its file");
+    }
+    if (await find(folders, path)) {
+      return fail(to, 409, `an agent file named ${path} exists; give the agent another name`);
+    }
+    await mkdir(folders.local, { recursive: true });
+    try {
+      // wx: whatever has the name, a file made since the check above or a link, is kept.
+      await writeFile(join(folders.local, path), text, { flag: "wx" });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+        return fail(to, 409, `${path} exists in the local folder; give the agent another name`);
+      }
+      throw err;
+    }
+  }
+  return await answer(to, () => put(call, s.id, Buffer.from(text)));
+}
+
+// Voice's answer as it is, problems included, so the page reads them as voice's own; a voice that
+// can't be reached is the product's server's 502, with the reason.
+async function answer(to: Reply, ask: () => Promise<Response>) {
   let res: Response;
   try {
-    res = await call(`/v1/agents/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "text/markdown" },
-      body: new Uint8Array(file),
-    });
+    res = await ask();
   } catch (err) {
     return fail(to, 502, `the product's server couldn't reach voice: ${message(err)}`);
   }
-  // Voice's answer as it is, problems included, so the page reads them as voice's own.
   to.statusCode = res.status;
   to.setHeader("Content-Type", res.headers.get("Content-Type") ?? "application/json");
   to.end(await res.text());
   return true;
+}
+
+const isText = (v: unknown): v is string => typeof v === "string";
+const isList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isText);
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  v !== null && typeof v === "object" && !Array.isArray(v);
+const textOrNull = (v: unknown) => v === null || isText(v);
+
+// The settings in a form the page sent, every one present and in its shape, or undefined. Only what
+// the file can't hold is checked here; voice checks the rest when it reads the file, and its problem
+// is shown as it is.
+function settingsOf(a: Record<string, unknown>): Settings | undefined {
+  const s = a.summary;
+  const summary =
+    s === null ||
+    (isObject(s) &&
+      isText(s.instruction) &&
+      textOrNull(s.model) &&
+      (s.schema === null || isObject(s.schema)) &&
+      isList(s.documents));
+  const speed = a.speed === null || (typeof a.speed === "number" && Number.isFinite(a.speed));
+  const ok =
+    isText(a.id) &&
+    uuid.test(a.id) &&
+    isText(a.name) &&
+    isText(a.description) &&
+    isList(a.reads) &&
+    isList(a.session_context) &&
+    summary &&
+    (a.opens === "agent" || a.opens === "user") &&
+    textOrNull(a.model) &&
+    textOrNull(a.voice) &&
+    speed &&
+    isText(a.persona);
+  return ok ? (a as Settings) : undefined;
+}
+
+// The agent file for the settings: each setting on one line as JSON, which YAML reads as a flow
+// value, so every value comes back exactly as the page sent it with no YAML writer, and no line of
+// the settings block can be the --- that closes it, whatever lines the persona holds. A setting left
+// unset is left out, so the loader's default applies.
+function agentFileText(s: Settings): string {
+  const summary = s.summary && {
+    instruction: s.summary.instruction,
+    ...(s.summary.model ? { model: s.summary.model } : {}),
+    ...(s.summary.schema ? { schema: s.summary.schema } : {}),
+    ...(s.summary.documents.length ? { documents: s.summary.documents } : {}),
+  };
+  const settings: [string, unknown][] = [
+    ["id", s.id],
+    ["name", s.name],
+    ["description", s.description || undefined],
+    ["reads", s.reads.length ? s.reads : undefined],
+    ["session_context", s.session_context.length ? s.session_context : undefined],
+    ["summary", summary ?? undefined],
+    ["opens", s.opens === "agent" ? "agent" : undefined],
+    ["model", s.model || undefined],
+    ["voice", s.voice || undefined],
+    ["speed", s.speed ?? undefined],
+  ];
+  const head = settings
+    .filter(([, value]) => value !== undefined)
+    .map(([key, value]) => `${key}: ${asYAML(value)}\n`)
+    .join("");
+  return `---\n${head}---\n${s.persona.toWellFormed()}`;
+}
+
+// JSON leaves DEL, the C1 controls, U+FFFE and U+FFFF raw, which YAML refuses, or for U+0085 reads
+// as a line break, so they are written as JSON's escapes, which YAML reads alike. JSON escapes a
+// lone surrogate, which YAML refuses and no text holds, so it becomes U+FFFD first, as a UTF-8 file
+// would hold it.
+const asYAML = (value: unknown) =>
+  JSON.stringify(wellFormed(value)).replace(
+    /[\u007f-\u009f\ufffe\uffff]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+
+function wellFormed(value: unknown): unknown {
+  if (typeof value === "string") return value.toWellFormed();
+  if (Array.isArray(value)) return value.map(wellFormed);
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k.toWellFormed(), wellFormed(v)]),
+    );
+  }
+  return value;
 }
 
 // The file a bare name names: the local folder's when it has one, since a local file takes the
@@ -271,19 +400,6 @@ function setting(text: string, key: string): string {
   return raw.replace(/\s+#.*$/, "");
 }
 
-// The template with its id and name replaced; the name quoted, as JSON, which YAML reads, so a
-// colon or a word YAML would take for true or a number stays the name.
-function fromTemplate(template: string, id: string, name: string): string {
-  const block = /^---\r?\n[\s\S]*?\r?\n---/.exec(template)?.[0] ?? "";
-  if (!/^id:/m.test(block) || !/^name:/m.test(block)) {
-    throw new Error(`${templateFile} has no id or name to replace`);
-  }
-  const replaced = block
-    .replace(/^id:.*$/m, () => `id: ${id}`)
-    .replace(/^name:.*$/m, () => `name: ${JSON.stringify(name)}`);
-  return replaced + template.slice(block.length);
-}
-
 // A file name from an agent's name: accents dropped, every other run of characters but a to z and
 // digits one dash.
 function slug(name: string): string {
@@ -295,17 +411,6 @@ function slug(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, slugLength)
     .replace(/-+$/, "");
-}
-
-// A UUID version 7 (RFC 9562): the time in milliseconds, then random bits, so agents' IDs sort by
-// when they were made, as every other ID in voice-guide does.
-export function uuidv7(now = Date.now()): string {
-  const bytes = randomBytes(16);
-  bytes.writeUIntBE(now, 0, 6);
-  bytes[6] = (bytes[6] & 0x0f) | 0x70;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = bytes.toString("hex");
-  return hex.replace(/^(.{8})(.{4})(.{4})(.{4})/, "$1-$2-$3-$4-");
 }
 
 // Reads a JSON object from a request's body up to limit bytes, decoded once whole so a character
