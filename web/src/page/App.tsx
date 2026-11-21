@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { at, type Session } from "../client/api.ts";
 import { JoinedSession, type ReplyMeta, type Shown } from "../client/joined.ts";
 import { AgentsPanel } from "./AgentsPanel.tsx";
-import { type Agent, listAgents, startSession } from "./product.ts";
+import { type Agent, listAgents, type StartOptions, startSession } from "./product.ts";
+import { SessionsPanel } from "./SessionsPanel.tsx";
 import { Starter } from "./starting.ts";
 
 const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -21,9 +22,10 @@ export function App() {
   // What listing the agents or a start failed with; the session's own notes are in shown.
   const [error, setError] = useState("");
   const joined = useRef<JoinedSession>(undefined);
-  const starter = useRef(new Starter(startSession));
+  const starter = useRef(new Starter((a, r, o) => startSession(a, r, fetch, o)));
 
-  useEffect(() => {
+  // Listed again after an agent is published, which may add one or change what it asks for.
+  const loadAgents = useCallback(() => {
     listAgents().then(
       (list) => {
         setAgents(list);
@@ -32,16 +34,17 @@ export function App() {
       (e: unknown) => setError(message(e)),
     );
   }, []);
+  useEffect(loadAgents, [loadAgents]);
   // Leaving the page lets the session go, so voice lets its audio connection go at once.
   useEffect(() => () => joined.current?.leave(), []);
 
-  async function start() {
+  async function start(options?: StartOptions) {
     const agent = agents.find((a) => a.id === agentId);
     if (!agent) return;
     setStarting(true);
     setError("");
     try {
-      const { ticket, ...s } = await starter.current.start(agent);
+      const { ticket, ...s } = await starter.current.start(agent, options);
       // The session before is let go, not ended: it ends after it sits idle.
       joined.current?.leave();
       joined.current = new JoinedSession({
@@ -71,23 +74,32 @@ export function App() {
     then();
   };
   return (
-    <SessionView
-      {...{ agents, agentId, session, shown, words, starting, error }}
-      on={{
-        agent: setAgentId,
-        start,
-        // A failed End shows in the session's notes, and leaves it live to press again.
-        end: act(() => joined.current?.end().catch(() => {})),
-        mute: act(() => joined.current?.mute()),
-        playAfterPress: act(() => joined.current?.playAfterPress()),
-        words: setWords,
-        send: (e) => {
-          e.preventDefault();
-          setError("");
-          if (joined.current?.send(words)) setWords("");
-        },
-      }}
-    />
+    <>
+      <SessionView
+        {...{ agents, agentId, session, shown, words, starting, error }}
+        onPublished={loadAgents}
+        on={{
+          agent: setAgentId,
+          start: () => start(),
+          // A failed End shows in the session's notes, and leaves it live to press again.
+          end: act(() => joined.current?.end().catch(() => {})),
+          mute: act(() => joined.current?.mute()),
+          playAfterPress: act(() => joined.current?.playAfterPress()),
+          words: setWords,
+          send: (e) => {
+            e.preventDefault();
+            setError("");
+            if (joined.current?.send(words)) setWords("");
+          },
+        }}
+      />
+      <SessionsPanel
+        {...{ agents, agentId }}
+        busy={starting || Boolean(shown?.busy)}
+        start={start}
+        error={error}
+      />
+    </>
   );
 }
 
@@ -117,6 +129,8 @@ export type SessionViewProps = {
   words: string;
   starting: boolean;
   error: string;
+  // Told after the agents panel publishes, so the page lists the agents again.
+  onPublished?: () => void;
   on: Record<"start" | "end" | "mute" | "playAfterPress", () => void> & {
     agent(id: string): void;
     words(words: string): void;
@@ -125,7 +139,7 @@ export type SessionViewProps = {
 };
 
 export function SessionView(props: SessionViewProps) {
-  const { agents, agentId, session, shown, words, starting, error, on } = props;
+  const { agents, agentId, session, shown, words, starting, error, on, onPublished } = props;
   const busy = starting || Boolean(shown?.busy);
   const locked = shown?.locked ?? true;
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
@@ -198,7 +212,7 @@ export function SessionView(props: SessionViewProps) {
           </button>
         </form>
       )}
-      <AgentsPanel />
+      <AgentsPanel onPublished={onPublished} />
     </main>
   );
 }

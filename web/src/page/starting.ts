@@ -2,21 +2,30 @@
 // may have started the session, so pressing Start again can't start two.
 import { ProblemError, ticketExpiredType } from "../client/api.ts";
 import { failure, type Kept, keepRequestId, requestIdFor } from "../client/retry.ts";
-import type { Agent, Started } from "./product.ts";
+import type { Agent, Started, StartOptions } from "./product.ts";
 
 export class Starter {
-  private readonly startSession: (agentId: string, requestId: string) => Promise<Started>;
+  private readonly startSession: (
+    agentId: string,
+    requestId: string,
+    options?: StartOptions,
+  ) => Promise<Started>;
   private kept: Kept | undefined;
 
-  constructor(startSession: (agentId: string, requestId: string) => Promise<Started>) {
+  constructor(
+    startSession: (agentId: string, requestId: string, options?: StartOptions) => Promise<Started>,
+  ) {
     this.startSession = startSession;
   }
 
-  async start(agent: Agent): Promise<Started> {
-    const requestId = requestIdFor(agent.id, this.kept);
-    const retry = this.kept?.key === agent.id;
+  // Options belong to the request ID: voice takes a repeat only with the same agent and documents,
+  // so a start with other settings is a new request, not a repeat.
+  async start(agent: Agent, options?: StartOptions): Promise<Started> {
+    const key = options ? `${agent.id}\n${JSON.stringify(options)}` : agent.id;
+    const requestId = requestIdFor(key, this.kept);
+    const retry = this.kept?.key === key;
     try {
-      const session = await this.startSession(agent.id, requestId);
+      const session = await this.startSession(agent.id, requestId, options);
       this.kept = undefined;
       // A repeat of a start past its session's cap answers with the session and no ticket: there
       // is nothing to talk with, and this request ID has nothing more to give.
@@ -30,7 +39,7 @@ export class Starter {
       // one it may have taken is still the one to repeat.
       const voiceAnswered = err instanceof ProblemError && err.fromVoice;
       const keep = !voiceAnswered || keepRequestId(failure(err), retry);
-      this.kept = keep ? { key: agent.id, requestId } : undefined;
+      this.kept = keep ? { key, requestId } : undefined;
       throw err;
     }
   }
