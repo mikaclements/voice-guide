@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { templateFile, uuidv7 } from "./agent-files.ts";
+import { readJSON, templateFile, uuidv7 } from "./agent-files.ts";
 import { productRoutes } from "./product-server.ts";
 
 const key = "vgk_the-product-key";
@@ -248,41 +248,30 @@ const writes: [string, string, unknown][] = [
   ["/publish", "POST", { path: "coach.md" }],
 ];
 
-test("a write or publish sent from another site, or another port of this machine, is refused", async (t) => {
+test("a write or publish sent from another site, from another port of this machine, or not as JSON is refused", async (t) => {
   const f = await folders(t);
   await localFile(f, "coach.md", agentFile(templateId, "Coach"));
   const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
   const route = routes(f, v.fetcher);
-  const elsewhere: Headers_[] = [
-    { "sec-fetch-site": "cross-site", origin: "https://elsewhere.example" },
-    { "sec-fetch-site": "same-site", origin: "http://127.0.0.1:8091" },
+  const refused: [Headers_, number][] = [
+    [{ "sec-fetch-site": "cross-site", origin: "https://elsewhere.example" }, 403],
+    [{ "sec-fetch-site": "same-site", origin: "http://127.0.0.1:8091" }, 403],
     // A browser that sends no Sec-Fetch-Site still names the page's origin.
-    { "sec-fetch-site": undefined, origin: "https://elsewhere.example" },
+    [{ "sec-fetch-site": undefined, origin: "https://elsewhere.example" }, 403],
+    // A form or a text body, which a page on another site can send with no preflight.
+    [{ "content-type": undefined }, 415],
+    [{ "content-type": "text/plain" }, 415],
+    [{ "content-type": "application/x-www-form-urlencoded" }, 415],
   ];
-  for (const from of elsewhere) {
+  for (const [from, status] of refused) {
     for (const [url, method, body] of writes) {
       const res = await send(route, url, method, body, { ...fromPage, ...from });
-      assert.equal(res.statusCode, 403, `${method} ${url} ${JSON.stringify(from)}`);
+      assert.equal(res.statusCode, status, `${method} ${url} ${JSON.stringify(from)}`);
     }
   }
   assert.equal(v.calls.length, 0, "voice never heard of it");
   assert.deepEqual(await readdir(f.local), ["coach.md"]);
   assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(templateId, "Coach"));
-});
-
-test("a write or publish not sent as JSON is refused", async (t) => {
-  const f = await folders(t);
-  await localFile(f, "coach.md", "on disk");
-  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
-  const route = routes(f, v.fetcher);
-  for (const type of [undefined, "text/plain", "application/x-www-form-urlencoded"]) {
-    for (const [url, method, body] of writes) {
-      const res = await send(route, url, method, body, { ...fromPage, "content-type": type });
-      assert.equal(res.statusCode, 415, `${method} ${url} ${type}`);
-    }
-  }
-  assert.equal(v.calls.length, 0);
-  assert.deepEqual(await readdir(f.local), ["coach.md"]);
 });
 
 test("a new agent is the template with a fresh UUIDv7 id and the name given, in a file named for it", async (t) => {
@@ -427,4 +416,31 @@ test("a UUIDv7 holds its time in milliseconds, then version 7 and the RFC 9562 v
     /^01923456-789a-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
   );
   assert.notEqual(uuidv7(0), uuidv7(0));
+});
+
+// A request whose body arrives in these chunks.
+const sent = (chunks: (Buffer | string)[], dropped = () => {}) => ({
+  on(event: string, cb: (chunk: Buffer | string) => void) {
+    if (event === "data") for (const c of chunks) cb(c);
+    if (event === "end") cb("");
+  },
+  destroy: dropped,
+});
+
+test("a JSON body is decoded once whole, so a character split between chunks stays whole", async () => {
+  const bytes = Buffer.from(JSON.stringify({ name: "灯台守" }));
+  assert.deepEqual(await readJSON(sent([bytes.subarray(0, 10), bytes.subarray(10)]), 100), {
+    name: "灯台守",
+  });
+  assert.deepEqual(await readJSON(sent(["not JSON"]), 100), {}, "not JSON reads as no fields");
+});
+
+test("a body over the limit is dropped, not read to its end", async () => {
+  let dropped = 0;
+  const read = readJSON(
+    sent(["x".repeat(60), "x".repeat(60), "x"], () => dropped++),
+    100,
+  );
+  await assert.rejects(read, /over the limit/);
+  assert.equal(dropped, 1, "the connection is dropped once, at the limit");
 });

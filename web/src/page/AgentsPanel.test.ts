@@ -33,12 +33,12 @@ const drawn = (props: Partial<AgentsViewProps>) =>
       busy: false,
       result: "",
       error: "",
-      on: { open: none, name: none, create: none, text: none, save: none, publish: none },
+      on: { publish: none, open: none, name: none, create: none, text: none, save: none },
       ...props,
     }),
   );
 
-test("the panel lists each agent file with its folder and published version, and why voice couldn't say", () => {
+test("the panel lists each agent file with its folder, published version and a Publish button, and why voice couldn't say", () => {
   const html = drawn({
     list: {
       files: [
@@ -57,32 +57,40 @@ test("the panel lists each agent file with its folder and published version, and
       "agents/lamp.md · version unknown",
     ],
   );
+  assert.equal(html.match(/<button type="button">Publish<\/button>/g)?.length, 3);
   assert.match(html, /<div class="error">the product&#x27;s server couldn&#x27;t reach voice/);
   assert.match(drawn({ list: { files: [] } }), /No agent files yet.*New agent<\/button>/);
 });
 
-test("a local file opens to edit, save and publish, a shipped one read-only to publish alone", () => {
+test("a local file opens to edit and save, a shipped one read-only", () => {
+  const list = { files: [file("coach.md", "local", 2)] };
   const open = { path: "coach.md", modified: 1, content: "saved text" };
-  const local = drawn({ open: { ...open, folder: "local" }, text: "saved text" });
+  const local = drawn({ list, open: { ...open, folder: "local" }, text: "saved text" });
   assert.match(local, /<textarea[^>]*>saved text<\/textarea>/);
   assert.doesNotMatch(local, /readOnly|readonly/);
-  assert.match(local, /disabled="">Save<\/button><button type="button">Publish</);
+  assert.match(local, /disabled="">Save<\/button>/);
 
-  const shipped = drawn({ open: { ...open, folder: "shipped" }, text: "saved text" });
+  const shipped = drawn({ list, open: { ...open, folder: "shipped" }, text: "saved text" });
   assert.match(shipped, /<textarea[^>]*readOnly=""/i);
   assert.doesNotMatch(shipped, />Save</);
-  assert.match(shipped, />Publish</);
 
-  const edited = drawn({ open: { ...open, folder: "local" }, text: "edited" });
-  assert.match(edited, /">Save<\/button><button type="button" disabled="">Publish<\/button>/);
-  assert.match(edited, /Save before publishing/);
+  // Publish sends the file on disk, so it waits for the open file's text to be saved.
+  const edited = drawn({ list, open: { ...open, folder: "local" }, text: "edited" });
+  assert.match(edited, /<button type="button" disabled="">Publish<\/button>/);
+  assert.match(
+    edited,
+    /<button type="button">Save<\/button><span class="meta">Save before publishing/,
+  );
 });
 
-test("a press's result line, or its problem's title and detail, shows beneath the file", () => {
-  const open = { path: "coach.md", folder: "local" as const, modified: 1, content: "" };
-  assert.match(drawn({ open, result: "published version 2" }), /"meta">published version 2</);
+test("a press's result line, or its problem's title and detail, shows beneath the list", () => {
+  const list = { files: [file("coach.md", "local", 2)] };
   assert.match(
-    drawn({ open, error: "Invalid agent file (422): name is missing" }),
+    drawn({ list, result: "coach.md: published version 2" }),
+    /"meta">coach.md: published/,
+  );
+  assert.match(
+    drawn({ list, error: "Invalid agent file (422): name is missing" }),
     /<div class="error">Invalid agent file \(422\): name is missing<\/div><\/section>/,
   );
 });

@@ -17,10 +17,10 @@ function load(show: (list: AgentFiles) => void, failed: (why: string) => void) {
   listAgentFiles().then(show, (e: unknown) => failed(message(e)));
 }
 
-// The agents panel: the agent files with their published versions, a new test agent from the
-// template, and one file open to edit, save and publish. The shipped files open read-only, so the
-// page never edits a tracked file. onPublished is told after each publish, since a first one adds
-// an agent a session can start with.
+// The agents panel: the agent files with their published versions, each published from its row, a
+// new test agent from the template, and one file open to edit and save. The shipped files open
+// read-only, so the page never edits a tracked file. onPublished is told after each publish, since
+// a first one adds an agent a session can start with.
 export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
   const [list, setList] = useState<AgentFiles>();
   const [name, setName] = useState("");
@@ -33,7 +33,7 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
 
   useEffect(() => load(setList, setError), []);
 
-  // One press at a time; a save, a new agent or a publish changes the list, so it is read again.
+  // One press at a time; a publish, a save or a new agent changes the list, so it is read again.
   async function run(press: () => Promise<string>, changes = true) {
     setBusy(true);
     setResult("");
@@ -57,6 +57,12 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
     <AgentsView
       {...{ list, name, open, text, busy, result, error }}
       on={{
+        publish: (path) =>
+          run(async () => {
+            const line = `${path}: ${await publishAgentFile(path)}`;
+            onPublished?.();
+            return line;
+          }),
         open: (path) => run(() => show(path).then(() => ""), false),
         name: setName,
         create: (e) => {
@@ -75,13 +81,6 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
             const { modified } = await saveAgentFile(open.path, text, open.modified);
             setOpen({ ...open, content: text, modified });
             return "saved";
-          }),
-        publish: () =>
-          run(async () => {
-            if (!open) return "";
-            const line = await publishAgentFile(open.path);
-            onPublished?.();
-            return line;
           }),
       }}
     />
@@ -103,18 +102,19 @@ export type AgentsViewProps = {
   busy: boolean;
   result: string;
   error: string;
-  on: Record<"save" | "publish", () => void> & {
-    open(path: string): void;
+  on: Record<"publish" | "open", (path: string) => void> & {
     name(name: string): void;
     create(e: FormEvent): void;
     text(text: string): void;
+    save(): void;
   };
 };
 
 export function AgentsView(props: AgentsViewProps) {
   const { list, name, open, text, busy, result, error, on } = props;
   const shipped = open?.folder === "shipped";
-  // Publishing sends the file on disk, so unsaved text would not be what is published.
+  // Publishing sends the file on disk, so the open file's unsaved text would not be what is
+  // published.
   const unsaved = open !== undefined && text !== open.content;
   return (
     <section>
@@ -131,6 +131,13 @@ export function AgentsView(props: AgentsViewProps) {
             {folders[f.folder]}
             {f.path} · {version(f)}
           </span>
+          <button
+            type="button"
+            onClick={() => on.publish(f.path)}
+            disabled={busy || (unsaved && open?.path === f.path)}
+          >
+            Publish
+          </button>
         </div>
       ))}
       <form className="row" onSubmit={on.create}>
@@ -159,17 +166,14 @@ export function AgentsView(props: AgentsViewProps) {
             rows={24}
             style={{ width: "100%", font: "0.85rem/1.4 ui-monospace, monospace" }}
           />
-          <div className="row">
-            {!shipped && (
+          {!shipped && (
+            <div className="row">
               <button type="button" onClick={on.save} disabled={busy || !unsaved}>
                 Save
               </button>
-            )}
-            <button type="button" onClick={on.publish} disabled={busy || unsaved}>
-              Publish
-            </button>
-            {unsaved && <span className="meta">Save before publishing</span>}
-          </div>
+              {unsaved && <span className="meta">Save before publishing</span>}
+            </div>
+          )}
         </>
       )}
       {result && <p className="meta">{result}</p>}
