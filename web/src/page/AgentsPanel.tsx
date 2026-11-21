@@ -114,7 +114,7 @@ export function AgentsView(props: AgentsViewProps) {
   const { list, name, open, text, busy, result, error, on } = props;
   const shipped = open?.folder === "shipped";
   // Publishing sends the file on disk, so the open file's unsaved text would not be what is
-  // published.
+  // published; and opening another file or a new agent would throw that text away.
   const unsaved = open !== undefined && text !== open.content;
   return (
     <section>
@@ -124,7 +124,11 @@ export function AgentsView(props: AgentsViewProps) {
       {list && !list.files.length && <p className="meta">No agent files yet.</p>}
       {list?.files.map((f) => (
         <div className="row" key={f.path}>
-          <button type="button" onClick={() => on.open(f.path)} disabled={busy}>
+          <button
+            type="button"
+            onClick={() => on.open(f.path)}
+            disabled={busy || (unsaved && open?.path !== f.path)}
+          >
             {f.name || f.path}
           </button>
           <span className="meta">
@@ -145,9 +149,9 @@ export function AgentsView(props: AgentsViewProps) {
           value={name}
           onChange={(e) => on.name(e.target.value)}
           placeholder="The new agent's name"
-          disabled={busy}
+          disabled={busy || unsaved}
         />
-        <button type="submit" disabled={busy || !name.trim()}>
+        <button type="submit" disabled={busy || unsaved || !name.trim()}>
           New agent
         </button>
       </form>

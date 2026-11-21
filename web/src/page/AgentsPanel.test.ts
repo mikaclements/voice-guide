@@ -83,6 +83,30 @@ test("a local file opens to edit and save, a shipped one read-only", () => {
   );
 });
 
+test("unsaved text holds off opening another file and New agent, which would throw it away", () => {
+  const list = { files: [file("coach.md", "local", 2), file("guide.md", "local", 1)] };
+  const open = { path: "coach.md", folder: "local" as const, modified: 1, content: "saved" };
+  const opens = (html: string) =>
+    [...html.matchAll(/<button type="button"( disabled="")?>(coach|guide)</g)].map((m) => [
+      m[2],
+      Boolean(m[1]),
+    ]);
+  const edited = drawn({ list, open, text: "edited", name: "Night watch" });
+  // The open file itself still opens, to read it again from disk after a refused save.
+  assert.deepEqual(opens(edited), [
+    ["coach", false],
+    ["guide", true],
+  ]);
+  assert.match(edited, /<input[^>]*disabled=""/);
+  assert.match(edited, /<button type="submit" disabled="">New agent/);
+  const saved = drawn({ list, open, text: "saved", name: "Night watch" });
+  assert.deepEqual(opens(saved), [
+    ["coach", false],
+    ["guide", false],
+  ]);
+  assert.match(saved, /<button type="submit">New agent/);
+});
+
 test("a press's result line, or its problem's title and detail, shows beneath the list", () => {
   const list = { files: [file("coach.md", "local", 2)] };
   assert.match(
