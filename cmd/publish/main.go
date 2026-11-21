@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"slices"
 	"time"
 	"uuid"
 
@@ -21,7 +20,6 @@ import (
 	"github.com/mikaclements/voice-guide/internal/agents"
 	"github.com/mikaclements/voice-guide/internal/agents/agentfile"
 	"github.com/mikaclements/voice-guide/internal/agents/store/postgres"
-	"github.com/mikaclements/voice-guide/internal/conversation"
 	"github.com/mikaclements/voice-guide/internal/speech/tts/kokoro"
 	"github.com/mikaclements/voice-guide/internal/usercontext"
 )
@@ -50,12 +48,6 @@ type config struct {
 
 // defaultTTSURL is where compose publishes Kokoro-FastAPI on this machine, as cmd/voice's.
 const defaultTTSURL = "http://127.0.0.1:8880"
-
-// voicesTimeout bounds asking the text-to-speech service for its voices, which is a few hundred
-// bytes from a service on this network, so 2s is a wide margin without holding up a publish when it
-// isn't running. A round guess, to be measured the first time a publish warns that Kokoro was
-// slow rather than down.
-const voicesTimeout = 2 * time.Second
 
 func loadConfig(getenv func(string) string) (config, error) {
 	cfg := config{databaseURL: getenv("DATABASE_URL"), agentsDir: getenv("VOICE_AGENTS_DIR")}
@@ -86,20 +78,19 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger, time
 	if err != nil {
 		return fmt.Errorf("load agents from %s: %w", cfg.agentsDir, err)
 	}
-	if err := agents.CheckReads(defs, usercontext.Kinds()); err != nil {
-		return err
-	}
-	if err := checkVoices(ctx, defs, voiceList(cfg), log); err != nil {
-		return err
-	}
 	pool, err := pgxpool.New(ctx, cfg.databaseURL)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
 
-	published, err := agents.Publish(ctx, postgres.New(pool), cfg.workspace, defs)
-	for _, p := range published {
+	// The same checked publish the API's route calls: the checks run before anything is saved.
+	res, err := agents.NewPublisher(postgres.New(pool), usercontext.Kinds(), voiceList(cfg)).Publish(ctx, cfg.workspace, defs)
+	if res.VoicesNotChecked != nil && cfg.ttsURL != "" {
+		// The service needn't be running to publish agents, so this is a warning.
+		log.Warn("the text-to-speech service couldn't be asked for its voices, so the agents' voices are not checked", "err", res.VoicesNotChecked)
+	}
+	for _, p := range res.Published {
 		msg := "unchanged"
 		if p.New {
 			msg = "published"
@@ -110,26 +101,9 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger, time
 }
 
 // voiceList is the text-to-speech service's list of voices, or nil when there is none to ask.
-func voiceList(cfg config) conversation.VoiceList {
+func voiceList(cfg config) agents.VoiceList {
 	if cfg.ttsURL == "" {
 		return nil
 	}
 	return kokoro.New(cfg.ttsURL, kokoro.Options{})
-}
-
-// checkVoices refuses an agent naming a voice the text-to-speech service doesn't have. It asks
-// only when an agent names a voice, and when the service can't be reached it publishes anyway and
-// says the voices weren't checked: the service needn't be running to publish agents.
-func checkVoices(ctx context.Context, defs []agents.Agent, voices conversation.VoiceList, log *slog.Logger) error {
-	if voices == nil || !slices.ContainsFunc(defs, func(a agents.Agent) bool { return a.Voice != "" }) {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(ctx, voicesTimeout)
-	defer cancel()
-	offered, err := voices.Voices(ctx)
-	if err != nil {
-		log.Warn("the text-to-speech service couldn't be asked for its voices, so the agents' voices are not checked", "err", err)
-		return nil
-	}
-	return agents.CheckVoices(defs, offered)
 }

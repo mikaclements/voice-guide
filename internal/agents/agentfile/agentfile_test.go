@@ -275,3 +275,19 @@ func TestLoadRefusesASummaryMappingOutOfForm(t *testing.T) {
 		})
 	}
 }
+
+// Parse is what Load applies to each file, so a file reads the same from bytes as from a folder.
+func TestParseReadsABodyAsLoadReadsTheSameFileAndNamesTheFileInItsErrors(t *testing.T) {
+	file := agentFile(settings(keeperID, "Lighthouse keeper")+"voice: bf_emma\nspeed: 1.1\n", "You answer every call from the sea.\n")
+	fromFolder, err := agentfile.Load(context.Background(), fstest.MapFS{"keeper.md": file})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	fromBytes, err := agentfile.Parse("keeper.md", file.Data)
+	if err != nil || fromBytes.ID != fromFolder[0].ID || fromBytes.Voice != "bf_emma" || fromBytes.Speed != 1.1 || fromBytes.Persona != fromFolder[0].Persona {
+		t.Errorf("Parse = %+v, %v; want what Load read", fromBytes, err)
+	}
+	if _, err := agentfile.Parse("the agent file", []byte("no settings")); err == nil || !strings.HasPrefix(err.Error(), "the agent file: ") {
+		t.Errorf("Parse of a body with no settings = %v; want an error naming the file", err)
+	}
+}

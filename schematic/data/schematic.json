@@ -2909,7 +2909,7 @@
       "id": "agents",
       "title": "agents",
       "level": 3,
-      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions, and the API one agent's newest version; publishing, run by cmd/publish from the agent files, is the only way a version is written. agents imports neither conversation nor speech.",
+      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions; one checked publish, called by cmd/publish from the agent files, is the only way a version is written. agents imports neither conversation nor speech: the context kinds and the voice list are handed in.",
       "considerations": [
         "agent-versions",
         "reference-agent",
@@ -2933,9 +2933,19 @@
               "caption": "agentfile refuses an unknown setting, a file not named <name>.md, two files with one ID and a folder with no agent files: nothing is published"
             },
             {
-              "nodes": ["x-publish", "publish"],
+              "nodes": ["x-publish", "publisher"],
               "edges": ["cmd-publish"],
-              "caption": "cmd/publish refuses an agent reading a kind user context doesn't hold, then calls Publish, which checks every agent before saving any"
+              "caption": "cmd/publish hands the agents to the Publisher with the context kinds user context holds and the voice list"
+            },
+            {
+              "nodes": ["publisher", "p-voices", "x-tts"],
+              "edges": ["publisher-voices", "tts-voices"],
+              "caption": "The Publisher refuses a kind user context doesn't hold or a voice the text-to-speech service lacks; when that service can't be asked in 2 s it goes on and says the voices were not checked"
+            },
+            {
+              "nodes": ["publisher", "publish"],
+              "edges": ["publisher-publish"],
+              "caption": "Then Publish checks every agent before saving any"
             },
             {
               "nodes": ["publish", "p-versions", "storepg", "x-postgres"],
@@ -2943,9 +2953,9 @@
               "caption": "For each agent, Save adds the next version number, unless the newest version has the same SHA-256 hash of settings and persona"
             },
             {
-              "nodes": ["x-publish", "publish"],
+              "nodes": ["x-publish", "publisher"],
               "edges": ["cmd-publish"],
-              "caption": "Publish returns each agent's version number and whether it is new, and cmd/publish logs it as published or unchanged"
+              "caption": "The Publisher returns each agent's version number and whether it is new, and cmd/publish logs it as published or unchanged"
             }
           ]
         },
@@ -3053,10 +3063,36 @@
           "parent": "core",
           "name": "Publish",
           "path": "versions.go · catalog.go",
-          "summary": "Checks every agent first, then saves each as its next version if its content changed.",
-          "description": "Checks every agent before saving any (settings, the context kinds it reads, the session context names it declares), then saves each as its next version only when its content hash differs from the newest version's.",
+          "summary": "Saves each checked agent as its next version if its content changed.",
+          "description": "Checks every agent before saving any (settings, the context kinds it reads, the session context names it declares), then saves each as its next version only when its content hash differs from the newest version's, each in one transaction.",
           "why": "Publishing from the agent file is a step of its own, never part of a start, and saves nothing until every agent passes its checks.",
           "considerations": ["agent-versions", "product-context"],
+          "drill": "types-agents",
+          "focus": "internal/agents"
+        },
+        {
+          "id": "publisher",
+          "kind": "core",
+          "parent": "core",
+          "name": "Publisher",
+          "path": "publisher.go",
+          "summary": "The one checked publish: rules, context kinds, voices, then save.",
+          "description": "Publishes agents after every check: the agent's own rules and summary schema, the context kinds user context holds, then the voices text-to-speech offers, asked for up to 2 s; unreachable, the agents are published all the same and the result says the voices were not checked. A check that turns an agent down is a Refusal, safe to show whoever wrote the file. cmd/publish calls it; the kinds and the voice list are handed in by cmd/voice and cmd/publish.",
+          "why": "One checked publish behind every way of publishing, so a file can't pass one and fail another.",
+          "considerations": ["agent-versions", "product-context"],
+          "drill": "types-agents",
+          "focus": "internal/agents"
+        },
+        {
+          "id": "p-voices",
+          "kind": "port",
+          "parent": "core",
+          "name": "VoiceList",
+          "path": "publisher.go",
+          "summary": "The voices the text-to-speech service offers.",
+          "members": ["Voices() → names"],
+          "description": "What the voice check asks, so agents imports no module: the text-to-speech service's own list, handed in by cmd/voice and cmd/publish. Asked only when an agent names a voice.",
+          "considerations": ["agent-versions"],
           "drill": "types-agents",
           "focus": "internal/agents"
         },
@@ -3084,8 +3120,8 @@
           "parent": "box",
           "name": "agentfile",
           "path": "internal/agents/agentfile",
-          "summary": "Reads agents/<name>.md: a YAML settings block, then the persona.",
-          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID.",
+          "summary": "Reads an agent file, from a folder or from bytes: a YAML settings block, then the persona.",
+          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID. Parse reads one file's bytes by the same rules Load applies to each file.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "types-agents",
           "focus": "internal/agents/agentfile"
@@ -3158,6 +3194,14 @@
           "name": "PostgreSQL 18",
           "path": "agent schema",
           "summary": ""
+        },
+        {
+          "id": "x-tts",
+          "kind": "external",
+          "context": true,
+          "name": "Text-to-speech",
+          "path": "internal/speech/tts/kokoro",
+          "summary": "Lists its voices; handed in as the voice list."
         }
       ],
       "edges": [
@@ -3178,11 +3222,11 @@
         {
           "id": "cmd-publish",
           "from": "x-publish",
-          "to": "publish",
+          "to": "publisher",
           "protocol": "call",
           "send": "Publish(agents)",
           "back": "what each publish did",
-          "detail": "Also checks that every kind an agent reads is one user context holds, before reaching the database."
+          "detail": "Hands in the context kinds user context holds and the text-to-speech service's voice list; logs a warning when the voices were not checked."
         },
         {
           "id": "api-http",
@@ -3234,6 +3278,26 @@
           "to": "x-postgres",
           "protocol": "SQL",
           "send": "agent.agents · agent.agent_versions"
+        },
+        {
+          "id": "publisher-publish",
+          "from": "publisher",
+          "to": "publish",
+          "protocol": "call",
+          "send": "Publish(agents)"
+        },
+        {
+          "id": "publisher-voices",
+          "from": "publisher",
+          "to": "p-voices",
+          "protocol": "port",
+          "send": "Voices (2 s)"
+        },
+        {
+          "id": "tts-voices",
+          "from": "x-tts",
+          "to": "p-voices",
+          "style": "implements"
         }
       ],
       "classes": "types-agents"

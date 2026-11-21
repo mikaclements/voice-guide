@@ -136,6 +136,14 @@ func loadFile(fsys fs.FS, name string) (agents.Agent, error) {
 	if err != nil {
 		return agents.Agent{}, fmt.Errorf("read %s: %w", name, err)
 	}
+	return Parse(name, data)
+}
+
+// Parse reads one agent file's bytes, by exactly the rules Load applies to
+// each file of a folder, so a file published through the API is read as one
+// published from a folder. name only prefixes the errors, so they say which
+// file: a file's name, or whatever the caller calls the file.
+func Parse(name string, data []byte) (agents.Agent, error) {
 	head, persona, err := split(data)
 	if err != nil {
 		return agents.Agent{}, fmt.Errorf("%s: %w", name, err)

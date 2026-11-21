@@ -160,7 +160,7 @@ func CheckReads(defs []Agent, known []string) error {
 func CheckVoices(defs []Agent, offered []string) error {
 	for _, a := range defs {
 		if a.Voice != "" && !slices.Contains(offered, a.Voice) {
-			return fmt.Errorf("agent %s names the voice %q, which the text-to-speech service doesn't offer", a.Name, a.Voice)
+			return fmt.Errorf("agent %s names the voice %q: %w", a.Name, a.Voice, ErrUnknownVoice)
 		}
 	}
 	return nil
