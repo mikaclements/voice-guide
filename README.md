@@ -277,7 +277,7 @@ curl https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a90cc \
   -H "Authorization: Bearer <product key with publish_agents>"
 ```
 
-It answers with the agent as it was published: `id`, `name`, `description`, `reads`, `session_context`, `persona`, `summary`, `summary_model`, `summary_schema`, `summary_documents`, `opens` (`true` when the agent speaks first), `model`, `voice` and `speed`, plus `version`, its number, and `published_at`. An unset setting is empty or `0`, and no summary schema is `null`. Another workspace's agent, or one never published, is `404`; a key without `publish_agents` is `403`.
+It answers with the agent as its file wrote it, under the settings block's names: `id`, `name`, `description`, `reads`, `session_context`, `summary`, `opens`, `model`, `voice`, `speed` and `persona`, plus `version`, its number, and `published_at`, in UTC. `summary` is the mapping form, `{"instruction", "model", "schema", "documents"}`, even when the file wrote the instruction alone, and `opens` is `"agent"` or `"user"`. A setting the file leaves out is `null` (`summary`, `model`, `voice`, `speed`, and `model` and `schema` within `summary`), so the server's own applies; a list it leaves out is `[]`, and a missing `description` is `""`. Another workspace's agent, or one never published, is `404`; a key without `publish_agents` is `403`.
 
 <a id="new-workspace"></a>
 ### One workspace for each product

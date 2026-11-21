@@ -713,7 +713,7 @@
           "protocol": "HTTP",
           "send": "product key · user's ID · agent · context · end · read sessions",
           "back": "agents · the session and its ticket · past sessions",
-          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read a user's past sessions, by the product's own reference for the user, a session with all its turns as the user heard them, filtered by the workspace; the start names its user by the product's own stable ID ('user'), added with their first session. GET /v1/agents/{id} reads one of the workspace's agents at its newest version, for a key that may publish agents. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries; a key without the permission a route needs is refused (403).",
+          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read a user's past sessions, by the product's own reference for the user, a session with all its turns as the user heard them, filtered by the workspace; the start names its user by the product's own stable ID ('user'), added with their first session. GET /v1/agents/{id} reads one of the workspace's agents at its newest version, in its file's shapes, for a key holding publish_agents. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries; a key without the permission a route needs is refused (403).",
           "considerations": ["product-keys", "product-context", "api-for-products"]
         },
         {
@@ -1100,7 +1100,7 @@
           "name": "agents",
           "path": "internal/agents",
           "summary": "Agent definitions and their versions; the catalog serves each workspace's newest and exact ones.",
-          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction with the documents the summary reads, and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read; its HTTP adapter answers one agent's newest version to a key that may publish agents. Versions are written only by cmd/publish, from agents/<name>.md.",
+          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction with the documents the summary reads, and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read; its HTTP adapter answers one agent's newest version to a key holding publish_agents. Versions are written only by cmd/publish, from agents/<name>.md.",
           "why": "Versions never change once saved, so any instance finds the exact version a session started on, even mid-deploy.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "agents"
@@ -1180,7 +1180,7 @@
           "protocol": "HTTP",
           "send": "agents · start, end, read past sessions, with the product key",
           "back": "agents · the session and its ticket · problem details",
-          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct, with a key that may run sessions, and GET /v1/agents/{id}, with one that may publish agents; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
+          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct, with a key that may run sessions, and GET /v1/agents/{id}, with one holding publish_agents; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
           "considerations": ["product-keys"]
         },
         {
@@ -2972,7 +2972,7 @@
         },
         {
           "id": "view",
-          "name": "Someone who publishes reads an agent",
+          "name": "A product reads an agent back",
           "steps": [
             {
               "nodes": ["x-api", "http"],
@@ -2992,7 +2992,7 @@
             {
               "nodes": ["x-api", "http"],
               "edges": ["api-http"],
-              "caption": "The adapter answers the version as it is kept, with its number and when it was published; not found is 404, the database down 503"
+              "caption": "The adapter answers the version in its file's shapes, with its number and when it was published; not found is 404, the database down 503"
             }
           ]
         },
@@ -3128,8 +3128,8 @@
           "parent": "box",
           "name": "http",
           "path": "internal/agents/http",
-          "summary": "agents' part of the API: one agent's newest version, for a key that may publish.",
-          "description": "Inbound adapter: registers GET /v1/agents/{id} for a product key holding publish_agents, and answers the agent's newest version as it is kept, its settings and persona with its number and when it was published. An ID that isn't a UUID, another workspace's agent and one never published are all 404 alike; a store that can't answer is a 503, its reason only in the log.",
+          "summary": "agents' part of the API: one agent's newest version, for a key holding publish_agents.",
+          "description": "Inbound adapter: registers GET /v1/agents/{id} for a product key holding publish_agents, and answers the agent's newest version under its file's names and in its shapes, its number and when it was published, in UTC. An ID that isn't a UUID, another workspace's agent and one never published are all 404 alike; a store that can't answer is a 503, its reason only in the log.",
           "why": "Another workspace's agent answers as a missing one, so a key learns nothing of other workspaces' agents.",
           "considerations": ["product-keys", "agent-versions", "problem-details"],
           "drill": "types-agents",
