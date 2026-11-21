@@ -160,7 +160,7 @@ func CheckReads(defs []Agent, known []string) error {
 func CheckVoices(defs []Agent, offered []string) error {
 	for _, a := range defs {
 		if a.Voice != "" && !slices.Contains(offered, a.Voice) {
-			return fmt.Errorf("agent %s names the voice %q: %w", a.Name, a.Voice, ErrUnknownVoice)
+			return unknownVoice{fmt.Sprintf("agent %s names the voice %q, which the text-to-speech service doesn't offer", a.Name, a.Voice)}
 		}
 	}
 	return nil
@@ -267,7 +267,20 @@ var blockName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}$`)
 // and the prompt renders it as a tag, so nothing else may appear in one.
 func IsBlockName(name string) bool { return blockName.MatchString(name) }
 
+// hasNUL reports a NUL in any text of the agent, raw in the file or written as an escape in its YAML
+// or its schema's JSON: PostgreSQL stores none in text or jsonb, so it must be refused here as a
+// problem with the file, not met at the save as a failure to retry.
+func hasNUL(a Agent) bool {
+	texts := slices.Concat([]string{a.Name, a.Description, a.Persona, a.Summary, a.SummaryModel, a.Model, a.Voice},
+		a.Reads, a.SessionContext, a.SummaryDocuments)
+	return slices.ContainsFunc(texts, func(s string) bool { return strings.ContainsRune(s, 0) }) ||
+		strings.Contains(string(a.SummarySchema), `\u0000`)
+}
+
 func validate(a Agent) error {
+	if hasNUL(a) {
+		return fmt.Errorf("agent %s: a NUL character can't be stored; remove it", a.ID)
+	}
 	for i, name := range a.SessionContext {
 		if !IsBlockName(name) {
 			return fmt.Errorf("agent %s: session context %q must be lower-case letters, digits and _, at most 32", a.ID, name)

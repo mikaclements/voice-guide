@@ -33,6 +33,13 @@ var (
 	ErrVoicesNotChecked = errors.New("the text-to-speech service couldn't be asked for its voices")
 )
 
+// unknownVoice is the error CheckVoices returns: its message is the one the script has always
+// shown, and errors.Is finds ErrUnknownVoice in it.
+type unknownVoice struct{ msg string }
+
+func (e unknownVoice) Error() string        { return e.msg }
+func (e unknownVoice) Is(target error) bool { return target == ErrUnknownVoice }
+
 // Refusal is an agent file a check turned down, as opposed to a store that
 // failed. Its message is safe to show whoever wrote the file.
 type Refusal struct{ Err error }

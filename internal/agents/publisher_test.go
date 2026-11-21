@@ -50,6 +50,10 @@ func TestAPublisherRefusesWhatTheChecksRefuseAndSavesNothing(t *testing.T) {
 	noPersona.Persona = ""
 	diary := lighthouseKeeper()
 	diary.Reads = []string{"profile", "diary"}
+	nulPersona := lighthouseKeeper()
+	nulPersona.Persona = "You answer\x00 every call."
+	nulSchema := lighthouseKeeper()
+	nulSchema.Summary, nulSchema.SummarySchema = "Note what was said.", json.RawMessage(`{"type":"object","description":"a\u0000b"}`)
 	tests := map[string]struct {
 		def  agents.Agent
 		want string
@@ -58,6 +62,8 @@ func TestAPublisherRefusesWhatTheChecksRefuseAndSavesNothing(t *testing.T) {
 		"an agent the rules refuse":       {noPersona, "no persona", nil},
 		"a summary schema that isn't one": {badSchema, "type: object", nil},
 		"a kind user context lacks":       {diary, `reads "diary"`, nil},
+		"a NUL in the persona":            {nulPersona, "NUL", nil},
+		"a NUL in the schema":             {nulSchema, "NUL", nil},
 		"a voice the service lacks":       {speaking("bf_emma"), "bf_emma", agents.ErrUnknownVoice},
 	}
 	for name, tt := range tests {
