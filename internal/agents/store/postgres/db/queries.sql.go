@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"uuid"
 )
@@ -123,9 +124,9 @@ func (q *Queries) NewestVersionOf(ctx context.Context, arg NewestVersionOfParams
 }
 
 const newestVersions = `-- name: NewestVersions :many
-SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.summary_documents, newest.opens, newest.model, newest.voice, newest.speed
+SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.summary_documents, newest.opens, newest.model, newest.voice, newest.speed, newest.created_at
 FROM (
-    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
+    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed, created_at
     FROM agent.agent_versions
     WHERE workspace_id = $1
     ORDER BY agent_id, version DESC
@@ -149,6 +150,7 @@ type NewestVersionsRow struct {
 	Model            string
 	Voice            string
 	Speed            float64
+	CreatedAt        time.Time
 }
 
 func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]NewestVersionsRow, error) {
@@ -176,6 +178,7 @@ func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]
 			&i.Model,
 			&i.Voice,
 			&i.Speed,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -188,7 +191,7 @@ func (q *Queries) NewestVersions(ctx context.Context, workspaceID uuid.UUID) ([]
 }
 
 const version = `-- name: Version :one
-SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
+SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed, created_at
 FROM agent.agent_versions
 WHERE workspace_id = $1 AND agent_id = $2 AND version = $3
 `
@@ -215,6 +218,7 @@ type VersionRow struct {
 	Model            string
 	Voice            string
 	Speed            float64
+	CreatedAt        time.Time
 }
 
 func (q *Queries) Version(ctx context.Context, arg VersionParams) (VersionRow, error) {
@@ -236,6 +240,7 @@ func (q *Queries) Version(ctx context.Context, arg VersionParams) (VersionRow, e
 		&i.Model,
 		&i.Voice,
 		&i.Speed,
+		&i.CreatedAt,
 	)
 	return i, err
 }

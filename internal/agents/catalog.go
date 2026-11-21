@@ -87,6 +87,23 @@ func (c *Catalog) Available(ctx context.Context, workspace uuid.UUID) ([]Version
 	return list, nil
 }
 
+// Newest returns the newest version of one of the workspace's agents, or
+// ErrNotFound when the workspace has no such agent. It reads the workspace's
+// newest versions and picks the one: a workspace holds a few agents, and this
+// is read only by whoever publishes them.
+func (c *Catalog) Newest(ctx context.Context, workspace, agent uuid.UUID) (Version, error) {
+	list, err := c.Available(ctx, workspace)
+	if err != nil {
+		return Version{}, err
+	}
+	for _, v := range list {
+		if v.ID == agent {
+			return v, nil
+		}
+	}
+	return Version{}, ErrNotFound
+}
+
 // Version returns one exact version, or ErrNotFound. A saved version never
 // changes, so it is read from the store once and then served from memory.
 func (c *Catalog) Version(ctx context.Context, workspace, agent uuid.UUID, number int) (Version, error) {

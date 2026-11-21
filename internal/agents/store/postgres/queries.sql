@@ -24,9 +24,9 @@ VALUES
     (@workspace_id, @agent_id, @version, @name, @description, @reads, @session_context, @persona, @summary, @summary_model, @summary_schema, @summary_documents, @opens, @model, @voice, @speed, @content_hash);
 
 -- name: NewestVersions :many
-SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.summary_documents, newest.opens, newest.model, newest.voice, newest.speed
+SELECT newest.agent_id, newest.version, newest.name, newest.description, newest.reads, newest.session_context, newest.persona, newest.summary, newest.summary_model, newest.summary_schema, newest.summary_documents, newest.opens, newest.model, newest.voice, newest.speed, newest.created_at
 FROM (
-    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
+    SELECT DISTINCT ON (agent_id) agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed, created_at
     FROM agent.agent_versions
     WHERE workspace_id = @workspace_id
     ORDER BY agent_id, version DESC
@@ -34,6 +34,6 @@ FROM (
 ORDER BY newest.name, newest.agent_id;
 
 -- name: Version :one
-SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed
+SELECT agent_id, version, name, description, reads, session_context, persona, summary, summary_model, summary_schema, summary_documents, opens, model, voice, speed, created_at
 FROM agent.agent_versions
 WHERE workspace_id = @workspace_id AND agent_id = @agent_id AND version = @version;

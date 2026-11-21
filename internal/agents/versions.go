@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 	"uuid"
 )
 
@@ -15,6 +16,8 @@ import (
 type Version struct {
 	Agent
 	Number int
+	// PublishedAt is when the version was saved, by the store's clock.
+	PublishedAt time.Time
 }
 
 var (

@@ -262,3 +262,19 @@ func TestSavingToAWorkspaceThatDoesntExistSaysSo(t *testing.T) {
 		t.Errorf("Save = %v, want an error naming the missing workspace", err)
 	}
 }
+
+func TestTheCatalogReadsOneAgentsNewestVersionInItsOwnWorkspaceOnly(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	save(t, s, keeper, "first")
+	keeper.Persona = "You keep the light burning through the storm."
+	save(t, s, keeper, "second")
+	catalog := agents.NewCatalog(s)
+	if got, err := catalog.Newest(ctx, workspace, keeperID); err != nil || got.Number != 2 || got.Persona != keeper.Persona || got.PublishedAt.IsZero() {
+		t.Errorf("Newest = %+v, %v; want version 2 as saved, with when it was published", got, err)
+	}
+	if _, err := catalog.Newest(ctx, elsewhere, keeperID); !errors.Is(err, agents.ErrNotFound) {
+		t.Errorf("Newest from another workspace: err = %v; want ErrNotFound", err)
+	}
+}
