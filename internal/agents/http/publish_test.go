@@ -138,15 +138,17 @@ func TestAFileTheChecksRefuseIsUnprocessableAndNamesTheProblem(t *testing.T) {
 	key := f.keyWith(t, access.PublishAgents)
 	other := uuid.NewV7().String()
 	tests := map[string]struct{ body, want string }{
-		"an empty body":               {"", "empty"},
-		"not UTF-8":                   {keeperFile("", "caf\xe9\n"), "UTF-8"},
-		"no settings block":           {"You keep the light.\n", "settings block"},
-		"an unknown setting":          {keeperFile("colour: red\n", "You keep the light.\n"), "colour"},
-		"no persona":                  {keeperFile("", ""), "no persona"},
-		"a kind user context lacks":   {strings.Replace(keeperFile("", "x\n"), "[profile]", "[diary]", 1), `reads "diary"`},
-		"a speed out of range":        {keeperFile("speed: 3\n", "x\n"), "speed"},
-		"an id that isn't the path's": {strings.Replace(keeperFile("", "x\n"), keeperID.String(), other, 1), "isn't"},
-		"no id":                       {strings.Replace(keeperFile("", "x\n"), "id: "+keeperID.String()+"\n", "", 1), "id"},
+		"an empty body":                  {"", "empty"},
+		"not UTF-8":                      {keeperFile("", "caf\xe9\n"), "UTF-8"},
+		"no settings block":              {"You keep the light.\n", "settings block"},
+		"an unknown setting":             {keeperFile("colour: red\n", "You keep the light.\n"), "colour"},
+		"no persona":                     {keeperFile("", ""), "no persona"},
+		"a kind user context lacks":      {strings.Replace(keeperFile("", "x\n"), "[profile]", "[diary]", 1), `reads "diary"`},
+		"a speed out of range":           {keeperFile("speed: 3\n", "x\n"), "speed"},
+		"an id that isn't the path's":    {strings.Replace(keeperFile("", "x\n"), keeperID.String(), other, 1), "isn't"},
+		"a raw NUL":                      {keeperFile("", "You keep\x00 the light.\n"), "NUL"},
+		"a NUL written as a YAML escape": {strings.Replace(keeperFile("", "x\n"), "Lighthouse keeper", `"Light\0house"`, 1), "NUL"},
+		"no id":                          {strings.Replace(keeperFile("", "x\n"), "id: "+keeperID.String()+"\n", "", 1), "id"},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -209,8 +211,18 @@ func TestPublishingNeedsAKeyThatMayPublish(t *testing.T) {
 	req.Header.Set("Origin", "https://harbour.example")
 	rec := httptest.NewRecorder()
 	f.rt.ServeHTTP(rec, req)
-	if rec.Code < 400 {
-		t.Errorf("a key sent with an Origin: %d; want it refused", rec.Code)
+	if rec.Code != nethttp.StatusUnauthorized {
+		t.Errorf("a key sent with an Origin: %d; want 401", rec.Code)
+	}
+	if rec := f.putFile(t, "vgk_unknown", file); rec.Code != nethttp.StatusUnauthorized {
+		t.Errorf("an unknown key: %d; want 401", rec.Code)
+	}
+	req = httptest.NewRequest("PUT", "/v1/agents/"+keeperID.String(), strings.NewReader(file))
+	req.Header.Set("Content-Type", "text/markdown")
+	rec = httptest.NewRecorder()
+	f.rt.ServeHTTP(rec, req)
+	if rec.Code != nethttp.StatusUnauthorized {
+		t.Errorf("no Authorization: %d; want 401", rec.Code)
 	}
 	if got, _ := agents.NewCatalog(f.store).Available(context.Background(), workspace); len(got) != 0 {
 		t.Errorf("a refused publish saved %d agents", len(got))

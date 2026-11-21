@@ -69,6 +69,7 @@ var routes = []struct {
 }{
 	{"GET /v1/agents", "/v1/agents", true, false, false, access.RunSessions},
 	{"GET /v1/agents/{id}", "/v1/agents/" + uuid.NewV7().String(), true, false, false, access.PublishAgents},
+	{"PUT /v1/agents/{id}", "/v1/agents/" + uuid.NewV7().String(), true, false, false, access.PublishAgents},
 	{"POST /v1/sessions", "/v1/sessions", true, false, false, access.RunSessions},
 	{"POST /v1/sessions/{id}/turns", "/v1/sessions/" + session + "/turns", false, true, false, 0},
 	{"POST /v1/sessions/{id}/end", "/v1/sessions/" + session + "/end", true, true, true, access.RunSessions},
