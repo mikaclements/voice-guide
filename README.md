@@ -114,7 +114,7 @@ A product puts an agent on its page in two halves. Its server starts each sessio
 
 The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. On your machine, `VOICE_DEV_PRODUCT_KEY` in `.env` works too, under either `scripts/up.sh` or `scripts/run.sh`.
 
-A key holds permissions, fixed when it's made. `run_sessions` lets it list agents and voices, start and end sessions and read past ones; `publish_agents` lets it use the routes on one agent, `/v1/agents/{id}`. `create` makes a key that runs sessions; `scripts/product-key.sh create --permissions run_sessions,publish_agents` makes one that holds both. Give the key on the product's server only the permissions it needs. A key without the permission a route needs is refused with `403`. To change a key's permissions, make a new key and revoke the old one. `VOICE_DEV_PRODUCT_KEY` holds both. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
+A key holds permissions, fixed when it's made. `run_sessions` lets it list agents and voices, start and end sessions and read past ones; `publish_agents` lets it publish the workspace's agents and read them back. `create` makes a key that runs sessions; `scripts/product-key.sh create --permissions publish_agents` makes one that only publishes, and `--permissions run_sessions,publish_agents` one that does both. Give the product's running server a `run_sessions` key alone, and its deploy step, which publishes agents with `PUT`, a `publish_agents` key, so a leaked server key can't change what an agent says. A key without the permission a route needs is refused with `403`. To change a key's permissions, make a new key and revoke the old one. `VOICE_DEV_PRODUCT_KEY` holds both. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
 
 ```sh
 curl https://voice.example.com/v1/sessions \
@@ -268,6 +268,27 @@ The reply lists the user's sessions, newest first, without their turns:
 - `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`, waiting longer each time: when writing fails, it is tried again for about 15 minutes before the status turns `none`.
 - A live session has `ended_at`, `summary` and `summary_status` null, and holds the turns finished so far.
 
+### Publish an agent
+
+A key holding `publish_agents` publishes one of the workspace's agents from its file. The file's `id` must be the one in the path:
+
+```sh
+curl -X PUT https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a90cc \
+  -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: text/markdown' \
+  --data-binary @agents/mock-interviewer.md
+```
+
+Send the file with `--data-binary`, never `-d`, which strips its newlines. `201` means the file is a new version and `200` that it is the newest already, so nothing was saved; treat both as success. The answer is the version as [reading an agent](#read-an-agent) gives it, plus `voice_checked`: `false` when the text-to-speech service couldn't be asked whether it has the agent's voice, and the agent was published all the same.
+
+Problems are problem details documents:
+- `415`: the `Content-Type` isn't `text/markdown`.
+- `413`: the file is over 256 KiB.
+- `422`: the file is empty, isn't UTF-8, breaks a rule of the agent file (the detail says which), or has an `id` other than the path's; of type `/v1/problems/unknown-voice` when the text-to-speech service doesn't offer the voice.
+- `409`: another workspace uses that ID. Pick a new one: a file copied from someone else's keeps their ID.
+- `403`: the key lacks `publish_agents`. `503`: the database couldn't be reached; send it again.
+
+<a id="read-an-agent"></a>
 ### Read an agent
 
 A key holding `publish_agents` reads one of the workspace's agents at its newest version:

@@ -1244,8 +1244,8 @@
           "from": "api",
           "to": "agents",
           "protocol": "route",
-          "send": "an agent's newest version",
-          "detail": "agents' HTTP adapter registers GET /v1/agents/{id} through HandleProduct, for a key holding publish_agents; another workspace's agent is answered 404, as one never published.",
+          "send": "publish an agent, read its newest version",
+          "detail": "agents' HTTP adapter registers PUT and GET /v1/agents/{id} through HandleProduct, for a key holding publish_agents; another workspace's agent is answered 404 on a read and its ID 409 on a publish.",
           "considerations": ["http-and-webrtc", "product-keys"]
         },
         {
@@ -2909,7 +2909,7 @@
       "id": "agents",
       "title": "agents",
       "level": 3,
-      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions; one checked publish, called by cmd/publish from the agent files, is the only way a version is written. agents imports neither conversation nor speech: the context kinds and the voice list are handed in.",
+      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions; one checked publish, called by cmd/publish from the agent files and by the API's route, is the only way a version is written. agents imports neither conversation nor speech: the context kinds and the voice list are handed in.",
       "considerations": [
         "agent-versions",
         "reference-agent",
@@ -2956,6 +2956,42 @@
               "nodes": ["x-publish", "publisher"],
               "edges": ["cmd-publish"],
               "caption": "The Publisher returns each agent's version number and whether it is new, and cmd/publish logs it as published or unchanged"
+            }
+          ]
+        },
+        {
+          "id": "api-publish",
+          "name": "A product publishes an agent through the API",
+          "steps": [
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "A product's server sends PUT /v1/agents/{id} with the agent file as text/markdown and a key; the router lets it through only if the key holds publish_agents"
+            },
+            {
+              "nodes": ["http", "agentfile"],
+              "edges": ["http-agentfile"],
+              "caption": "The adapter refuses another content type (415), a body over 256 KiB (413), an empty or non-UTF-8 one, and a file agentfile or the path's ID refuses (422)"
+            },
+            {
+              "nodes": ["http", "publisher"],
+              "edges": ["http-publisher"],
+              "caption": "It hands the agent to the Publisher for the key's workspace, the same one cmd/publish calls"
+            },
+            {
+              "nodes": ["publisher", "p-voices", "x-tts"],
+              "edges": ["publisher-voices", "tts-voices"],
+              "caption": "A voice text-to-speech doesn't offer is refused (422, unknown-voice); text-to-speech down or slower than 2 s, the agent is published and the answer says the voice was not checked"
+            },
+            {
+              "nodes": ["publisher", "publish", "p-versions", "storepg", "x-postgres"],
+              "edges": ["publisher-publish", "publish-versions", "pg-versions", "pg-db"],
+              "caption": "Publish saves the next version in one transaction, or finds the unchanged file's number; an ID another workspace owns is refused (409), the database down is 503"
+            },
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "The adapter answers 201 with the new version, or 200 when unchanged, with voice_checked"
             }
           ]
         },
@@ -3077,8 +3113,8 @@
           "name": "Publisher",
           "path": "publisher.go",
           "summary": "The one checked publish: rules, context kinds, voices, then save.",
-          "description": "Publishes agents after every check: the agent's own rules and summary schema, the context kinds user context holds, then the voices text-to-speech offers, asked for up to 2 s; unreachable, the agents are published all the same and the result says the voices were not checked. A check that turns an agent down is a Refusal, safe to show whoever wrote the file. cmd/publish calls it; the kinds and the voice list are handed in by cmd/voice and cmd/publish.",
-          "why": "One checked publish behind every way of publishing, so a file can't pass one and fail another.",
+          "description": "Publishes agents after every check: the agent's own rules and summary schema, the context kinds user context holds, then the voices text-to-speech offers, asked for up to 2 s; unreachable, the agents are published all the same and the result says the voices were not checked. A check that turns an agent down is a Refusal, safe to show whoever wrote the file. cmd/publish and the API's route both call it, so the two can't check differently; the kinds and the voice list are handed in by cmd/voice and cmd/publish.",
+          "why": "One checked publish behind both the script and the route, so a file can't pass one and fail the other.",
           "considerations": ["agent-versions", "product-context"],
           "drill": "types-agents",
           "focus": "internal/agents"
@@ -3121,7 +3157,7 @@
           "name": "agentfile",
           "path": "internal/agents/agentfile",
           "summary": "Reads an agent file, from a folder or from bytes: a YAML settings block, then the persona.",
-          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID. Parse reads one file's bytes by the same rules Load applies to each file.",
+          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID. Parse reads one file's bytes by the same rules, for the API.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "types-agents",
           "focus": "internal/agents/agentfile"
@@ -3164,9 +3200,9 @@
           "parent": "box",
           "name": "http",
           "path": "internal/agents/http",
-          "summary": "agents' part of the API: one agent's newest version, for a key holding publish_agents.",
-          "description": "Inbound adapter: registers GET /v1/agents/{id} for a product key holding publish_agents, and answers the agent's newest version under its file's names and in its shapes, its number and when it was published, in UTC. An ID that isn't a UUID, another workspace's agent and one never published are all 404 alike; a store that can't answer is a 503, its reason only in the log.",
-          "why": "Another workspace's agent answers as a missing one, so a key learns nothing of other workspaces' agents.",
+          "summary": "agents' part of the API: publish an agent file, read one's newest version.",
+          "description": "Inbound adapter: registers PUT /v1/agents/{id} and GET /v1/agents/{id} for a product key holding publish_agents. PUT takes the agent file as text/markdown (415 otherwise, 413 over 256 KiB), reads it with agentfile and publishes it through the Publisher: 201 with the new version, 200 when unchanged, both with voice_checked; 422 for a file the checks refuse, with its own type for an unknown voice, 409 for an ID another workspace owns, 503 when the database can't save. GET answers the newest version under its file's names and in its shapes, in UTC; an ID that isn't a UUID, another workspace's agent and one never published are all 404 alike.",
+          "why": "A file is the caller's own, so a refusal says what is wrong with it; another workspace's agent answers as a missing one, so a key learns nothing of other workspaces' agents.",
           "considerations": ["product-keys", "agent-versions", "problem-details"],
           "drill": "types-agents",
           "focus": "internal/agents/http"
@@ -3233,7 +3269,7 @@
           "from": "x-api",
           "to": "http",
           "protocol": "route",
-          "send": "GET /v1/agents/{id}, with the caller",
+          "send": "GET or PUT /v1/agents/{id}, with the caller",
           "detail": "The router has checked the product key holds publish_agents, and hands the route the caller, naming its workspace."
         },
         {
@@ -3278,6 +3314,22 @@
           "to": "x-postgres",
           "protocol": "SQL",
           "send": "agent.agents · agent.agent_versions"
+        },
+        {
+          "id": "http-agentfile",
+          "from": "http",
+          "to": "agentfile",
+          "protocol": "call",
+          "send": "Parse(body)",
+          "back": "the agent, or why not"
+        },
+        {
+          "id": "http-publisher",
+          "from": "http",
+          "to": "publisher",
+          "protocol": "call",
+          "send": "Publish(workspace, agent)",
+          "back": "saved or unchanged, voices checked or not"
         },
         {
           "id": "publisher-publish",

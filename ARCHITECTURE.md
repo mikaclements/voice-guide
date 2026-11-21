@@ -38,17 +38,17 @@ Included:
 - Seeing and correcting what voice-guide knows about the user.
 - Switching agents and being known.
 - Per-step timing and load tests.
+- Publishing an agent through the API: a product's server sends the agent's file with a key that may publish, and it is checked and saved as the agent's next version.
 - Putting an agent on a product: the product's server starts each session with its key, the user's browser talks, and the product's server hears each session once it has ended.
 
 Excluded for now, where it grows next:
 - Embedding for anonymous visitors: a public key in the page, for products whose visitors don't log in.
-- Agents registered through the API.
 - Screen activities: the product's page reaches the agent, and the agent acts on it.
 - Connectors that fetch a business's knowledge or a user's data from other systems; until then the product sends what it holds.
 - More agents.
 - Japanese.
 - Logins.
-- An agent builder.
+- An agent builder, for members to create agents.
 - Sharing context with another workspace.
 
 Further out, when measurements call for them:
@@ -137,7 +137,11 @@ A product's server starts each session with its product key, its own ID for the 
 
 ## 7. Agents
 
+<<<<<<< HEAD
 The first agent is deliberately simple: one question at a time, given only the resume the product sends when a session starts. An agent's versions are stored in the database and never change once saved, so a running session keeps the exact version it started with, on whichever server serves it. Until members change agents themselves, the repository holds one file per agent that is published as a new version when it changes; a product reads an agent's newest version back through the API, as its file wrote it, with a key holding the permission for the agent routes. Which model answers is the agent's own choice when its file names one, else a setting of the service. Its file can also name the model that writes its summaries, and a schema of the author's own for a structured part of the summary, such as a score for each area the session covered, and documents the summary reads; one not also given to the agent the agent never sees, though what the notes say of it can reach its next session, so the summary is told not to restate it.
+=======
+The first agent is deliberately simple: one question at a time, given only the resume the product sends when a session starts. An agent's versions are stored in the database and never change once saved, so a running session keeps the exact version it started with, on whichever server serves it. Until a builder lets members change agents, a workspace keeps one file per agent and publishes it as a new version when it changes, by a script or by sending the file to the API with a key that may publish; both run the same checks, and sending an unchanged file again saves nothing. Which model answers is the agent's own choice when its file names one, else a setting of the service. Its file can also name the model that writes its summaries, and a schema of the author's own for a structured part of the summary, such as a score for each area the session covered, and documents the summary reads; one not also given to the agent the agent never sees, though what the notes say of it can reach its next session, so the summary is told not to restate it.
+>>>>>>> 237eacf (docs: publishing an agent through the API)
 
 A product puts an agent on its own page with the drop-in client: one script from voice, defining a `<voice-guide-session>` element that the product's page hands the session and ticket its server's start answered with, by a call rather than an attribute, since session-replay scripts copy attributes to their own servers. It holds the session with the same code as voice-guide's own page, without React, sits in the product's page rather than a frame, so the microphone prompt names the product's site and the product restyles it, and it takes no product key and starts no session. It says with events when the session can take the user's words, so the product can show its own loading screen until then, and when the session is over, and why.
 
