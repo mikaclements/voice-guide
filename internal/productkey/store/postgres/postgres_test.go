@@ -6,6 +6,7 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/pgtest"
 	"github.com/mikaclements/voice-guide/internal/productkey"
 	"github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
@@ -27,34 +28,34 @@ func keysOn(t *testing.T) *productkey.Keys {
 func TestAKeyWorksUntilItIsRevoked(t *testing.T) {
 	ctx := context.Background()
 	keys := keysOn(t)
-	s, k, err := keys.Create(ctx, workspace)
+	s, k, err := keys.Create(ctx, workspace, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if ws, err := keys.Workspace(ctx, s); err != nil || ws != workspace {
-		t.Fatalf("Workspace = %v, %v; want %v", ws, err, workspace)
+	if k, err := keys.Find(ctx, s); err != nil || k.Workspace != workspace {
+		t.Fatalf("Find = %v, %v; want workspace %v", k.Workspace, err, workspace)
 	}
 	for range 2 { // revoking again changes nothing
 		if found, working, err := keys.Revoke(ctx, workspace, k.ID); err != nil || !found || working != 0 {
 			t.Fatalf("Revoke = %v, %d working, %v; want found, none working", found, working, err)
 		}
 	}
-	if _, err := keys.Workspace(ctx, s); !errors.Is(err, productkey.ErrUnknown) {
-		t.Errorf("revoked key: Workspace err = %v; want ErrUnknown", err)
+	if _, err := keys.Find(ctx, s); !errors.Is(err, productkey.ErrUnknown) {
+		t.Errorf("revoked key: Find err = %v; want ErrUnknown", err)
 	}
 }
 
 func TestEachWorkspacesKeyNamesItsOwnWorkspace(t *testing.T) {
 	ctx := context.Background()
 	keys := keysOn(t)
-	mine, _, err1 := keys.Create(ctx, workspace)
-	theirs, _, err2 := keys.Create(ctx, elsewhere)
+	mine, _, err1 := keys.Create(ctx, workspace, access.RunSessions)
+	theirs, _, err2 := keys.Create(ctx, elsewhere, access.RunSessions)
 	if err := errors.Join(err1, err2); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	for s, want := range map[productkey.Key]uuid.UUID{mine: workspace, theirs: elsewhere} {
-		if got, err := keys.Workspace(ctx, s); err != nil || got != want {
-			t.Errorf("Workspace = %v, %v; want %v", got, err, want)
+		if got, err := keys.Find(ctx, s); err != nil || got.Workspace != want {
+			t.Errorf("Find = %v, %v; want workspace %v", got.Workspace, err, want)
 		}
 	}
 }
@@ -62,9 +63,9 @@ func TestEachWorkspacesKeyNamesItsOwnWorkspace(t *testing.T) {
 func TestAWorkspaceListsCountsAndRevokesOnlyItsOwnKeys(t *testing.T) {
 	ctx := context.Background()
 	keys := keysOn(t)
-	_, mine, _ := keys.Create(ctx, workspace)
-	_, newer, _ := keys.Create(ctx, workspace)
-	_, theirs, _ := keys.Create(ctx, elsewhere)
+	_, mine, _ := keys.Create(ctx, workspace, access.RunSessions)
+	_, newer, _ := keys.Create(ctx, workspace, access.RunSessions)
+	_, theirs, _ := keys.Create(ctx, elsewhere, access.RunSessions)
 	listed, err := keys.List(ctx, workspace)
 	if err != nil || len(listed) != 2 || listed[0].ID != newer.ID || listed[1].ID != mine.ID {
 		t.Fatalf("List = %v, %v; want the workspace's two keys, newest first", listed, err)
@@ -77,5 +78,24 @@ func TestAWorkspaceListsCountsAndRevokesOnlyItsOwnKeys(t *testing.T) {
 	}
 	if found, working, err := keys.Revoke(ctx, workspace, mine.ID); err != nil || !found || working != 1 {
 		t.Errorf("Revoke = %v, %d working, %v; want found, the newer key still working", found, working, err)
+	}
+}
+
+func TestAKeysPermissionsReadBackAsItWasMade(t *testing.T) {
+	ctx := context.Background()
+	keys := keysOn(t)
+	for _, made := range []access.Permissions{access.PublishAgents, access.RunSessions | access.PublishAgents} {
+		s, k, err := keys.Create(ctx, workspace, made)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		found, err := keys.Find(ctx, s)
+		if err != nil || found.Permissions != made {
+			t.Errorf("Find = %v, %v; want %v", found.Permissions, err, made)
+		}
+		listed, err := keys.List(ctx, workspace)
+		if err != nil || listed[0].ID != k.ID || listed[0].Permissions != made {
+			t.Errorf("List = %+v, %v; want the newest key first, with %v", listed, err, made)
+		}
 	}
 }

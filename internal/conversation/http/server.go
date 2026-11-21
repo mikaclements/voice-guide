@@ -24,13 +24,13 @@ type server struct {
 // Register adds conversation's routes to the API.
 func Register(rt *api.Router, svc *conversation.Service) {
 	s := &server{svc: svc, api: rt, log: rt.Log()}
-	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, s.listAgents)
-	rt.HandleProduct("GET /v1/voices", api.RequestTimeout, s.listVoices)
-	rt.HandleProduct("POST /v1/sessions", api.RequestTimeout, s.startSession)
+	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, access.RunSessions, s.listAgents)
+	rt.HandleProduct("GET /v1/voices", api.RequestTimeout, access.RunSessions, s.listVoices)
+	rt.HandleProduct("POST /v1/sessions", api.RequestTimeout, access.RunSessions, s.startSession)
 	rt.HandleTicket("POST /v1/sessions/{id}/turns", svc.TurnDeadline(), s.takeTurn)
-	rt.HandleProduct("GET /v1/users/{user}/sessions", api.RequestTimeout, s.listPastSessions)
-	rt.HandleProduct("GET /v1/sessions/{id}", api.RequestTimeout, s.readPastSession)
-	rt.HandleSessionEnd("POST /v1/sessions/{id}/end", api.RequestTimeout, s.endSession)
+	rt.HandleProduct("GET /v1/users/{user}/sessions", api.RequestTimeout, access.RunSessions, s.listPastSessions)
+	rt.HandleProduct("GET /v1/sessions/{id}", api.RequestTimeout, access.RunSessions, s.readPastSession)
+	rt.HandleSessionEnd("POST /v1/sessions/{id}/end", api.RequestTimeout, access.RunSessions, s.endSession)
 }
 
 // listVoices answers the voices a session may speak in, as the text-to-speech

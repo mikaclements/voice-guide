@@ -333,6 +333,7 @@ linters:
           files:
             - "**/internal/agents/**"
             - "!**/internal/agents/agentfile/**"
+            - "!**/internal/agents/http/**"
             - "!**/internal/agents/store/fake/**"
             - "!**/internal/agents/store/postgres/**"
             - "!**/internal/agents/*_test.go"
@@ -348,6 +349,36 @@ linters:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/agents$
             - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+        # Agents' part of the API registers on the API's router, reads the catalog, publishes through the
+        # agents core's checked publish and reads an agent file with the same parser as the folder
+        # loader; it imports no other module.
+        agents-http:
+          list-mode: strict
+          files:
+            - "**/internal/agents/http/**"
+            - "!**/internal/agents/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/agentfile$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/api$
+        # Its tests serve a real catalog over the fake store, on a router that checks product keys kept
+        # in their fake store.
+        agents-http-tests:
+          list-mode: strict
+          files:
+            - "**/internal/agents/http/*_test.go"
+          allow:
+            - $gostd
+            - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/http$
+            - github.com/mikaclements/voice-guide/internal/agents/store/fake$
+            - github.com/mikaclements/voice-guide/internal/access$
+            - github.com/mikaclements/voice-guide/internal/api$
+            - github.com/mikaclements/voice-guide/internal/ticket$
+            - github.com/mikaclements/voice-guide/internal/productkey$
+            - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
         # Adapters: each may import its own vendor package, never another module.
         conversation-http:
           list-mode: strict
@@ -426,8 +457,8 @@ linters:
             - github.com/mikaclements/voice-guide/internal/ticket$
             - github.com/mikaclements/voice-guide/internal/productkey$
             - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
-        # Product keys name a workspace; the API's router checks them. Like the ticket check, they import
-        # no module; only the store adapter reaches the database.
+        # Product keys name a workspace and what the key may do; the API's router checks them. Like the
+        # ticket check, they import no module; only the store adapter reaches the database.
         productkey:
           list-mode: strict
           files:
@@ -437,6 +468,7 @@ linters:
             - "!**/internal/productkey/*_test.go"
           allow:
             - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
             - github.com/mikaclements/voice-guide/internal/productkey$
         productkey-tests:
           list-mode: strict
@@ -444,6 +476,7 @@ linters:
             - "**/internal/productkey/*_test.go"
           allow:
             - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
             - github.com/mikaclements/voice-guide/internal/productkey$
             - github.com/mikaclements/voice-guide/internal/productkey/store/fake$
             - github.com/mikaclements/voice-guide/internal/redacttest$
@@ -460,6 +493,7 @@ linters:
             - "**/internal/productkey/store/postgres/**"
           allow:
             - $gostd
+            - github.com/mikaclements/voice-guide/internal/access$
             - github.com/mikaclements/voice-guide/internal/productkey$
             - github.com/mikaclements/voice-guide/internal/productkey/store/postgres
             - github.com/mikaclements/voice-guide/internal/pgtest$

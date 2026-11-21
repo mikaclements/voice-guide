@@ -100,7 +100,7 @@ func (f fixture) productKey(t *testing.T) string {
 // productKeyFor returns a working key for the given workspace.
 func (f fixture) productKeyFor(t *testing.T, ws uuid.UUID) string {
 	t.Helper()
-	s, _, err := f.keys.Create(context.Background(), ws)
+	s, _, err := f.keys.Create(context.Background(), ws, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -242,6 +242,27 @@ func TestEveryRouteInASessionButItsEndRefusesAProductKey(t *testing.T) {
 		t.Run(route, func(t *testing.T) {
 			method, path, _ := strings.Cut(route, " ")
 			assertProblem(t, f.send(method, path, key, `{"request_id":"`+uuid.NewV7().String()+`","words":"Hello."}`), nethttp.StatusUnauthorized)
+		})
+	}
+}
+
+// A key holding only publish_agents runs no session, so a key made for the
+// agent routes can't start sessions on the product's bill.
+func TestEveryProductRouteNeedsAKeyThatMayRunSessions(t *testing.T) {
+	f := newFixture(t)
+	publisher, _, err := f.keys.Create(context.Background(), workspace, access.PublishAgents)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	session := uuid.NewV7().String()
+	for _, route := range []string{"GET /v1/agents", "GET /v1/voices", "POST /v1/sessions", "GET /v1/users/aiko-42/sessions", "GET /v1/sessions/" + session, "POST /v1/sessions/" + session + "/end"} {
+		t.Run(route, func(t *testing.T) {
+			method, path, _ := strings.Cut(route, " ")
+			rec := f.do(method, path, publisher.Reveal())
+			if got := rec.Header().Get("WWW-Authenticate"); got != `Bearer error="insufficient_scope", scope="run_sessions"` {
+				t.Errorf("WWW-Authenticate = %q, want insufficient_scope naming run_sessions", got)
+			}
+			assertProblem(t, rec, nethttp.StatusForbidden)
 		})
 	}
 }
@@ -616,7 +637,7 @@ func TestAProductSeesAndStartsOnlyItsOwnWorkspacesAgents(t *testing.T) {
 		t.Fatalf("Publish: %v", err)
 	}
 	f := fixtureOver(t, store)
-	key, _, err := f.keys.Create(context.Background(), other)
+	key, _, err := f.keys.Create(context.Background(), other, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

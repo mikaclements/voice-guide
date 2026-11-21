@@ -59,18 +59,22 @@ var (
 // the Handle methods add the credential check whatever the route, and these
 // show it holds for every shape the API has. The routes a product's server
 // calls take its key, those in a session the session's ticket, and the
-// session's end both, and the ticket shortly past its lifetime too. Each adapter's tests
-// check that the routes it really registers need a ticket or a key.
+// session's end both, and the ticket shortly past its lifetime too; a key, only
+// when it holds the permission the route needs. Each adapter's tests check that
+// the routes it really registers need a ticket or a key, and which permission.
 var routes = []struct {
 	pattern, path         string
 	keys, tickets, ending bool
+	need                  access.Permissions
 }{
-	{"GET /v1/agents", "/v1/agents", true, false, false},
-	{"POST /v1/sessions", "/v1/sessions", true, false, false},
-	{"POST /v1/sessions/{id}/turns", "/v1/sessions/" + session + "/turns", false, true, false},
-	{"POST /v1/sessions/{id}/end", "/v1/sessions/" + session + "/end", true, true, true},
-	{"POST /v1/sessions/{id}/audio", "/v1/sessions/" + session + "/audio", false, true, false},
-	{"DELETE /v1/sessions/{id}/audio/{conn}", "/v1/sessions/" + session + "/audio/" + uuid.NewV7().String(), false, true, false},
+	{"GET /v1/agents", "/v1/agents", true, false, false, access.RunSessions},
+	{"GET /v1/agents/{id}", "/v1/agents/" + uuid.NewV7().String(), true, false, false, access.PublishAgents},
+	{"PUT /v1/agents/{id}", "/v1/agents/" + uuid.NewV7().String(), true, false, false, access.PublishAgents},
+	{"POST /v1/sessions", "/v1/sessions", true, false, false, access.RunSessions},
+	{"POST /v1/sessions/{id}/turns", "/v1/sessions/" + session + "/turns", false, true, false, 0},
+	{"POST /v1/sessions/{id}/end", "/v1/sessions/" + session + "/end", true, true, true, access.RunSessions},
+	{"POST /v1/sessions/{id}/audio", "/v1/sessions/" + session + "/audio", false, true, false, 0},
+	{"DELETE /v1/sessions/{id}/audio/{conn}", "/v1/sessions/" + session + "/audio/" + uuid.NewV7().String(), false, true, false, 0},
 }
 
 type fixture struct {
@@ -100,9 +104,9 @@ func newFixtureWithKey(t *testing.T, secret string) *fixture {
 		record := func(_ http.ResponseWriter, _ *http.Request, c access.Caller) { f.reached[r.pattern] = c }
 		switch {
 		case r.keys && r.tickets:
-			f.rt.HandleSessionEnd(r.pattern, api.RequestTimeout, record)
+			f.rt.HandleSessionEnd(r.pattern, api.RequestTimeout, r.need, record)
 		case r.keys:
-			f.rt.HandleProduct(r.pattern, api.RequestTimeout, record)
+			f.rt.HandleProduct(r.pattern, api.RequestTimeout, r.need, record)
 		default:
 			f.rt.HandleTicket(r.pattern, api.RequestTimeout, record)
 		}
@@ -110,10 +114,22 @@ func newFixtureWithKey(t *testing.T, secret string) *fixture {
 	return f
 }
 
-// productKey returns a working key for the caller's workspace.
+// every holds each permission there is.
+const every = access.RunSessions | access.PublishAgents
+
+// keyCaller is the caller a key holding every permission names.
+var keyCaller = access.Caller{Workspace: caller.Workspace, Product: true, Permissions: every}
+
+// productKey returns a working key for the caller's workspace, holding every permission.
 func (f *fixture) productKey(t *testing.T) string {
 	t.Helper()
-	s, _, err := f.keys.Create(context.Background(), caller.Workspace)
+	return f.productKeyWith(t, every)
+}
+
+// productKeyWith returns a working key for the caller's workspace, holding the permissions.
+func (f *fixture) productKeyWith(t *testing.T, permissions access.Permissions) string {
+	t.Helper()
+	s, _, err := f.keys.Create(context.Background(), caller.Workspace, permissions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -203,7 +219,7 @@ func TestEveryRouteRefusesARequestWithoutAValidCredential(t *testing.T) {
 		// What each route takes: a session's route its ticket, a product's route its key.
 		credential, want := valid, holder(ticketCaller)
 		if !r.tickets {
-			credential, want = f.productKey(t), access.Caller{Workspace: caller.Workspace, Product: true}
+			credential, want = f.productKey(t), keyCaller
 		}
 		if f.send(method, r.path, "Bearer "+credential); f.reached[r.pattern] != want {
 			t.Errorf("%s with a valid credential reached its handler with %+v, want %+v", r.pattern, f.reached[r.pattern], want)
@@ -234,7 +250,7 @@ func TestAProductsRoutesTakeItsKeyAsItsWorkspace(t *testing.T) {
 			continue
 		}
 		method, _, _ := strings.Cut(r.pattern, " ")
-		if rec := f.send(method, r.path, "Bearer "+key); rec.Code != http.StatusOK || f.reached[r.pattern] != (access.Caller{Workspace: caller.Workspace, Product: true}) {
+		if rec := f.send(method, r.path, "Bearer "+key); rec.Code != http.StatusOK || f.reached[r.pattern] != keyCaller {
 			t.Errorf("%s: %d, reached with %+v; want a product in the key's workspace, with no user", r.pattern, rec.Code, f.reached[r.pattern])
 		}
 	}
@@ -242,7 +258,7 @@ func TestAProductsRoutesTakeItsKeyAsItsWorkspace(t *testing.T) {
 
 func TestAKeyThatDoesntWorkIsRefusedAndNeverLogged(t *testing.T) {
 	f := newFixture(t)
-	revoked, k, err := f.keys.Create(context.Background(), caller.Workspace)
+	revoked, k, err := f.keys.Create(context.Background(), caller.Workspace, every)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -294,7 +310,7 @@ func TestARouteTheBrowserCallsRefusesAProductKeyUnread(t *testing.T) {
 
 func TestARouterWithoutProductKeysRefusesThem(t *testing.T) {
 	rt := api.NewRouter(newKey(t, "0123456789abcdef0123456789abcdef"), nil, func() time.Time { return now }, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, func(http.ResponseWriter, *http.Request, access.Caller) { t.Error("the handler ran") })
+	rt.HandleProduct("GET /v1/agents", api.RequestTimeout, access.RunSessions, func(http.ResponseWriter, *http.Request, access.Caller) { t.Error("the handler ran") })
 	req := httptest.NewRequest("GET", "/v1/agents", nil)
 	req.Header.Set("Authorization", "Bearer vgk_"+strings.Repeat("A", 43))
 	rec := httptest.NewRecorder()

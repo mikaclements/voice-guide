@@ -15,6 +15,8 @@ sql:
         overrides:
           - db_type: uuid
             go_type: uuid.UUID
+          - db_type: timestamptz
+            go_type: time.Time
   - engine: postgresql
     schema: migrations
     queries: internal/conversation/store/postgres/queries.sql

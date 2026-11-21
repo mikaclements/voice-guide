@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/agents"
 	agentsfake "github.com/mikaclements/voice-guide/internal/agents/store/fake"
 	"github.com/mikaclements/voice-guide/internal/api"
@@ -37,7 +38,7 @@ func TestTheVoicesRouteAnswers200WithTheTextToSpeechServicesVoices(t *testing.T)
 		t.Fatalf("NewKey: %v", err)
 	}
 	keys := productkey.NewKeys(keysfake.New())
-	secret, _, err := keys.Create(context.Background(), cfg.workspace)
+	secret, _, err := keys.Create(context.Background(), cfg.workspace, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

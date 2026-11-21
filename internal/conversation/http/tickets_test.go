@@ -217,7 +217,7 @@ func TestATicketOutlivingItsSessionTakesNoTurns(t *testing.T) {
 func TestAProductsKeyEndsAnySessionOfItsWorkspace(t *testing.T) {
 	f := newProductFixture(t)
 	_, started := f.start(t, "aiko-42", uuid.NewV7())
-	elsewhere, _, err := f.keys.Create(context.Background(), uuid.MustParse("01a1de8a-0000-7000-8000-000000000002"))
+	elsewhere, _, err := f.keys.Create(context.Background(), uuid.MustParse("01a1de8a-0000-7000-8000-000000000002"), access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

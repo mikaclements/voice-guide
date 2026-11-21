@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"uuid"
+
+	"github.com/mikaclements/voice-guide/internal/access"
 )
 
 // prefix marks a product key, so the router tells it from a ticket at a glance
@@ -86,8 +88,11 @@ type Record struct {
 	// Hash is the key's SHA-256.
 	Hash []byte
 	// Display is the key's first characters.
-	Display   string
-	CreatedAt time.Time
+	Display string
+	// Permissions is what the key lets its holder do, fixed when it is made:
+	// to change them, a new key is made and the old one revoked.
+	Permissions access.Permissions
+	CreatedAt   time.Time
 	// RevokedAt is when the key stopped working: zero while it works.
 	RevokedAt time.Time
 }
@@ -96,9 +101,10 @@ type Record struct {
 type Store interface {
 	// Add saves r.
 	Add(ctx context.Context, r Record) error
-	// Workspace returns the workspace of the working key with the hash. It
-	// looks across workspaces: the key is what names the workspace.
-	Workspace(ctx context.Context, hash []byte) (uuid.UUID, bool, error)
+	// Find returns the working key with the hash, with at least its
+	// workspace and permissions. It looks across workspaces: the key is what
+	// names the workspace.
+	Find(ctx context.Context, hash []byte) (Record, bool, error)
 	// List returns the workspace's keys, newest first.
 	List(ctx context.Context, workspace uuid.UUID) ([]Record, error)
 	// Revoke stops the workspace's key with id working, if it hasn't already,
@@ -120,35 +126,39 @@ func NewKeys(store Store) *Keys { return &Keys{store: store} }
 // the router knows which check it needs.
 func Looks(raw string) bool { return strings.HasPrefix(raw, prefix) }
 
-// Create makes a key for the workspace and returns it, the only time the key
-// itself is seen, with what is kept of it.
-func (k *Keys) Create(ctx context.Context, workspace uuid.UUID) (Key, Record, error) {
+// Create makes a key for the workspace holding the permissions and returns
+// it, the only time the key itself is seen, with what is kept of it.
+func (k *Keys) Create(ctx context.Context, workspace uuid.UUID, permissions access.Permissions) (Key, Record, error) {
+	if permissions == 0 {
+		return Key{}, Record{}, errors.New("a product key needs at least one permission")
+	}
 	random := make([]byte, randomBytes)
 	_, _ = rand.Read(random) // never fails: it crashes the program instead
 	raw := prefix + encoding.EncodeToString(random)
-	r := Record{ID: uuid.NewV7(), Workspace: workspace, Hash: hash(raw), Display: raw[:displayLen]}
+	r := Record{ID: uuid.NewV7(), Workspace: workspace, Hash: hash(raw), Display: raw[:displayLen], Permissions: permissions}
 	if err := k.store.Add(ctx, r); err != nil {
 		return Key{}, Record{}, fmt.Errorf("save the product key: %w", err)
 	}
 	return NewKey(raw), r, nil
 }
 
-// Workspace returns the workspace the key acts for: ErrUnknown for a key that
-// doesn't work, and any other error when the check couldn't be made, so a
-// product isn't told its key is wrong while the store is down.
-func (k *Keys) Workspace(ctx context.Context, key Key) (uuid.UUID, error) {
+// Find returns what is kept of the key, naming the workspace it acts for and
+// its permissions: ErrUnknown for a key that doesn't work, and any other error
+// when the check couldn't be made, so a product isn't told its key is wrong
+// while the store is down.
+func (k *Keys) Find(ctx context.Context, key Key) (Record, error) {
 	raw := key.Reveal()
 	if !wellFormed(raw) {
-		return uuid.Nil(), ErrUnknown
+		return Record{}, ErrUnknown
 	}
-	ws, found, err := k.store.Workspace(ctx, hash(raw))
+	r, found, err := k.store.Find(ctx, hash(raw))
 	switch {
 	case err != nil:
-		return uuid.Nil(), fmt.Errorf("check the product key: %w", err)
+		return Record{}, fmt.Errorf("check the product key: %w", err)
 	case !found:
-		return uuid.Nil(), ErrUnknown
+		return Record{}, ErrUnknown
 	}
-	return ws, nil
+	return r, nil
 }
 
 // List returns what is kept of the workspace's keys, newest first.

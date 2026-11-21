@@ -13,9 +13,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/mikaclements/voice-guide/internal/agents"
-	voicefake "github.com/mikaclements/voice-guide/internal/conversation/voicelist/fake"
 )
 
 func env(overrides map[string]string) func(string) string {
@@ -115,36 +112,21 @@ func TestPublishRefusesAnAgentReadingAKindUserContextDoesntHold(t *testing.T) {
 	}
 }
 
-func namingVoice(voice string) []agents.Agent {
-	return []agents.Agent{{Name: "Lighthouse keeper", Voice: voice}}
-}
-
-func TestPublishRefusesAnAgentNamingAVoiceTheTextToSpeechServiceLacks(t *testing.T) {
-	list := voicefake.New("af_heart")
-	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.DiscardHandler)); err == nil {
-		t.Error("checkVoices accepted a voice the service doesn't have")
+// The voice check itself is the agents core's, tested there; here, that the script reports a
+// check it couldn't make, with the database no one listens on: the save fails, and the warning is logged all the same.
+func TestPublishWarnsThatVoicesWereNotCheckedWhenTheTextToSpeechServiceCantBeAsked(t *testing.T) {
+	kokoro := httptest.NewServer(http.NotFoundHandler())
+	kokoro.Close() // nothing listens at its address now
+	dir := t.TempDir()
+	file := "---\nid: 01a1de8b-bba7-7000-bad0-0000000000a1\nname: Lighthouse keeper\nvoice: bf_emma\n---\nYou answer every call from the sea.\n"
+	if err := os.WriteFile(filepath.Join(dir, "lighthouse-keeper.md"), []byte(file), 0o600); err != nil {
+		t.Fatalf("write the agent file: %v", err)
 	}
-	if err := checkVoices(t.Context(), namingVoice("af_heart"), list, slog.New(slog.DiscardHandler)); err != nil {
-		t.Errorf("checkVoices with a voice it has = %v, want nil", err)
-	}
-}
-
-func TestPublishGoesAheadAndWarnsWhenTheTextToSpeechServiceCantBeAsked(t *testing.T) {
-	list := voicefake.New()
-	list.Fail(errors.New("connection refused"))
+	getenv := env(map[string]string{"DATABASE_URL": "postgres://keeper@127.0.0.1:1/harbour?sslmode=disable", "VOICE_AGENTS_DIR": dir, "VOICE_TTS_URL": kokoro.URL})
 	var out strings.Builder
-	if err := checkVoices(t.Context(), namingVoice("bf_emma"), list, slog.New(slog.NewTextHandler(&out, nil))); err != nil {
-		t.Errorf("checkVoices = %v, want nil: the agents publish unchecked", err)
-	}
+	_ = run(context.Background(), getenv, slog.New(slog.NewTextHandler(&out, nil)), publishTimeout)
 	if !strings.Contains(out.String(), "not checked") {
 		t.Errorf("log %q, want a warning that the voices were not checked", out.String())
-	}
-}
-
-func TestPublishDoesNotAskForVoicesWhenNoAgentNamesOne(t *testing.T) {
-	list := voicefake.New("af_heart")
-	if err := checkVoices(t.Context(), namingVoice(""), list, slog.New(slog.DiscardHandler)); err != nil || list.Asked() != 0 {
-		t.Errorf("checkVoices = %v with the list asked %d times, want nil and none", err, list.Asked())
 	}
 }
 

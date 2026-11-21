@@ -360,7 +360,7 @@
       "title": "A product's server starts each session with its key; the user's browser holds only what voice-guide signed",
       "section": "Platform · Security and access",
       "status": "accepted",
-      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most.",
+      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most. Each key holds permissions fixed when it is made, and each route that takes a key names the one it needs.",
       "why": "Every start passes the product's server, so it decides who may start a session and what the agent is told, and its key never reaches a browser; a copy of the database holds only hashes. A product signing its own tokens would need its key kept readable, and a public key in the page can be copied by anyone.",
       "tradeoff": "The product needs a server and calls voice-guide before each session; a stolen ticket works in its one session until the product ends it with its key or four hours pass; rotating the signing key drops every user."
     },
@@ -713,7 +713,7 @@
           "protocol": "HTTP",
           "send": "product key · user's ID · agent · context · end · read sessions",
           "back": "agents · the session and its ticket · past sessions",
-          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read a user's past sessions, by the product's own reference for the user, a session with all its turns as the user heard them, filtered by the workspace; the start names its user by the product's own stable ID ('user'), added with their first session. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries.",
+          "detail": "GET /v1/agents, POST /v1/sessions and POST /v1/sessions/{id}/end, which ends any session of the product's workspace, as when a ticket was stolen, with 'Authorization: Bearer' and the product key; GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read a user's past sessions, by the product's own reference for the user, a session with all its turns as the user heard them, filtered by the workspace; the start names its user by the product's own stable ID ('user'), added with their first session. GET /v1/agents/{id} reads one of the workspace's agents at its newest version, in its file's shapes, for a key holding publish_agents. The start answers with the session and a ticket for it, fresh on a repeat whose reply was lost, in a reply no cache keeps; a ticket sent here is refused (401). A key sent with an Origin header, as only a page sends, is refused unread (401). A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, so the product retries; a key without the permission a route needs is refused (403).",
           "considerations": ["product-keys", "product-context", "api-for-products"]
         },
         {
@@ -1012,7 +1012,7 @@
           "name": "Router",
           "path": "internal/api",
           "summary": "The public API's one router: every route behind a key or ticket check, open to any site where tickets go.",
-          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key and refuses a ticket, and HandleTicket for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key as well. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes HandleTicket and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
+          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key, only with the permission the route names (a working key without it is answered 403, insufficient_scope), and refuses a ticket, and HandleTicket for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key, with the permission it names, as well; a route taking a key can't be registered without one. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace, the key's permissions and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes HandleTicket and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
           "why": "One router checks every credential in one place, so no module's routes can skip the check.",
           "considerations": ["product-keys", "problem-details", "api-for-products", "any-origin"]
         },
@@ -1034,7 +1034,7 @@
           "name": "Caller",
           "path": "internal/access",
           "summary": "Who calls: workspace, user and the session a ticket allows, or a product's server.",
-          "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
+          "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace, the key's permissions and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
           "why": "A plain type every part may import, so the caller crosses module walls without a module importing another.",
           "considerations": ["one-service-four-modules", "workspace-every-record"],
           "importedFreely": true
@@ -1046,7 +1046,7 @@
           "name": "Product keys",
           "path": "internal/productkey",
           "summary": "Makes product keys and checks one by its SHA-256 across workspaces; the key itself is never kept.",
-          "description": "Makes a product key (vgk_ and 256 random bits), keeping only its SHA-256 and first 12 characters, checks one by finding its hash among the working keys of every workspace, and lists and revokes a workspace's keys. A key is held in a type that prints, logs and encodes redacted. Like the ticket check it imports no module, so the router checks keys without reaching into one; its store is an adapter of its own.",
+          "description": "Makes a product key (vgk_ and 256 random bits) holding the permissions it is made with, keeping only its SHA-256, first 12 characters and permissions, checks one by finding its hash among the working keys of every workspace, and lists and revokes a workspace's keys. A key is held in a type that prints, logs and encodes redacted. Like the ticket check it imports no module, so the router checks keys without reaching into one; its store is an adapter of its own.",
           "why": "Only each key's hash is kept, so a copy of the database can't be used to act for a workspace.",
           "considerations": ["product-keys", "workspace-every-record"],
           "drill": "productkey"
@@ -1100,7 +1100,7 @@
           "name": "agents",
           "path": "internal/agents",
           "summary": "Agent definitions and their versions; the catalog serves each workspace's newest and exact ones.",
-          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction with the documents the summary reads, and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read. Versions are written only by cmd/publish, from agents/<name>.md.",
+          "description": "Holds agent definitions and their published versions: persona, the context kinds each reads, the session context it expects, its summary instruction with the documents the summary reads, and whether it speaks first. The catalog reads the newest versions on every request and keeps exact versions in memory once read; its HTTP adapter answers one agent's newest version to a key holding publish_agents. Versions are written only by cmd/publish, from agents/<name>.md.",
           "why": "Versions never change once saved, so any instance finds the exact version a session started on, even mid-deploy.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "agents"
@@ -1180,7 +1180,7 @@
           "protocol": "HTTP",
           "send": "agents · start, end, read past sessions, with the product key",
           "back": "agents · the session and its ticket · problem details",
-          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
+          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct, with a key that may run sessions, and GET /v1/agents/{id}, with one holding publish_agents; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
           "considerations": ["product-keys"]
         },
         {
@@ -1217,9 +1217,9 @@
           "from": "api",
           "to": "productkey",
           "protocol": "call",
-          "send": "Workspace(key)",
-          "back": "the workspace, unknown, or unchecked",
-          "detail": "Only on the routes a product's server calls; a key sent where the browser's ticket belongs, or sent from a page with an Origin header, is refused unread. A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, never a 401.",
+          "send": "Find(key)",
+          "back": "its workspace and permissions, unknown, or unchecked",
+          "detail": "Only on the routes a product's server calls; a key sent where the browser's ticket belongs, or sent from a page with an Origin header, is refused unread. A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, never a 401; a working key without the permission the route names is refused 403, with insufficient_scope naming it.",
           "considerations": ["product-keys"]
         },
         {
@@ -1236,8 +1236,17 @@
           "to": "conversation",
           "protocol": "route",
           "send": "agents · sessions · typed turns · end · past sessions",
-          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key), and GET /v1/users/{user}/sessions and GET /v1/sessions/{id} through HandleProduct.",
+          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key), and GET /v1/users/{user}/sessions and GET /v1/sessions/{id} through HandleProduct; every route taking a key needs run_sessions.",
           "considerations": ["http-and-webrtc"]
+        },
+        {
+          "id": "api-agents",
+          "from": "api",
+          "to": "agents",
+          "protocol": "route",
+          "send": "publish an agent, read its newest version",
+          "detail": "agents' HTTP adapter registers PUT and GET /v1/agents/{id} through HandleProduct, for a key holding publish_agents; another workspace's agent is answered 404 on a read and its ID 409 on a publish.",
+          "considerations": ["http-and-webrtc", "product-keys"]
         },
         {
           "id": "api-speech",
@@ -2900,7 +2909,7 @@
       "id": "agents",
       "title": "agents",
       "level": 3,
-      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions; publishing, run by cmd/publish from the agent files, is the only way a version is written. agents imports neither conversation nor speech.",
+      "lead": "Agent definitions and their versions. The catalog serves conversation the newest and exact versions; one checked publish, called by cmd/publish from the agent files and by the API's route, is the only way a version is written. agents imports neither conversation nor speech: the context kinds and the voice list are handed in.",
       "considerations": [
         "agent-versions",
         "reference-agent",
@@ -2924,9 +2933,19 @@
               "caption": "agentfile refuses an unknown setting, a file not named <name>.md, two files with one ID and a folder with no agent files: nothing is published"
             },
             {
-              "nodes": ["x-publish", "publish"],
+              "nodes": ["x-publish", "publisher"],
               "edges": ["cmd-publish"],
-              "caption": "cmd/publish refuses an agent reading a kind user context doesn't hold, then calls Publish, which checks every agent before saving any"
+              "caption": "cmd/publish hands the agents to the Publisher with the context kinds user context holds and the voice list"
+            },
+            {
+              "nodes": ["publisher", "p-voices", "x-tts"],
+              "edges": ["publisher-voices", "tts-voices"],
+              "caption": "The Publisher refuses a kind user context doesn't hold or a voice the text-to-speech service lacks; when that service can't be asked in 2 s it goes on and says the voices were not checked"
+            },
+            {
+              "nodes": ["publisher", "publish"],
+              "edges": ["publisher-publish"],
+              "caption": "Then Publish checks every agent before saving any"
             },
             {
               "nodes": ["publish", "p-versions", "storepg", "x-postgres"],
@@ -2934,9 +2953,45 @@
               "caption": "For each agent, Save adds the next version number, unless the newest version has the same SHA-256 hash of settings and persona"
             },
             {
-              "nodes": ["x-publish", "publish"],
+              "nodes": ["x-publish", "publisher"],
               "edges": ["cmd-publish"],
-              "caption": "Publish returns each agent's version number and whether it is new, and cmd/publish logs it as published or unchanged"
+              "caption": "The Publisher returns each agent's version number and whether it is new, and cmd/publish logs it as published or unchanged"
+            }
+          ]
+        },
+        {
+          "id": "api-publish",
+          "name": "A product publishes an agent through the API",
+          "steps": [
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "A product's server sends PUT /v1/agents/{id} with the agent file as text/markdown and a key; the router lets it through only if the key holds publish_agents"
+            },
+            {
+              "nodes": ["http", "agentfile"],
+              "edges": ["http-agentfile"],
+              "caption": "The adapter refuses another content type (415), a body over 256 KiB (413), an empty or non-UTF-8 one, and a file agentfile or the path's ID refuses (422)"
+            },
+            {
+              "nodes": ["http", "publisher"],
+              "edges": ["http-publisher"],
+              "caption": "It hands the agent to the Publisher for the key's workspace, the same one cmd/publish calls"
+            },
+            {
+              "nodes": ["publisher", "p-voices", "x-tts"],
+              "edges": ["publisher-voices", "tts-voices"],
+              "caption": "A voice text-to-speech doesn't offer is refused (422, unknown-voice); text-to-speech down or slower than 2 s, the agent is published and the answer says the voice was not checked"
+            },
+            {
+              "nodes": ["publisher", "publish", "p-versions", "storepg", "x-postgres"],
+              "edges": ["publisher-publish", "publish-versions", "pg-versions", "pg-db"],
+              "caption": "Publish saves the next version in one transaction, or finds the unchanged file's number; an ID another workspace owns is refused (409), the database down is 503"
+            },
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "The adapter answers 201 with the new version, or 200 when unchanged, with voice_checked"
             }
           ]
         },
@@ -2958,6 +3013,32 @@
               "nodes": ["x-conversation", "catalog"],
               "edges": ["conv-catalog"],
               "caption": "The session starts on the newest version of the agent asked for, and keeps that version's number for its whole life"
+            }
+          ]
+        },
+        {
+          "id": "view",
+          "name": "A product reads an agent back",
+          "steps": [
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "A product's server or a developer sends GET /v1/agents/{id} with a key; the router lets it through only if the key holds publish_agents"
+            },
+            {
+              "nodes": ["http", "catalog"],
+              "edges": ["http-catalog"],
+              "caption": "The adapter answers 404 to an ID that isn't a UUID, and asks the catalog for the workspace's Newest version of that agent"
+            },
+            {
+              "nodes": ["catalog", "p-versions", "storepg", "x-postgres"],
+              "edges": ["catalog-versions", "pg-versions", "pg-db"],
+              "caption": "The catalog reads the workspace's newest versions, as a start does, and picks the agent's; another workspace's is not found, as a missing one"
+            },
+            {
+              "nodes": ["x-api", "http"],
+              "edges": ["api-http"],
+              "caption": "The adapter answers the version in its file's shapes, with its number and when it was published; not found is 404, the database down 503"
             }
           ]
         },
@@ -3006,7 +3087,7 @@
           "name": "Catalog",
           "path": "catalog.go",
           "summary": "Each workspace's newest versions on every request; exact versions kept in memory once read.",
-          "description": "The agents one workspace owns, as the module offers them: Available reads the newest version of each on every request, so a publish shows without a restart; Version returns one exact version, read once and then served from memory for its own number and workspace.",
+          "description": "The agents one workspace owns, as the module offers them: Available reads the newest version of each on every request, so a publish shows without a restart; Version returns one exact version, read once and then served from memory for its own number and workspace; Newest picks one agent's newest version from the workspace's, for the route that reads an agent.",
           "why": "Newest versions are read on every request, so a publish shows at once on every instance; exact versions never change, so they are kept in memory.",
           "considerations": ["agent-versions", "stateless"],
           "drill": "types-agents",
@@ -3018,10 +3099,36 @@
           "parent": "core",
           "name": "Publish",
           "path": "versions.go · catalog.go",
-          "summary": "Checks every agent first, then saves each as its next version if its content changed.",
-          "description": "Checks every agent before saving any (settings, the context kinds it reads, the session context names it declares), then saves each as its next version only when its content hash differs from the newest version's.",
+          "summary": "Saves each checked agent as its next version if its content changed.",
+          "description": "Checks every agent before saving any (settings, the context kinds it reads, the session context names it declares), then saves each as its next version only when its content hash differs from the newest version's, each in one transaction.",
           "why": "Publishing from the agent file is a step of its own, never part of a start, and saves nothing until every agent passes its checks.",
           "considerations": ["agent-versions", "product-context"],
+          "drill": "types-agents",
+          "focus": "internal/agents"
+        },
+        {
+          "id": "publisher",
+          "kind": "core",
+          "parent": "core",
+          "name": "Publisher",
+          "path": "publisher.go",
+          "summary": "The one checked publish: rules, context kinds, voices, then save.",
+          "description": "Publishes agents after every check: the agent's own rules and summary schema, the context kinds user context holds, then the voices text-to-speech offers, asked for up to 2 s; unreachable, the agents are published all the same and the result says the voices were not checked. A check that turns an agent down is a Refusal, safe to show whoever wrote the file. cmd/publish and the API's route both call it, so the two can't check differently; the kinds and the voice list are handed in by cmd/voice and cmd/publish.",
+          "why": "One checked publish behind both the script and the route, so a file can't pass one and fail the other.",
+          "considerations": ["agent-versions", "product-context"],
+          "drill": "types-agents",
+          "focus": "internal/agents"
+        },
+        {
+          "id": "p-voices",
+          "kind": "port",
+          "parent": "core",
+          "name": "VoiceList",
+          "path": "publisher.go",
+          "summary": "The voices the text-to-speech service offers.",
+          "members": ["Voices() → names"],
+          "description": "What the voice check asks, so agents imports no module: the text-to-speech service's own list, handed in by cmd/voice and cmd/publish. Asked only when an agent names a voice.",
+          "considerations": ["agent-versions"],
           "drill": "types-agents",
           "focus": "internal/agents"
         },
@@ -3049,8 +3156,8 @@
           "parent": "box",
           "name": "agentfile",
           "path": "internal/agents/agentfile",
-          "summary": "Reads agents/<name>.md: a YAML settings block, then the persona.",
-          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID.",
+          "summary": "Reads an agent file, from a folder or from bytes: a YAML settings block, then the persona.",
+          "description": "Reads agent files: Markdown, one per agent, opening with a YAML settings block (ID, name, description, the context kinds it reads, the session context it expects, its summary section with the documents it reads, who speaks first), the rest the persona sent to the model as written. Refuses unknown settings, misnamed files and two files with one ID. Parse reads one file's bytes by the same rules, for the API.",
           "considerations": ["agent-versions", "reference-agent"],
           "drill": "types-agents",
           "focus": "internal/agents/agentfile"
@@ -3087,6 +3194,28 @@
           "description": "Each file's settings block names who opens the session (opens) and, if it wants one, its own model (model)."
         },
         {
+          "id": "http",
+          "kind": "adapter",
+          "tag": "inbound",
+          "parent": "box",
+          "name": "http",
+          "path": "internal/agents/http",
+          "summary": "agents' part of the API: publish an agent file, read one's newest version.",
+          "description": "Inbound adapter: registers PUT /v1/agents/{id} and GET /v1/agents/{id} for a product key holding publish_agents. PUT takes the agent file as text/markdown (415 otherwise, 413 over 256 KiB), reads it with agentfile and publishes it through the Publisher: 201 with the new version, 200 when unchanged, both with voice_checked; 422 for a file the checks refuse, with its own type for an unknown voice, 409 for an ID another workspace owns, 503 when the database can't save. GET answers the newest version under its file's names and in its shapes, in UTC; an ID that isn't a UUID, another workspace's agent and one never published are all 404 alike.",
+          "why": "A file is the caller's own, so a refusal says what is wrong with it; another workspace's agent answers as a missing one, so a key learns nothing of other workspaces' agents.",
+          "considerations": ["product-keys", "agent-versions", "problem-details"],
+          "drill": "types-agents",
+          "focus": "internal/agents/http"
+        },
+        {
+          "id": "x-api",
+          "kind": "shared",
+          "context": true,
+          "name": "Router",
+          "path": "internal/api",
+          "summary": "Key-checked routes."
+        },
+        {
           "id": "x-conversation",
           "kind": "module",
           "context": true,
@@ -3101,6 +3230,14 @@
           "name": "PostgreSQL 18",
           "path": "agent schema",
           "summary": ""
+        },
+        {
+          "id": "x-tts",
+          "kind": "external",
+          "context": true,
+          "name": "Text-to-speech",
+          "path": "internal/speech/tts/kokoro",
+          "summary": "Lists its voices; handed in as the voice list."
         }
       ],
       "edges": [
@@ -3121,11 +3258,27 @@
         {
           "id": "cmd-publish",
           "from": "x-publish",
-          "to": "publish",
+          "to": "publisher",
           "protocol": "call",
           "send": "Publish(agents)",
           "back": "what each publish did",
-          "detail": "Also checks that every kind an agent reads is one user context holds, before reaching the database."
+          "detail": "Hands in the context kinds user context holds and the text-to-speech service's voice list; logs a warning when the voices were not checked."
+        },
+        {
+          "id": "api-http",
+          "from": "x-api",
+          "to": "http",
+          "protocol": "route",
+          "send": "GET or PUT /v1/agents/{id}, with the caller",
+          "detail": "The router has checked the product key holds publish_agents, and hands the route the caller, naming its workspace."
+        },
+        {
+          "id": "http-catalog",
+          "from": "http",
+          "to": "catalog",
+          "protocol": "call",
+          "send": "Newest(workspace, agent)",
+          "back": "the newest version, or not found"
         },
         {
           "id": "conv-catalog",
@@ -3161,6 +3314,42 @@
           "to": "x-postgres",
           "protocol": "SQL",
           "send": "agent.agents · agent.agent_versions"
+        },
+        {
+          "id": "http-agentfile",
+          "from": "http",
+          "to": "agentfile",
+          "protocol": "call",
+          "send": "Parse(body)",
+          "back": "the agent, or why not"
+        },
+        {
+          "id": "http-publisher",
+          "from": "http",
+          "to": "publisher",
+          "protocol": "call",
+          "send": "Publish(workspace, agent)",
+          "back": "saved or unchanged, voices checked or not"
+        },
+        {
+          "id": "publisher-publish",
+          "from": "publisher",
+          "to": "publish",
+          "protocol": "call",
+          "send": "Publish(agents)"
+        },
+        {
+          "id": "publisher-voices",
+          "from": "publisher",
+          "to": "p-voices",
+          "protocol": "port",
+          "send": "Voices (2 s)"
+        },
+        {
+          "id": "tts-voices",
+          "from": "x-tts",
+          "to": "p-voices",
+          "style": "implements"
         }
       ],
       "classes": "types-agents"
@@ -3395,7 +3584,7 @@
       "id": "productkey",
       "title": "product keys",
       "level": 3,
-      "lead": "Hexagonal like a module: Keys holds the rules and declares one port, Store, implemented by a PostgreSQL store. The router asks Keys which workspace a key acts for; cmd/productkey makes, lists and revokes keys. Only each key's hash is kept.",
+      "lead": "Hexagonal like a module: Keys holds the rules and declares one port, Store, implemented by a PostgreSQL store. The router asks Keys which workspace a key acts for and what it may do; cmd/productkey makes, lists and revokes keys. Only each key's hash is kept.",
       "considerations": ["product-keys", "workspace-every-record", "hexagonal"],
       "flows": [
         {
@@ -3415,7 +3604,7 @@
             {
               "nodes": ["x-api", "keys"],
               "edges": ["api-keys"],
-              "caption": "The router asks Keys for the key's Workspace; Keys answers unknown for a key of the wrong length or form without asking the store"
+              "caption": "The router asks Keys to Find the key; Keys answers unknown for a key of the wrong length or form without asking the store"
             },
             {
               "nodes": ["keys", "p-store", "storepg", "x-postgres"],
@@ -3425,7 +3614,7 @@
             {
               "nodes": ["x-api", "keys"],
               "edges": ["api-keys"],
-              "caption": "Found, the request goes on as that workspace's product; an unknown or revoked key gets 401, a check that couldn't be made 503, to retry"
+              "caption": "Found, a key holding the route's permission goes on as that workspace's product; one without it gets 403, unknown or revoked 401, unchecked 503"
             }
           ]
         },
@@ -3436,12 +3625,12 @@
             {
               "nodes": ["x-cmd", "keys"],
               "edges": ["cmd-keys"],
-              "caption": "A member runs scripts/product-key.sh create, and cmd/productkey asks Keys to Create a key for the workspace"
+              "caption": "A member runs scripts/product-key.sh create, naming its permissions or taking run_sessions, and cmd/productkey asks Keys to Create the key"
             },
             {
               "nodes": ["keys"],
               "edges": [],
-              "caption": "Create makes vgk_ plus 32 random bytes in base64url, and keeps only the key's SHA-256 and its first 12 characters"
+              "caption": "Create refuses a key with no permission, makes vgk_ plus 32 random bytes in base64url, and keeps only its SHA-256, first 12 characters and permissions"
             },
             {
               "nodes": ["keys", "p-store", "storepg", "x-postgres"],
@@ -3462,7 +3651,7 @@
             {
               "nodes": ["x-cmd", "keys", "p-store", "storepg", "x-postgres"],
               "edges": ["cmd-keys", "keys-store", "pg-store", "pg-db"],
-              "caption": "list shows the workspace's keys, newest first: each one's ID, first characters, when it was made and whether it is revoked"
+              "caption": "list shows the workspace's keys, newest first: each one's ID, first characters, permissions, when it was made and whether it is revoked"
             },
             {
               "nodes": ["x-cmd", "keys"],
@@ -3506,7 +3695,7 @@
           "name": "Keys",
           "path": "productkey.go",
           "summary": "Makes a key, checks one by its hash, lists and revokes; a Key prints and logs redacted.",
-          "description": "Create makes a key, vgk_ and 256 random bits in base64url, and keeps its SHA-256 and first 12 characters; the key is returned once, held in a Key that formats, logs and encodes redacted, behind a pointer. Workspace refuses a malformed key without a read, then finds the hash among the working keys: unknown, revoked and malformed look alike, and a store that can't answer is a failure, never unknown. Revoke stops a key at once and counts the keys still working.",
+          "description": "Create makes a key, vgk_ and 256 random bits in base64url, holding the permissions given, never none, and keeps its SHA-256, first 12 characters and permissions; the key is returned once, held in a Key that formats, logs and encodes redacted, behind a pointer. Find refuses a malformed key without a read, then finds the hash among the working keys, with its workspace and permissions: unknown, revoked and malformed look alike, and a store that can't answer is a failure, never unknown. Revoke stops a key at once and counts the keys still working.",
           "why": "A key is kept only as its SHA-256 and found by that hash, since the key itself names its workspace.",
           "considerations": ["product-keys"],
           "drill": "types-productkey",
@@ -3519,8 +3708,8 @@
           "name": "Store",
           "path": "productkey.go",
           "summary": "Where what is kept of each key lives.",
-          "members": ["Add", "Workspace", "List", "Revoke", "Working"],
-          "description": "The port for what is kept of product keys: add a record, find the workspace of the working key with a hash, list a workspace's keys newest first, revoke one keeping the first revoke time, and count a workspace's working keys.",
+          "members": ["Add", "Find", "List", "Revoke", "Working"],
+          "description": "The port for what is kept of product keys: add a record, find the working key with a hash, list a workspace's keys newest first, revoke one keeping the first revoke time, and count a workspace's working keys.",
           "considerations": ["product-keys"],
           "drill": "types-productkey",
           "focus": "internal/productkey"
@@ -3533,7 +3722,7 @@
           "name": "store/postgres",
           "path": "internal/productkey/store/postgres",
           "summary": "The product_keys table: a key found by its hash, across workspaces.",
-          "description": "Keeps the records in the product_keys table through sqlc-generated queries. Finding a key by its hash looks across workspaces, since the key is what names the workspace, and reads out only that workspace; listing, revoking and counting name the workspace.",
+          "description": "Keeps the records in the product_keys table through sqlc-generated queries. Finding a key by its hash looks across workspaces, since the key is what names the workspace, and reads out only that key; its permissions are a text array, which a database check keeps non-empty and known. Listing, revoking and counting name the workspace.",
           "considerations": ["sqlc", "workspace-every-record"],
           "drill": "types-productkey",
           "focus": "internal/productkey/store/postgres"
@@ -3544,7 +3733,7 @@
           "context": true,
           "name": "Router",
           "path": "internal/api",
-          "summary": "Checks a product key on the routes a product's server calls."
+          "summary": "Checks a product key, and the permission its route needs, on the routes a product's server calls."
         },
         {
           "id": "x-cmd",
@@ -3570,9 +3759,9 @@
           "from": "x-api",
           "to": "keys",
           "protocol": "call",
-          "send": "Workspace(key)",
-          "back": "the workspace, unknown, or unchecked",
-          "detail": "A 401 for unknown, a 503 when the store can't answer.",
+          "send": "Find(key)",
+          "back": "its workspace and permissions, unknown, or unchecked",
+          "detail": "A 401 for unknown, a 503 when the store can't answer; the router answers 403 to a key without the route's permission.",
           "considerations": ["product-keys"]
         },
         {
@@ -3589,7 +3778,7 @@
           "from": "keys",
           "to": "p-store",
           "protocol": "port",
-          "send": "Add · Workspace · List · Revoke · Working"
+          "send": "Add · Find · List · Revoke · Working"
         },
         {
           "id": "pg-store",

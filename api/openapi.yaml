@@ -1,0 +1,1070 @@
+openapi: 3.1.0
+info:
+  title: voice-guide API
+  version: 1.0.0
+  description: |
+    The HTTP API a product's server and the user's browser call. Every path starts with `/v1/`.
+
+    Two credentials, both sent as `Authorization: Bearer <credential>`:
+    - a product key, which names a workspace and no user, for the product's server;
+    - a ticket, which voice-guide signs for one session and hands back when the session starts, for the user's browser, which holds it for that session's routes and nothing else.
+
+    A product key holds permissions, fixed when it is made; each route's security requirement names the one it needs, and a working key without it is answered `403`. A product key sent with an `Origin` header is refused unread, so a key never works from a page. Routes that take a ticket answer a page on any site; routes that take only a product key answer none.
+
+    Every error is a problem details document (RFC 9457, `application/problem+json`). A problem has its own `type` when a client must tell it apart from another error with the same status; every other problem has the type `about:blank`. A `503` means the same request may be sent again. A `500` carries no `detail`.
+
+    The drop-in client's script and the data channel's messages are not described here.
+servers:
+  - url: https://voice.example.com
+    description: Where voice-guide runs; http://127.0.0.1:8080 on a developer's machine.
+
+security:
+  - productKey: [run_sessions]
+
+tags:
+  - name: Agents
+    description: What a product can start a session with.
+  - name: Sessions
+    description: A user's conversation with an agent, from start to end, and read back later.
+  - name: Turns
+    description: Typed turns inside a session.
+  - name: Audio
+    description: A session's audio connection.
+
+paths:
+  /v1/agents:
+    get:
+      operationId: listAgents
+      tags: [Agents]
+      summary: List the agents a session may start with
+      security:
+        - productKey: [run_sessions]
+      responses:
+        "200":
+          description: The workspace's agents.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents]
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/agents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The agent's ID, as its file names it. On a read, one that isn't a UUID, another workspace's agent and one never published all answer `404`; a publish names the agent by it.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: readAgent
+      tags: [Agents]
+      summary: Read an agent at its newest version
+      description: |
+        One of the workspace's agents at its newest version, under its agent file's names and in its shapes, so a product reads back what it wrote, with the version's number and when it was published.
+      security:
+        - productKey: [publish_agents]
+      responses:
+        "200":
+          description: The agent's newest version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentVersion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    put:
+      operationId: publishAgent
+      tags: [Agents]
+      summary: Publish an agent from its file
+      description: |
+        The body is the agent's file, Markdown opening with its settings block, sent as `text/markdown` (RFC 7763; a charset is allowed). Send it as it is on disk: with `curl`, `--data-binary @file`, never `-d`, which strips the newlines. The file's `id` must be the path's. It is checked as the publish script checks it, then saved as the agent's next version if it differs from the newest, in the key's workspace only. `201` is a new version and `200` is the newest already, with nothing saved; both are success. `voice_checked` is `true` when the agent's voice was checked or it names none, and `false` when the text-to-speech service couldn't be asked whether it has the voice; the agent was published all the same.
+      security:
+        - productKey: [publish_agents]
+      requestBody:
+        required: true
+        content:
+          text/markdown:
+            schema:
+              type: string
+              maxLength: 262144
+      responses:
+        "201":
+          description: The file is the agent's new version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedAgent"
+        "200":
+          description: The file is the agent's newest version already; nothing was saved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublishedAgent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Another workspace uses the agent's ID. Pick a new ID; a file copied from someone else's keeps theirs.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          description: The `Content-Type` isn't `text/markdown`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: The file can't be published as sent, and the `detail` says why, in the words of the loader or the check that refused it. Sending it again unchanged never helps.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                refused:
+                  summary: An empty body, a body that isn't UTF-8, a file a rule refuses, or an `id` other than the path's
+                  value:
+                    type: about:blank
+                    title: Unprocessable Content
+                    status: 422
+                    detail: "the agent file: settings: field colour not found"
+                unknownVoice:
+                  summary: A voice the text-to-speech service doesn't have
+                  value:
+                    type: /v1/problems/unknown-voice
+                    title: Unknown voice
+                    status: 422
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/voices:
+    get:
+      operationId: listVoices
+      tags: [Agents]
+      summary: List the voices a session may speak in
+      description: As the text-to-speech service names them.
+      security:
+        - productKey: [run_sessions]
+      responses:
+        "200":
+          description: The voices on offer.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [voices]
+                properties:
+                  voices:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/sessions:
+    post:
+      operationId: startSession
+      tags: [Sessions]
+      summary: Start a session
+      description: |
+        Starts a session for the user the product names, or returns the one the same `request_id` started, so a retry after a lost reply starts nothing new. Each reply carries a fresh ticket for the session, which expires when the session's first ticket would have. The reply is never cached.
+      security:
+        - productKey: [run_sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartRequest"
+      responses:
+        "200":
+          description: A repeat of a start already made. The ticket is left out once the session's tickets have expired; start a new session with a new `request_id` then.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartedSession"
+        "201":
+          description: A new session.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartedSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          description: The start can't be taken as sent. Sending it again unchanged never helps.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                sessionContextMismatch:
+                  summary: Session context that doesn't match the agent
+                  value:
+                    type: /v1/problems/session-context-mismatch
+                    title: Session context doesn't match the agent
+                    status: 422
+                requestReused:
+                  summary: A request ID reused for a different request
+                  value:
+                    type: /v1/problems/request-reused
+                    title: Request ID reused for a different request
+                    status: 422
+                voiceSettings:
+                  summary: A voice or speed the service can't take
+                  value:
+                    type: /v1/problems/voice-settings
+                    title: Voice or speed refused
+                    status: 422
+                unknownVoice:
+                  summary: A voice the text-to-speech service doesn't have
+                  value:
+                    type: /v1/problems/unknown-voice
+                    title: Unknown voice
+                    status: 422
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/sessions/{id}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: readSession
+      tags: [Sessions]
+      summary: Read a session with its turns
+      description: |
+        One session of the product's workspace, with every turn as the user heard it. A session still live holds the turns finished so far. The reply's length isn't capped. Another workspace's session is `404`.
+      security:
+        - productKey: [run_sessions]
+      responses:
+        "200":
+          description: The session.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PastSessionWithTurns"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/sessions/{id}/end:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: endSession
+      tags: [Sessions]
+      summary: End a session
+      description: |
+        Ends the session, and answers the same to a repeat. The browser ends its own session with its ticket, which works here for a while past its lifetime; the product's server ends any session of its workspace with its key. The session stays, to be read.
+      security:
+        - ticket: []
+        - productKey: [run_sessions]
+      responses:
+        "200":
+          description: The session, now carrying `ended_at`.
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: "#/components/headers/AnyOrigin"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/users/{user}/sessions:
+    get:
+      operationId: listUserSessions
+      tags: [Sessions]
+      summary: List a user's sessions
+      description: |
+        A page of the user's sessions, newest first, without their turns. A user the product never started a session for has an empty list. For the next page, send `before` with the last session's ID; a page shorter than `limit` is the last.
+      security:
+        - productKey: [run_sessions]
+      parameters:
+        - name: user
+          in: path
+          required: true
+          description: The product's own reference for the user, as sent at the start, percent-encoded as one path segment. One a start would refuse is `400`.
+          schema:
+            type: string
+        - name: before
+          in: query
+          description: A session ID; only sessions older than it are listed.
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          description: How many sessions to list, 1 to 100.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: The sessions, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PastSession"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/sessions/{id}/turns:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: takeTurn
+      tags: [Turns]
+      summary: Take a typed turn
+      description: |
+        The user's words in their session, the reply streamed back as server-sent events: `text` events as the reply arrives, then `done`, or `lost` when the reply didn't finish, its turn saved as lost. A turn refused before the stream starts is a problem with its status; once the stream has started its status is sent, so a failure ends it with a `lost` event instead.
+      security:
+        - ticket: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TurnRequest"
+      responses:
+        "200":
+          description: The reply as server-sent events. Each event's `data` is one JSON object.
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: "#/components/headers/AnyOrigin"
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Events of three kinds, each `event: <name>` then `data: <JSON>`:
+                  - `text`, with a TurnText, part of the reply;
+                  - `done`, with a TurnEnd, once the reply is whole;
+                  - `lost`, with a TurnEnd, when the reply stopped short; the object is empty when the turn's end couldn't be saved once its text had started, since only a turn saved as ended is named.
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: |
+            The turn can't be taken now. A first send refused because the session is answering another turn was not taken: send it again with a new `request_id` once the other turn ends. A retry of a send that may have been taken keeps its `request_id`, since its first try may be the turn in flight; once that finishes, the retry is answered `turn-repeated`. For the other types sending it again never helps.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                inFlight:
+                  summary: The session is answering another turn
+                  value:
+                    type: about:blank
+                    title: Conflict
+                    status: 409
+                    detail: the session is answering another turn
+                sessionEnded:
+                  summary: The session has ended
+                  value:
+                    type: /v1/problems/session-ended
+                    title: Session ended
+                    status: 409
+                turnRepeated:
+                  summary: The `request_id` already took a turn in this session
+                  value:
+                    type: /v1/problems/turn-repeated
+                    title: Turn already taken
+                    status: 409
+                openingRefused:
+                  summary: An opening the session doesn't take
+                  value:
+                    type: /v1/problems/opening-refused
+                    title: Opening refused
+                    status: 409
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /v1/sessions/{id}/audio:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: connectAudio
+      tags: [Audio]
+      summary: Set up the session's audio connection
+      description: |
+        The browser posts its SDP offer and gets the answer, the way WHIP (RFC 9725) does it. A newer connection replaces the session's old one on a server.
+      security:
+        - ticket: []
+      requestBody:
+        required: true
+        content:
+          application/sdp:
+            schema:
+              type: string
+              maxLength: 65536
+      responses:
+        "201":
+          description: The SDP answer. `Location` is the connection's own address, which `DELETE` ends.
+          headers:
+            Location:
+              description: The connection's address.
+              schema:
+                type: string
+            Access-Control-Allow-Origin:
+              $ref: "#/components/headers/AnyOrigin"
+          content:
+            application/sdp:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The session has ended (`/v1/problems/session-ended`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          description: The body wasn't sent as `application/sdp`.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          description: This server holds as many connections as it takes, is stopping, or cut the request short. Send the offer again; behind a load balancer the retry may reach another server.
+          headers:
+            Retry-After:
+              description: Seconds to wait before offering again; sent when the server is full.
+              schema:
+                type: integer
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /v1/sessions/{id}/audio/{conn}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - name: conn
+        in: path
+        required: true
+        description: The connection's ID, the last segment of the `Location` the connection was set up with.
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: hangUpAudio
+      tags: [Audio]
+      summary: End the audio connection
+      description: Ends that connection and no other.
+      security:
+        - ticket: []
+      responses:
+        "200":
+          description: The connection has ended.
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: "#/components/headers/AnyOrigin"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+webhooks:
+  session.ended:
+    post:
+      operationId: sessionEnded
+      summary: A session has ended
+      description: |
+        Once a session has ended and its summary is written, or has failed, voice-guide posts the session to the workspace's webhook URL. Answer with any 2xx within 15 seconds; a slower answer counts as none. Any other answer, or none, is sent again with the same `webhook-id` for about 15 hours, so drop an ID already handled. `410 Gone` stops deliveries until the URL is set again; that session, and any that end while deliveries are stopped, are never sent.
+
+        The signature is the Standard Webhooks scheme: the HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`, keyed with the bytes the base64 after `whsec_` in the signing secret decodes to, is the base64 after `v1,` in `webhook-signature`.
+      security: []
+      parameters:
+        - name: webhook-id
+          in: header
+          required: true
+          description: The delivery's ID, the same as the body's `id` and the same on every attempt.
+          schema:
+            type: string
+            format: uuid
+        - name: webhook-timestamp
+          in: header
+          required: true
+          description: When the attempt was made, in Unix seconds.
+          schema:
+            type: string
+        - name: webhook-signature
+          in: header
+          required: true
+          description: '`v1,` and the base64 signature.'
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Delivery"
+      responses:
+        "2XX":
+          description: The delivery is taken.
+        "410":
+          description: The product's server no longer wants deliveries.
+
+components:
+  securitySchemes:
+    productKey:
+      type: http
+      scheme: bearer
+      description: |
+        A product's key, for its server. It names a workspace and no user, and is refused when sent with an `Origin` header. It holds permissions, fixed when it is made, and each operation's security requirement names the one it needs:
+        - `run_sessions`, for running sessions: listing agents and voices, starting and ending sessions, and reading past ones;
+        - `publish_agents`, for the agent routes, the routes on one agent.
+
+        A key without the permission an operation needs is answered `403`. To change a key's permissions, make a new key and revoke the old one.
+    ticket:
+      type: http
+      scheme: bearer
+      description: The ticket voice-guide signed for one session, handed back when the session starts. It works only on that session's routes; any other session's path answers `404`.
+
+  parameters:
+    SessionId:
+      name: id
+      in: path
+      required: true
+      description: The session's ID. One that isn't a UUID, or isn't the ticket's session, answers `404`.
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    NoStore:
+      description: No cache along the way may keep the reply.
+      schema:
+        type: string
+        const: no-store
+    AnyOrigin:
+      description: A page on any site may call the route and read its answers, refusals included.
+      schema:
+        type: string
+        const: "*"
+
+  responses:
+    BadRequest:
+      description: The request can't be read as the route takes it; `detail` says what to fix.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unauthorized:
+      description: |
+        The credential is missing, wrong, of the other kind than the route takes, or revoked. `WWW-Authenticate` is sent. A ticket past its lifetime has its own type, `/v1/problems/ticket-expired`, so a page says the session has expired and starts a new one.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            invalid:
+              value:
+                type: about:blank
+                title: Unauthorized
+                status: 401
+                detail: the product key is invalid or revoked
+            ticketExpired:
+              value:
+                type: /v1/problems/ticket-expired
+                title: Ticket expired
+                status: 401
+                detail: the session's ticket has expired; start a new session
+    Forbidden:
+      description: |
+        The product key works but lacks the permission the route needs. `WWW-Authenticate` is `Bearer error="insufficient_scope"` with the permissions needed as `scope`, space-separated (RFC 6750), and `detail` names them too. Sending the key again never helps; a key made with the permission does.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          example: Bearer error="insufficient_scope", scope="run_sessions"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            detail: this route needs a product key with the run_sessions permission
+    NotFound:
+      description: No such resource in the caller's workspace or session, told the same whether it is missing or another's.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    TooLarge:
+      description: The body, or what it carries, is over its limit.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    ServerError:
+      description: A failure on the server, with no `detail`.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+    Unavailable:
+      description: A dependency couldn't be reached, or the request was cut short. Send the same request again.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+
+  schemas:
+    Problem:
+      description: A problem details document (RFC 9457).
+      type: object
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          description: '`about:blank`, or a reference relative to the API, `/v1/problems/<name>`, for an error a client must tell apart from another with the same status. Compare it as sent.'
+        title:
+          type: string
+          description: The status's name for `about:blank`, otherwise a summary of the type.
+        status:
+          type: integer
+        detail:
+          type: string
+          description: What to fix; left out of a `500`.
+
+    Document:
+      description: A named document of session context.
+      type: object
+      required: [name, content]
+      properties:
+        name:
+          type: string
+          description: A name the agent's file lists, in lower-case letters, digits and `_`.
+        content:
+          type: string
+          minLength: 1
+
+    ScreenInputBlock:
+      description: A named block of what the page's screen shows.
+      type: object
+      required: [name, content]
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{0,31}$"
+          not:
+            enum: [instructions, transcript, screen, documents]
+          description: Each name once in a turn.
+        content:
+          type: string
+          minLength: 1
+
+    Agent:
+      type: object
+      required: [id, name, description, session_context, summary_documents]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        session_context:
+          type: array
+          description: The names of the documents a start must send.
+          items:
+            type: string
+        summary_documents:
+          type: array
+          description: The names of the documents the summary reads; those not under `session_context` a start may also send.
+          items:
+            type: string
+
+    AgentVersion:
+      description: One version of an agent under its agent file's names and in its shapes, with the version's number and when it was published. A setting the file leaves out is `null`, so the server's own applies; a list it leaves out is empty.
+      type: object
+      required: [id, version, published_at, name, description, reads, session_context, summary, opens, model, voice, speed, persona]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+          description: The version's number, counted from 1 within the agent.
+        published_at:
+          type: string
+          format: date-time
+          description: When the version was saved, by the database's clock, in UTC.
+        name:
+          type: string
+        description:
+          type: string
+          description: Empty when the file has none.
+        reads:
+          type: array
+          description: The context kinds the agent may be given about a user.
+          items:
+            type: string
+        session_context:
+          type: array
+          description: The names of the documents a start must send.
+          items:
+            type: string
+        summary:
+          type: [object, "null"]
+          description: The summary section in the file's mapping form, even when the file wrote the instruction alone; null when the agent asks for no summary.
+          required: [instruction, model, schema, documents]
+          properties:
+            instruction:
+              type: string
+            model:
+              type: [string, "null"]
+              description: The model that writes the summary; null, the agent's own.
+            schema:
+              type: [object, "null"]
+              description: The JSON Schema of the summary's structured part, as its author wrote it; null for none.
+              additionalProperties: true
+            documents:
+              type: array
+              description: The names of the documents the summary reads.
+              items:
+                type: string
+        opens:
+          type: string
+          enum: [agent, user]
+          description: Who speaks first in the agent's sessions.
+        model:
+          type: [string, "null"]
+          description: The model that answers the agent's turns; null, the server's.
+        voice:
+          type: [string, "null"]
+          description: The voice its replies are spoken in, such as `af_heart`; null, the server's.
+        speed:
+          type: [number, "null"]
+          minimum: 0.5
+          maximum: 2
+          description: How fast the voice speaks, `1` its own pace; null, the server's.
+        persona:
+          type: string
+          description: The persona, sent to the model as written.
+
+    PublishedAgent:
+      description: The agent's version as `GET` answers it, and whether its voice was checked.
+      allOf:
+        - $ref: "#/components/schemas/AgentVersion"
+        - type: object
+          required: [voice_checked]
+          properties:
+            voice_checked:
+              type: boolean
+              description: "`true` when the voice was checked or the agent names none; `false` when the text-to-speech service couldn't be asked."
+    StartRequest:
+      type: object
+      required: [agent_id, request_id, user]
+      properties:
+        agent_id:
+          type: string
+          format: uuid
+        request_id:
+          type: string
+          format: uuid
+          description: Made by the product's server for each start. A repeat must carry the same `agent_id` and `session_context`.
+        user:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: The product's own stable ID for the user, not a name or an email address. Printable characters on one line, no space at either end, compared exactly as sent. The same ID is the same user every time.
+        session_context:
+          type: array
+          description: What the product already knows about the user, as named documents, each once and not empty. It holds every name the agent lists under `session_context`, and any it lists for the summary; any other name is refused.
+          items:
+            $ref: "#/components/schemas/Document"
+        voice:
+          type: string
+          pattern: "^[a-z]{2}_[a-z0-9]{1,32}$"
+          description: The voice replies are spoken in, overriding the agent's; a language and a style joined by an underscore. A name not on `GET /v1/voices` is refused.
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 2
+          description: How fast, `1` being the voice's own pace.
+
+    Session:
+      type: object
+      required: [id, agent_id, agent_version, started_at, voice, speed]
+      properties:
+        id:
+          type: string
+          format: uuid
+        agent_id:
+          type: string
+          format: uuid
+        agent_version:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        voice:
+          type: string
+          description: What every reply in the session is spoken in; a repeat of a start sees the first start's.
+        speed:
+          type: number
+        ended_at:
+          type: string
+          format: date-time
+          description: Left out while the session is live.
+
+    StartedSession:
+      allOf:
+        - $ref: "#/components/schemas/Session"
+        - type: object
+          properties:
+            ticket:
+              type: string
+              description: Left out once the session's tickets have expired.
+
+    TurnRequest:
+      type: object
+      required: [request_id]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+          description: New for each turn. A repeat of one already taken is refused.
+        words:
+          type: string
+          description: The user's words, within the configured limit. Required unless `screen_input` is sent or the turn is an opening, which carries none.
+        screen_input:
+          type: array
+          description: What the page's screen shows, as named text blocks; the agent reads the newest block of each name.
+          items:
+            $ref: "#/components/schemas/ScreenInputBlock"
+        opening:
+          type: boolean
+          description: Asks the agent to open the session, which it does only when it speaks first and the session has no turn yet; an opening carries no words.
+
+    TurnText:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+
+    TurnEnd:
+      type: object
+      properties:
+        turn_id:
+          type: string
+          format: uuid
+        seq:
+          type: integer
+        model:
+          type: string
+          description: The model that answered.
+
+    HeardTurn:
+      description: One turn as the user heard it.
+      type: object
+      required: [seq, words, reply, cut]
+      properties:
+        seq:
+          type: integer
+        words:
+          type: string
+          description: Empty for an opening.
+        reply:
+          type: string
+          description: The reply as far as the user heard it.
+        cut:
+          type: boolean
+          description: The user interrupted the reply.
+
+    SummaryStatus:
+      type: string
+      enum: [pending, written, none]
+      description: '`pending` from the end until the summary is written; then `written`, or `none` when none will come.'
+
+    PastSession:
+      description: A session as its product reads it later, the user by the product's own reference.
+      type: object
+      required: [id, user, agent_id, agent_version, started_at, ended_at, summary, summary_status, summary_data]
+      properties:
+        id:
+          type: string
+          format: uuid
+        user:
+          type: string
+        agent_id:
+          type: string
+          format: uuid
+        agent_version:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null while the session is live.
+        summary:
+          type: [string, "null"]
+          description: Null while the session is live, or when none was written.
+        summary_status:
+          oneOf:
+            - $ref: "#/components/schemas/SummaryStatus"
+            - type: "null"
+          description: Null while the session is live.
+        summary_data:
+          description: Null unless the agent's summary has a schema; then an object in that shape, as the model wrote it. Check its fields on the receiving side.
+          type: [object, "null"]
+          additionalProperties: true
+
+    PastSessionWithTurns:
+      allOf:
+        - $ref: "#/components/schemas/PastSession"
+        - type: object
+          required: [turns]
+          properties:
+            turns:
+              type: array
+              items:
+                $ref: "#/components/schemas/HeardTurn"
+
+    Delivery:
+      description: One ended session posted to the workspace's webhook.
+      type: object
+      required: [id, type, timestamp, data]
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The delivery's ID, the same as `webhook-id`.
+        type:
+          type: string
+          const: session.ended
+        timestamp:
+          type: string
+          format: date-time
+          description: When the session ended.
+        data:
+          allOf:
+            - $ref: "#/components/schemas/PastSession"
+            - type: object
+              required: [turns, turns_left_out]
+              properties:
+                ended_at:
+                  type: string
+                  format: date-time
+                summary_status:
+                  type: string
+                  enum: [written, none]
+                turns:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/HeardTurn"
+                turns_left_out:
+                  type: integer
+                  description: How many of the earliest turns the body leaves out to stay within 256 KiB; the summary and its data are never left out.

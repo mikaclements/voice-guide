@@ -262,3 +262,48 @@ func TestSavingToAWorkspaceThatDoesntExistSaysSo(t *testing.T) {
 		t.Errorf("Save = %v, want an error naming the missing workspace", err)
 	}
 }
+
+func TestTheCatalogReadsOneAgentsNewestVersionInItsOwnWorkspaceOnly(t *testing.T) {
+	ctx := context.Background()
+	s := storeWithWorkspaces(t)
+	keeper := agentNamed(keeperID, "Lighthouse keeper")
+	save(t, s, keeper, "first")
+	keeper.Persona = "You keep the light burning through the storm."
+	save(t, s, keeper, "second")
+	catalog := agents.NewCatalog(s)
+	if got, err := catalog.Newest(ctx, workspace, keeperID); err != nil || got.Number != 2 || got.Persona != keeper.Persona || got.PublishedAt.IsZero() {
+		t.Errorf("Newest = %+v, %v; want version 2 as saved, with when it was published", got, err)
+	}
+	if _, err := catalog.Newest(ctx, elsewhere, keeperID); !errors.Is(err, agents.ErrNotFound) {
+		t.Errorf("Newest from another workspace: err = %v; want ErrNotFound", err)
+	}
+}
+
+// Two copies of voice publishing one agent at once, as two requests to a product's key, take
+// turns on the agent's row: each gets its own number.
+func TestPublishesOfOneAgentAtOnceThroughThePublisherGetDistinctNumbers(t *testing.T) {
+	s := storeWithWorkspaces(t)
+	p := agents.NewPublisher(s, []string{"profile"}, nil)
+	numbers := make([]int, 2)
+	errs := make([]error, 2)
+	var wg sync.WaitGroup
+	for i := range numbers {
+		wg.Go(func() {
+			a := agentNamed(keeperID, "Lighthouse keeper")
+			a.Persona += string(rune('a' + i))
+			res, err := p.Publish(context.Background(), workspace, []agents.Agent{a})
+			if err == nil {
+				numbers[i] = res.Published[0].Number
+			}
+			errs[i] = err
+		})
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		t.Fatalf("Publish: %v", err)
+	}
+	slices.Sort(numbers)
+	if !slices.Equal(numbers, []int{1, 2}) {
+		t.Fatalf("numbers given = %v, want 1 and 2", numbers)
+	}
+}

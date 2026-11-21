@@ -7,6 +7,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 	"uuid"
 
 	"github.com/mikaclements/voice-guide/internal/agents"
@@ -71,7 +72,7 @@ func (f *Versions) Save(_ context.Context, workspace uuid.UUID, a agents.Agent, 
 		return len(h.versions), false, nil
 	}
 	n := len(h.versions) + 1
-	h.versions = append(h.versions, clone(agents.Version{Agent: a, Number: n}))
+	h.versions = append(h.versions, clone(agents.Version{Agent: a, Number: n, PublishedAt: time.Now()}))
 	h.hashes = append(h.hashes, hash)
 	return n, true, nil
 }

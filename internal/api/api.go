@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -72,7 +73,8 @@ type Router struct {
 	keys   *productkey.Keys
 	now    func() time.Time
 	log    *slog.Logger
-	client *client // the drop-in client, when served
+	client *client  // the drop-in client, when served
+	routes []string // each pattern registered, in order
 }
 
 // route is a registered route's handler, marked when a page on any site may
@@ -132,6 +134,8 @@ type takes struct {
 	// pastLifetime: a ticket voice-guide signed shortly past its lifetime
 	// too, on the session's end, so the session can still end at once.
 	pastLifetime bool
+	// need: the permissions a key must hold, when keys are taken.
+	need access.Permissions
 }
 
 // HandleTicket registers h for the pattern behind the credential check and a
@@ -147,20 +151,33 @@ func (rt *Router) HandleTicket(pattern string, timeout time.Duration, h Handler)
 // does, with two differences. The session's ticket works there for a while
 // past its lifetime, so a page learning its ticket ran out, or a user who
 // stayed on, ends the session at once and its summary runs, rather than when
-// the idle sweep finds it. And the product's server may call it with its key,
-// to end any session of its workspace, as when a ticket was stolen.
-func (rt *Router) HandleSessionEnd(pattern string, timeout time.Duration, h Handler) {
-	rt.handle(pattern, timeout, takes{tickets: true, pastLifetime: true, keys: true}, h)
+// the idle sweep finds it. And the product's server may call it with a key
+// holding need, to end any session of its workspace, as when a ticket was
+// stolen.
+func (rt *Router) HandleSessionEnd(pattern string, timeout time.Duration, need access.Permissions, h Handler) {
+	rt.handle(pattern, timeout, takes{tickets: true, pastLifetime: true, keys: true, need: need}, h)
 }
 
 // HandleProduct registers h for a route a product's server calls: it takes
-// the product's key, naming the workspace and no user, and never a ticket. It
-// too has a deadline of its own.
-func (rt *Router) HandleProduct(pattern string, timeout time.Duration, h Handler) {
-	rt.handle(pattern, timeout, takes{keys: true}, h)
+// the product's key, naming the workspace and no user, and never a ticket, and
+// only a key holding need. It too has a deadline of its own.
+func (rt *Router) HandleProduct(pattern string, timeout time.Duration, need access.Permissions, h Handler) {
+	rt.handle(pattern, timeout, takes{keys: true, need: need}, h)
 }
 
+// Routes returns the method and path pattern of every route registered, such as
+// "GET /v1/agents", so a test can hold the published description of the API
+// to the routes the router really serves, without reading the code that
+// registers them. The drop-in client's path is not among them: it is no route
+// of the API.
+func (rt *Router) Routes() []string { return slices.Clone(rt.routes) }
+
 func (rt *Router) handle(pattern string, timeout time.Duration, what takes, h Handler) {
+	if what.keys && what.need == 0 {
+		// A route any key could call would let a key made for one kind of route reach every other.
+		panic("api: " + pattern + " takes a product key but needs no permission")
+	}
+	rt.routes = append(rt.routes, pattern)
 	// A route that takes a ticket is one a page calls, from whatever site embeds it.
 	rt.mux.Handle(pattern, route{anyOrigin: what.tickets, serve: func(w http.ResponseWriter, r *http.Request) {
 		if what.tickets {
@@ -310,7 +327,7 @@ func (rt *Router) authenticate(w http.ResponseWriter, r *http.Request, what take
 	if r.Header.Get("Origin") != "" {
 		return refuse("a product key sent from a page", "a product key is for the product's server, never a page")
 	}
-	ws, err := rt.keys.Workspace(r.Context(), productkey.NewKey(raw))
+	k, err := rt.keys.Find(r.Context(), productkey.NewKey(raw))
 	switch {
 	case errors.Is(err, productkey.ErrUnknown):
 		return refuse(err.Error(), "the product key is invalid or revoked")
@@ -319,8 +336,16 @@ func (rt *Router) authenticate(w http.ResponseWriter, r *http.Request, what take
 		rt.log.ErrorContext(r.Context(), "check a product key", "err", err)
 		rt.Problem(w, r, http.StatusServiceUnavailable, "the product key couldn't be checked; retry")
 		return access.Caller{}, false
+	case !k.Permissions.Has(what.need):
+		// 403, not 401, as RFC 6750 asks: the key works, and sending it again never will here; the
+		// product uses a key made with the permission named.
+		rt.log.InfoContext(r.Context(), "credential refused", "reason", "a product key without the route's permission", "needs", what.need.String())
+		// RFC 6750 lists the scope as space-separated names.
+		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="`+strings.Join(what.need.Names(), " ")+`"`)
+		rt.Problem(w, r, http.StatusForbidden, "this route needs a product key with the "+what.need.String()+" permission")
+		return access.Caller{}, false
 	}
-	return access.Caller{Workspace: ws, Product: true}, true
+	return access.Caller{Workspace: k.Workspace, Product: true, Permissions: k.Permissions}, true
 }
 
 // PathID reads the ID in the request's path at name. One that isn't a UUID

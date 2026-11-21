@@ -106,13 +106,15 @@ Conversation and speech together are voice: the part of voice-guide that gives a
 <a id="embedding"></a>
 ## Put an agent on a product
 
-A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in client. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half.
+A product puts an agent on its page in two halves. Its server starts each session with the product key. Its page holds the conversation with the drop-in client. The page gets only the session's `id` and `ticket`, never the key. `examples/job-board/server.mjs` is a working server half. `api/openapi.yaml` describes every route and the webhook, in OpenAPI, so a product can generate its client types from it.
 
 `scripts/product-key.sh`, `scripts/webhook.sh` and `scripts/workspace.sh`, below, need Go. They act on the database `scripts/run.sh` uses, not on `scripts/up.sh`'s. So start `scripts/run.sh` before using them: under `scripts/up.sh`, a key `scripts/product-key.sh` made is refused with `401`.
 
 ### Start a session from the product's server
 
-The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. On your machine, `VOICE_DEV_PRODUCT_KEY` in `.env` works too, under either `scripts/up.sh` or `scripts/run.sh`. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
+The server sends its product key as a bearer credential. `scripts/product-key.sh create` prints a new key, the only time it's shown. On your machine, `VOICE_DEV_PRODUCT_KEY` in `.env` works too, under either `scripts/up.sh` or `scripts/run.sh`.
+
+A key holds permissions, fixed when it's made. `run_sessions` lets it list agents and voices, start and end sessions and read past ones; `publish_agents` lets it publish the workspace's agents and read them back. `create` makes a key that runs sessions; `scripts/product-key.sh create --permissions publish_agents` makes one that only publishes, and `--permissions run_sessions,publish_agents` one that does both. Give the product's running server a `run_sessions` key alone, and its deploy step, which publishes agents with `PUT`, a `publish_agents` key, so a leaked server key can't change what an agent says. A key without the permission a route needs is refused with `403`. To change a key's permissions, make a new key and revoke the old one. `VOICE_DEV_PRODUCT_KEY` holds both. Below, `voice.example.com` stands for where voice-guide runs: http://127.0.0.1:8080 on your machine. Each `<...>` is a placeholder.
 
 ```sh
 curl https://voice.example.com/v1/sessions \
@@ -265,6 +267,38 @@ The reply lists the user's sessions, newest first, without their turns:
 - `GET /v1/sessions/<session ID>` reads one session of the product's workspace with every turn, as a delivery's `data` holds it: the same fields, plus `turns` as the user heard them, and no `turns_left_out`, since the whole session comes back. A long session makes a long reply, about 220 KiB for two hours of talk. Another workspace's session is `404`.
 - `summary_status` is `pending` from the end until the summary is written, some seconds, longer on a slow summary model; then `written`, or `none` when none will come: the agent asks for none, the user said nothing, or writing it failed. Read the session again while it is `pending`, waiting longer each time: when writing fails, it is tried again for about 15 minutes before the status turns `none`.
 - A live session has `ended_at`, `summary` and `summary_status` null, and holds the turns finished so far.
+
+### Publish an agent
+
+A key holding `publish_agents` publishes one of the workspace's agents from its file. The file's `id` must be the one in the path:
+
+```sh
+curl -X PUT https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a90cc \
+  -H "Authorization: Bearer $KEY" \
+  -H 'Content-Type: text/markdown' \
+  --data-binary @agents/mock-interviewer.md
+```
+
+Send the file with `--data-binary`, never `-d`, which strips its newlines. `201` means the file is a new version and `200` that it is the newest already, so nothing was saved; treat both as success. The answer is the version as [reading an agent](#read-an-agent) gives it, plus `voice_checked`: `true` when the agent's voice was checked or it names none, `false` when the text-to-speech service couldn't be asked whether it has the voice (the agent was published all the same).
+
+Problems are problem details documents:
+- `415`: the `Content-Type` isn't `text/markdown`.
+- `413`: the file is over 256 KiB.
+- `422`: the file is empty, isn't UTF-8, breaks a rule of the agent file (the detail says which), or has an `id` other than the path's; of type `/v1/problems/unknown-voice` when the text-to-speech service doesn't offer the voice.
+- `409`: another workspace uses that ID. Pick a new one: a file copied from someone else's keeps their ID.
+- `403`: the key lacks `publish_agents`. `503`: the database couldn't be reached; send it again.
+
+<a id="read-an-agent"></a>
+### Read an agent
+
+A key holding `publish_agents` reads one of the workspace's agents at its newest version:
+
+```sh
+curl https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a90cc \
+  -H "Authorization: Bearer <product key with publish_agents>"
+```
+
+It answers with the agent as its file wrote it, under the settings block's names: `id`, `name`, `description`, `reads`, `session_context`, `summary`, `opens`, `model`, `voice`, `speed` and `persona`, plus `version`, its number, and `published_at`, in UTC. `summary` is the mapping form, `{"instruction", "model", "schema", "documents"}`, even when the file wrote the instruction alone, and `opens` is `"agent"` or `"user"`. A setting the file leaves out is `null` (`summary`, `model`, `voice`, `speed`, and `model` and `schema` within `summary`), so the server's own applies; a list it leaves out is `[]`, and a missing `description` is `""`. Another workspace's agent, or one never published, is `404`; a key without `publish_agents` is `403`.
 
 <a id="new-workspace"></a>
 ### One workspace for each product

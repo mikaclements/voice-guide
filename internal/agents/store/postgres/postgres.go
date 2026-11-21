@@ -44,6 +44,7 @@ func (s *Versions) Newest(ctx context.Context, workspace uuid.UUID) ([]agents.Ve
 		}
 		out[i] = version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
 		out[i].SummaryModel, out[i].SummarySchema, out[i].SummaryDocuments = r.SummaryModel, schema, r.SummaryDocuments
+		out[i].PublishedAt = r.CreatedAt
 	}
 	return out, nil
 }
@@ -66,6 +67,7 @@ func (s *Versions) Version(ctx context.Context, workspace, agent uuid.UUID, numb
 	}
 	v := version(r.AgentID, r.Version, r.Name, r.Description, r.Reads, r.SessionContext, r.Persona, r.Summary, r.Opens, r.Model, r.Voice, r.Speed)
 	v.SummaryModel, v.SummarySchema, v.SummaryDocuments = r.SummaryModel, schema, r.SummaryDocuments
+	v.PublishedAt = r.CreatedAt
 	return v, nil
 }
 

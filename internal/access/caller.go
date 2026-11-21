@@ -27,6 +27,9 @@ type Caller struct {
 	Expires time.Time
 	// Product says the caller is a product's server, proven by its key.
 	Product bool
+	// Permissions is what the product's key lets it do; none for a ticket,
+	// which works only in its own session.
+	Permissions Permissions
 }
 
 // ExpiredAt reports whether the caller's ticket has expired by now. It is for

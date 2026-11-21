@@ -2,8 +2,10 @@
 // workspace VOICE_WORKSPACE_ID, until members manage them. Use it through
 // scripts/product-key.sh:
 //
-//	create         prints a new key, the only time it is shown
-//	list           each key's ID, first characters, and when it was made and revoked
+//	create [--permissions run_sessions,publish_agents]
+//	               prints a new key, the only time it is shown, holding the permissions
+//	               named, run_sessions unless any are; they never change
+//	list           each key's ID, first characters, permissions, and when it was made and revoked
 //	revoke ID      refuses the key from now on, warning when no working key is left;
 //	               a start already past its key check finishes, and sessions go on
 package main
@@ -11,17 +13,22 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 	"uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/productkey"
 	"github.com/mikaclements/voice-guide/internal/productkey/store/postgres"
 )
+
+const usage = "usage: productkey create [--permissions run_sessions,publish_agents] | list | revoke ID"
 
 // timeout bounds a command, a query or two, so a database that never answers
 // fails it rather than hanging: a round guess.
@@ -40,7 +47,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out io.
 		return fmt.Errorf("VOICE_WORKSPACE_ID: %w", err)
 	}
 	if len(args) == 0 {
-		return errors.New("usage: productkey create | list | revoke ID")
+		return errors.New(usage)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -56,8 +63,18 @@ func run(ctx context.Context, args []string, getenv func(string) string, out io.
 func command(ctx context.Context, keys *productkey.Keys, workspace uuid.UUID, args []string, out io.Writer) error {
 	switch {
 	case len(args) == 0:
-	case args[0] == "create" && len(args) == 1:
-		key, _, err := keys.Create(ctx, workspace)
+	case args[0] == "create":
+		flags := flag.NewFlagSet("create", flag.ContinueOnError)
+		flags.SetOutput(io.Discard) // the usage below says it instead
+		names := flags.String("permissions", "run_sessions", "")
+		if err := flags.Parse(args[1:]); err != nil || flags.NArg() > 0 {
+			return errors.New(usage)
+		}
+		permissions, err := access.ParsePermissions(strings.Split(*names, ","))
+		if err != nil {
+			return err
+		}
+		key, _, err := keys.Create(ctx, workspace, permissions)
 		if err != nil {
 			return err
 		}
@@ -73,7 +90,7 @@ func command(ctx context.Context, keys *productkey.Keys, workspace uuid.UUID, ar
 			if !r.RevokedAt.IsZero() {
 				revoked = "revoked " + r.RevokedAt.UTC().Format(time.RFC3339)
 			}
-			if _, err := fmt.Fprintf(out, "%s  %s…  made %s  %s\n", r.ID, r.Display, r.CreatedAt.UTC().Format(time.RFC3339), revoked); err != nil {
+			if _, err := fmt.Fprintf(out, "%s  %s…  %s  made %s  %s\n", r.ID, r.Display, r.Permissions, r.CreatedAt.UTC().Format(time.RFC3339), revoked); err != nil {
 				return err
 			}
 		}
@@ -102,5 +119,5 @@ func command(ctx context.Context, keys *productkey.Keys, workspace uuid.UUID, ar
 		}
 		return err
 	}
-	return errors.New("usage: productkey create | list | revoke ID")
+	return errors.New(usage)
 }
