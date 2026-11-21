@@ -279,7 +279,7 @@ curl -X PUT https://voice.example.com/v1/agents/01a1de84-fbfc-7758-9af4-3ced6d8a
   --data-binary @agents/mock-interviewer.md
 ```
 
-Send the file with `--data-binary`, never `-d`, which strips its newlines. `201` means the file is a new version and `200` that it is the newest already, so nothing was saved; treat both as success. The answer is the version as [reading an agent](#read-an-agent) gives it, plus `voice_checked`: `false` when the text-to-speech service couldn't be asked whether it has the agent's voice, and the agent was published all the same.
+Send the file with `--data-binary`, never `-d`, which strips its newlines. `201` means the file is a new version and `200` that it is the newest already, so nothing was saved; treat both as success. The answer is the version as [reading an agent](#read-an-agent) gives it, plus `voice_checked`: `true` when the agent's voice was checked or it names none, `false` when the text-to-speech service couldn't be asked whether it has the voice (the agent was published all the same).
 
 Problems are problem details documents:
 - `415`: the `Content-Type` isn't `text/markdown`.

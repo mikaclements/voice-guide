@@ -98,7 +98,7 @@ paths:
       tags: [Agents]
       summary: Publish an agent from its file
       description: |
-        The body is the agent's file, Markdown opening with its settings block, sent as `text/markdown` (RFC 7763; a charset is allowed). Send it as it is on disk: with `curl`, `--data-binary @file`, never `-d`, which strips the newlines. The file's `id` must be the path's. It is checked as the publish script checks it, then saved as the agent's next version if it differs from the newest, in the key's workspace only. `201` is a new version and `200` is the newest already, with nothing saved; both are success. `voice_checked` is `false` when the text-to-speech service couldn't be asked whether it has the agent's voice, and the agent was published all the same.
+        The body is the agent's file, Markdown opening with its settings block, sent as `text/markdown` (RFC 7763; a charset is allowed). Send it as it is on disk: with `curl`, `--data-binary @file`, never `-d`, which strips the newlines. The file's `id` must be the path's. It is checked as the publish script checks it, then saved as the agent's next version if it differs from the newest, in the key's workspace only. `201` is a new version and `200` is the newest already, with nothing saved; both are success. `voice_checked` is `true` when the agent's voice was checked or it names none, and `false` when the text-to-speech service couldn't be asked whether it has the voice; the agent was published all the same.
       security:
         - productKey: [publish_agents]
       requestBody:
@@ -860,7 +860,7 @@ components:
           properties:
             voice_checked:
               type: boolean
-              description: "`false` when the text-to-speech service couldn't be asked whether it has the agent's voice."
+              description: "`true` when the voice was checked or the agent names none; `false` when the text-to-speech service couldn't be asked."
     StartRequest:
       type: object
       required: [agent_id, request_id, user]
