@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -238,6 +238,52 @@ test("a save replaces the local file whole and answers when it was modified", as
   const reopened = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
   assert.equal(JSON.parse(res.body).modified, reopened.modified);
   assert.deepEqual(await readdir(f.local), ["coach.md"], "no temp file left behind");
+});
+
+test("a second save takes the time the first answered, so it isn't refused as changed on disk", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", "first");
+  const route = routes(f, voice(notFound).fetcher);
+  let { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
+  for (const content of ["second", "third"]) {
+    const res = await send(route, "/agent-file", "PUT", { path: "coach.md", content, modified });
+    assert.equal(res.statusCode, 200, content);
+    ({ modified } = JSON.parse(res.body));
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "third");
+});
+
+test("a save over voice's 256 KiB cap is refused, nothing written", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", "on disk");
+  const route = routes(f, voice(notFound).fetcher);
+  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
+  const content = "x".repeat(256 * 1024 + 1);
+  const res = await send(route, "/agent-file", "PUT", { path: "coach.md", content, modified });
+  assert.equal(res.statusCode, 413);
+  assert.match(res.body, /256 KiB/);
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "on disk");
+});
+
+test("a save that fails to write leaves the old file whole and no temp file behind", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root writes into a folder it may not");
+  const f = await folders(t);
+  await localFile(f, "coach.md", "on disk");
+  const route = routes(f, voice(notFound).fetcher);
+  const { modified } = JSON.parse((await send(route, "/agent-file?path=coach.md", "GET")).body);
+  await chmod(f.local, 0o555);
+  try {
+    const res = await send(route, "/agent-file", "PUT", {
+      path: "coach.md",
+      content: "new",
+      modified,
+    });
+    assert.equal(res.statusCode, 500);
+  } finally {
+    await chmod(f.local, 0o755);
+  }
+  assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), "on disk");
+  assert.deepEqual(await readdir(f.local), ["coach.md"]);
 });
 
 test("a save of a file changed on disk since it was opened is refused, nothing written", async (t) => {
