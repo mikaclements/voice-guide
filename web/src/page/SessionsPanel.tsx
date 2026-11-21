@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
   type Agent,
   contextFor,
@@ -19,6 +19,10 @@ const fastest = 2;
 const when = (t: string) => `${t.replace("T", " ").slice(0, 19)} UTC`;
 
 export type StartFormProps = {
+  agents: Agent[];
+  agentId: string;
+  // Whether a session was started on this page, so Start starts another.
+  started: boolean;
   voices: string[];
   voice: string;
   speed: string;
@@ -27,6 +31,7 @@ export type StartFormProps = {
   // What loading the voices or the documents failed with, and what the last start failed with.
   errors: string[];
   on: {
+    agent(id: string): void;
     voice(voice: string): void;
     speed(speed: string): void;
     document(name: string, content: string): void;
@@ -34,10 +39,10 @@ export type StartFormProps = {
   };
 };
 
-// The settings a start may carry beyond the agent: the voice and speed it speaks in, and the
-// documents of session context, which start as the placeholder user's files.
+// What a start carries: the agent, the voice and speed it speaks in, and the documents of session
+// context, which start as the placeholder user's files; one Start sends them.
 export function StartForm(props: StartFormProps) {
-  const { voices, voice, speed, documents, busy, errors, on } = props;
+  const { agents, agentId, started, voices, voice, speed, documents, busy, errors, on } = props;
   const n = Number(speed);
   const badSpeed = speed.trim() !== "" && !(n >= slowest && n <= fastest);
   return (
@@ -47,7 +52,20 @@ export function StartForm(props: StartFormProps) {
         on.start();
       }}
     >
-      <h2>Start with settings</h2>
+      <div className="row">
+        <select
+          aria-label="Agent to start"
+          value={agentId}
+          onChange={(e) => on.agent(e.target.value)}
+          disabled={busy}
+        >
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </div>
       <div className="row">
         <select value={voice} onChange={(e) => on.voice(e.target.value)} disabled={busy}>
           <option value="">The agent's voice</option>
@@ -88,8 +106,8 @@ export function StartForm(props: StartFormProps) {
         </label>
       ))}
       <div className="row">
-        <button type="submit" disabled={busy || badSpeed}>
-          Start with these
+        <button type="submit" disabled={busy || badSpeed || !agentId}>
+          {started ? "Start again" : "Start"}
         </button>
       </div>
     </form>
@@ -135,15 +153,19 @@ export function PastSessions(props: PastSessionsProps) {
 
 // The sessions panel: it loads the voices, the documents the chosen agent asks for and the past
 // sessions from the page's dev server, and hands a start with the settings to the page's own start.
+// children, the session started, show between the start form and the past sessions.
 export function SessionsPanel(props: {
   agents: Agent[];
   agentId: string;
+  onAgent(id: string): void;
+  started: boolean;
   busy: boolean;
   start(options: StartOptions): void;
   // What the last start failed with, shown here beside the form that sent it.
   error: string;
+  children?: ReactNode;
 }) {
-  const { agents, agentId, busy, start, error } = props;
+  const { agents, agentId, onAgent, started, busy, start, error, children } = props;
   const [voices, setVoices] = useState<string[]>([]);
   const [voice, setVoice] = useState("");
   const [speed, setSpeed] = useState("");
@@ -194,8 +216,10 @@ export function SessionsPanel(props: {
   return (
     <>
       <StartForm
-        {...{ voices, voice, speed, documents, busy, errors: [voicesError, documentsError, error] }}
+        {...{ agents, agentId, started, voices, voice, speed, documents, busy }}
+        errors={[voicesError, documentsError, error]}
         on={{
+          agent: onAgent,
           voice: setVoice,
           speed: setSpeed,
           document: (name, content) =>
@@ -203,6 +227,7 @@ export function SessionsPanel(props: {
           start: () => start(startOptions(voice, speed, documents)),
         }}
       />
+      {children}
       <PastSessions
         {...{ sessions, loading, error: listError, refresh }}
         agentName={(id) => agents.find((a) => a.id === id)?.name ?? id}

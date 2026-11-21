@@ -112,29 +112,30 @@ export function App() {
     <main>
       <Tabs tab={tab} />
       <div hidden={tab !== "test"}>
-        <SessionView
-          {...{ agents, agentId, session, shown, words, starting, error }}
-          on={{
-            agent: setAgentId,
-            start: () => start(),
-            // A failed End shows in the session's notes, and leaves it live to press again.
-            end: act(() => joined.current?.end().catch(() => {})),
-            mute: act(() => joined.current?.mute()),
-            playAfterPress: act(() => joined.current?.playAfterPress()),
-            words: setWords,
-            send: (e) => {
-              e.preventDefault();
-              setError("");
-              if (joined.current?.send(words)) setWords("");
-            },
-          }}
-        />
         <SessionsPanel
           {...{ agents, agentId }}
+          onAgent={setAgentId}
+          started={Boolean(session)}
           busy={starting || Boolean(shown?.busy)}
           start={start}
           error={error}
-        />
+        >
+          <SessionView
+            {...{ agents, session, shown, words, starting, error }}
+            on={{
+              // A failed End shows in the session's notes, and leaves it live to press again.
+              end: act(() => joined.current?.end().catch(() => {})),
+              mute: act(() => joined.current?.mute()),
+              playAfterPress: act(() => joined.current?.playAfterPress()),
+              words: setWords,
+              send: (e) => {
+                e.preventDefault();
+                setError("");
+                if (joined.current?.send(words)) setWords("");
+              },
+            }}
+          />
+        </SessionsPanel>
       </div>
       <div hidden={tab !== "agents"}>
         <AgentsPanel onPublished={loadAgents} />
@@ -163,45 +164,32 @@ function beneath(m: ReplyMeta): string {
 // What the page draws, and the presses it hands on.
 export type SessionViewProps = {
   agents: Agent[];
-  agentId: string;
   session?: Session;
   shown?: Shown;
   words: string;
   starting: boolean;
   error: string;
-  on: Record<"start" | "end" | "mute" | "playAfterPress", () => void> & {
-    agent(id: string): void;
+  on: Record<"end" | "mute" | "playAfterPress", () => void> & {
     words(words: string): void;
     send(e: FormEvent): void;
   };
 };
 
 export function SessionView(props: SessionViewProps) {
-  const { agents, agentId, session, shown, words, starting, error, on } = props;
+  const { agents, session, shown, words, starting, error, on } = props;
   const busy = starting || Boolean(shown?.busy);
   const locked = shown?.locked ?? true;
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
   return (
     <section>
-      <div className="row">
-        <select value={agentId} onChange={(e) => on.agent(e.target.value)} disabled={busy}>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={on.start} disabled={busy || !agentId}>
-          {session ? "Start again" : "Start"}
-        </button>
-        {shown && !shown.over && (
+      {shown && !shown.over && (
+        <div className="row">
           <button type="button" onClick={on.end} disabled={busy}>
             End
           </button>
-        )}
-      </div>
+        </div>
+      )}
       {!agents.length && !error && <p className="meta">Loading agents…</p>}
-      {error && <div className="error">{error}</div>}
       {shown?.notes.map((n) => (
         <p className="meta" key={n}>
           {n}

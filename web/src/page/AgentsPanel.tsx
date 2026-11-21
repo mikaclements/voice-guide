@@ -1,5 +1,16 @@
 import { type ChangeEvent, type ReactNode, useEffect, useState } from "react";
-import { type AgentForm, copyForm, formFrom, newForm, settingsFrom } from "./agentForm.ts";
+import {
+  type AgentForm,
+  agentModels,
+  cloneForm,
+  droppedDocuments,
+  formFrom,
+  isSpeed,
+  modelChoice,
+  newForm,
+  settingsFrom,
+  summaryModels,
+} from "./agentForm.ts";
 import {
   type AgentFile,
   type AgentFiles,
@@ -23,7 +34,7 @@ type Published = { version: number; published_at: string } | null;
 
 // The Agents tab: a dropdown of every agent file, and a form of the picked agent's settings as voice
 // holds them, which Publish writes to the agent's file and publishes. A shipped agent shows
-// read-only, to copy into a test agent, so the page never edits a tracked file. onPublished is told
+// read-only, to clone into a test agent, so the page never edits a tracked file. onPublished is told
 // after each publish, since a first one adds an agent a session can start with.
 export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
   const [list, setList] = useState<AgentFiles>();
@@ -54,7 +65,11 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
     listVoices().then(setVoices, () => {});
   }, []);
 
+  // Counts each time the form is filled from outside the fields, so a field's own choices, such as
+  // Other for a model, start afresh with what was filled.
+  const [fills, setFills] = useState(0);
   function show(filled: AgentForm | undefined, voiceHolds: Published | undefined) {
+    setFills((n) => n + 1);
     setBase(filled);
     setForm(filled);
     setPublished(voiceHolds);
@@ -77,7 +92,7 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
 
   return (
     <AgentsView
-      {...{ list, voices, picked, form, published, busy, result, error }}
+      {...{ list, voices, picked, form, published, busy, result, error, fills }}
       dirty={JSON.stringify(form) !== JSON.stringify(base)}
       on={{
         pick: (path) => {
@@ -120,13 +135,13 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
         revert: () =>
           run(async () => {
             if (file) fill(await readAgent(file.id));
-            else setForm(base);
+            else show(base, null);
             return "";
           }),
-        copy: () => {
+        clone: () => {
           if (!form) return;
           setPicked(newAgent);
-          show(copyForm(form), null);
+          show(cloneForm(form), null);
           setResult("");
         },
         publishFile: () =>
@@ -158,18 +173,20 @@ export type AgentsViewProps = {
   form?: AgentForm;
   // Whether the form holds edits not yet published.
   dirty: boolean;
+  // How many times the form was filled from outside its fields.
+  fills?: number;
   published?: Published;
   busy: boolean;
   result: string;
   error: string;
-  on: Record<"publish" | "revert" | "copy" | "publishFile", () => void> & {
+  on: Record<"publish" | "revert" | "clone" | "publishFile", () => void> & {
     pick(path: string): void;
     form(form: AgentForm): void;
   };
 };
 
 export function AgentsView(props: AgentsViewProps) {
-  const { list, voices, picked, form, dirty, published, busy, result, error, on } = props;
+  const { list, voices, picked, form, dirty, fills, published, busy, result, error, on } = props;
   const file = list?.files.find((f) => f.path === picked);
   const shipped = file?.folder === "shipped";
   return (
@@ -197,7 +214,6 @@ export function AgentsView(props: AgentsViewProps) {
       {file && (
         <p className="meta">
           {`${folders[file.folder]}${file.path}`}
-          {shipped && ", shipped: read-only here"}
           {file.same_id_as.length > 0 &&
             ` · same id as ${file.same_id_as.map((o) => folders[o.folder] + o.path).join(", ")}, so neither is published until one gets a new id`}
         </p>
@@ -221,7 +237,21 @@ export function AgentsView(props: AgentsViewProps) {
             {`The file changed after version ${published.version} was published: to keep edits made there, use Publish the file as it is, or Publish overwrites them.`}
           </p>
         )}
-      {form && <Fields form={form} voices={voices} readOnly={shipped} busy={busy} on={on.form} />}
+      {form && shipped && (
+        <p>
+          <strong>Shipped agent: read-only here.</strong> Clone it to make your own.
+        </p>
+      )}
+      {form && (
+        <Fields
+          key={fills}
+          form={form}
+          voices={voices}
+          readOnly={shipped}
+          busy={busy}
+          on={on.form}
+        />
+      )}
       {(form || file) && (
         <div className="row">
           {form && !shipped && (
@@ -234,9 +264,9 @@ export function AgentsView(props: AgentsViewProps) {
               </button>
             </>
           )}
-          {form && shipped && (
-            <button type="button" onClick={on.copy} disabled={busy}>
-              Copy to a test agent
+          {form && file && (
+            <button type="button" onClick={on.clone} disabled={busy || dirty}>
+              Clone
             </button>
           )}
           {file && (
@@ -272,42 +302,88 @@ function Fields(props: {
 }) {
   const { form, voices, readOnly, busy, on } = props;
   type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
-  const field = (key: keyof AgentForm) => ({
+  const field = (key: Exclude<keyof AgentForm, "summaryDocuments">) => ({
     id: `agent-${key}`,
     value: form[key],
     onChange: (e: ChangeEvent<Field>) => on({ ...form, [key]: e.target.value }),
   });
-  const text = (key: keyof AgentForm) => ({ ...field(key), readOnly });
+  // Typed as text, so a half-typed number is said rather than read as empty, the server's speed.
+  const badSpeed = form.speed.trim() !== "" && !isSpeed(Number(form.speed));
   // The agent's own voice stays a choice when voice-guide's list lacks it or couldn't be read.
   const offered = [...new Set([form.voice, ...voices])].filter(Boolean);
+  const context = form.sessionContext
+    .split(",")
+    .map((n) => n.trim())
+    .filter(Boolean);
+  const dropped = droppedDocuments(form);
+  const check = (name: string, checked: boolean) =>
+    on({
+      ...form,
+      summaryDocuments: checked
+        ? [...form.summaryDocuments, name]
+        : form.summaryDocuments.filter((d) => d !== name),
+    });
   return (
-    <fieldset className="fields" disabled={busy}>
+    // A read-only form disables every field, so none looks editable.
+    <fieldset className="fields" disabled={busy || readOnly}>
       <Row id="agent-name" label="Name">
-        <input {...text("name")} />
+        <input {...field("name")} />
       </Row>
       <Row id="agent-description" label="Description">
-        <textarea {...text("description")} rows={2} />
+        <textarea {...field("description")} rows={2} />
       </Row>
       <Row id="agent-reads" label="Reads">
-        <input {...text("reads")} placeholder="Context kinds, comma-separated" />
+        <input {...field("reads")} placeholder="Context kinds, comma-separated" />
       </Row>
       <Row id="agent-sessionContext" label="Session context">
-        <input {...text("sessionContext")} placeholder="Documents a start sends, comma-separated" />
+        <input
+          {...field("sessionContext")}
+          placeholder="Documents a start sends, comma-separated"
+        />
       </Row>
       <fieldset className="group">
         <legend>Summary</legend>
         <Row id="agent-summaryInstruction" label="Instruction">
-          <textarea {...text("summaryInstruction")} rows={4} placeholder="Empty for no summary" />
+          <textarea {...field("summaryInstruction")} rows={4} placeholder="Empty for no summary" />
         </Row>
         <Row id="agent-summaryModel" label="Model">
-          <input {...text("summaryModel")} placeholder="Empty for the agent's model" />
+          <ModelField
+            id="agent-summaryModel"
+            value={form.summaryModel}
+            listed={summaryModels}
+            empty="The agent's model"
+            label="The summary's model name"
+            on={(summaryModel) => on({ ...form, summaryModel })}
+          />
         </Row>
-        <Row id="agent-summaryDocuments" label="Documents">
-          <input {...text("summaryDocuments")} placeholder="Comma-separated" />
+        <span className="label">Documents</span>
+        <div className="choices">
+          {context.map((name) => (
+            <label key={name}>
+              <input
+                type="checkbox"
+                checked={form.summaryDocuments.includes(name)}
+                onChange={(e) => check(name, e.target.checked)}
+              />
+              {name}
+            </label>
+          ))}
+          {!context.length && <span className="meta">No session context names to read</span>}
+        </div>
+        {dropped.length > 0 && (
+          <p className="wide meta">
+            {`Dropped, as no longer session context names: ${dropped.join(", ")}`}
+          </p>
+        )}
+        <Row id="agent-summaryOnly" label="Summary only">
+          <input
+            {...field("summaryOnly")}
+            placeholder="Documents the agent never sees, comma-separated"
+          />
         </Row>
         <Row id="agent-summarySchema" label="Schema">
           <textarea
-            {...text("summarySchema")}
+            {...field("summarySchema")}
             className="code"
             rows={5}
             placeholder="A JSON Schema object, empty for none"
@@ -315,16 +391,23 @@ function Fields(props: {
         </Row>
       </fieldset>
       <Row id="agent-opens" label="Opens">
-        <select {...field("opens")} disabled={readOnly}>
+        <select {...field("opens")}>
           <option value="user">The user speaks first</option>
           <option value="agent">The agent speaks first</option>
         </select>
       </Row>
       <Row id="agent-model" label="Model">
-        <input {...text("model")} placeholder="Empty for the server's" />
+        <ModelField
+          id="agent-model"
+          value={form.model}
+          listed={agentModels}
+          empty="The server's model"
+          label="The agent's model name"
+          on={(model) => on({ ...form, model })}
+        />
       </Row>
       <Row id="agent-voice" label="Voice">
-        <select {...field("voice")} disabled={readOnly}>
+        <select {...field("voice")}>
           <option value="">The server's</option>
           {offered.map((v) => (
             <option key={v} value={v}>
@@ -335,15 +418,59 @@ function Fields(props: {
       </Row>
       <Row id="agent-speed" label="Speed">
         <input
-          {...text("speed")}
+          {...field("speed")}
           inputMode="decimal"
           placeholder="0.5 to 2, empty for the server's"
         />
       </Row>
+      {badSpeed && <p className="wide error">Speed is a number from 0.5 to 2.</p>}
       <label className="wide" htmlFor="agent-persona">
         Persona
       </label>
-      <textarea {...text("persona")} className="wide" rows={18} />
+      <textarea {...field("persona")} className="wide" rows={18} />
     </fieldset>
+  );
+}
+
+// A model by name: one of listed, the default when empty, or Other, which shows a field for any name.
+function ModelField(props: {
+  id: string;
+  value: string;
+  listed: string[];
+  empty: string;
+  // What the field for another name is called, to a screen reader.
+  label: string;
+  on(value: string): void;
+}) {
+  const { id, value, listed, empty, label, on } = props;
+  const [other, setOther] = useState(false);
+  const choice = modelChoice(listed, value, other);
+  return (
+    <div className="model">
+      <select
+        id={id}
+        value={choice}
+        onChange={(e) => {
+          setOther(e.target.value === "other");
+          if (e.target.value !== "other") on(e.target.value);
+        }}
+      >
+        <option value="">{empty}</option>
+        {listed.map((m) => (
+          <option key={m} value={m}>
+            {m}
+          </option>
+        ))}
+        <option value="other">Other…</option>
+      </select>
+      {choice === "other" && (
+        <input
+          aria-label={label}
+          value={value}
+          onChange={(e) => on(e.target.value)}
+          placeholder="Any model name voice-guide accepts"
+        />
+      )}
+    </div>
   );
 }

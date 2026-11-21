@@ -22,15 +22,12 @@ const page = (lines: Shown["lines"], rest: Partial<Shown> = {}) =>
   renderToStaticMarkup(
     createElement(app.SessionView, {
       agents: [agent("a1", "Mock interviewer"), agent("a2", "Coach")],
-      agentId: "a1",
       session: { id: "s1", agent_id: "a1", agent_version: 3, started_at: "" },
       shown: { lines, notes: [], status: "Listening", mute: "Mute", ...settled, ...rest },
       words: "",
       starting: false,
       error: "",
       on: {
-        agent: none,
-        start: none,
         end: none,
         mute: none,
         playAfterPress: none,
@@ -40,7 +37,7 @@ const page = (lines: Shown["lines"], rest: Partial<Shown> = {}) =>
     }),
   );
 
-test("the page draws the agents to pick, the transcript, beneath each reply what answered and how long the user waited, and a press to hear an agent the browser won't play", () => {
+test("the page draws the transcript, beneath each reply what answered and how long the user waited, and a press to hear an agent the browser won't play", () => {
   const html = page([
     { id: "1", who: "you", text: "Hi" },
     { id: "2", who: "agent", text: "Hello", meta: { model: "m", firstTextMs: 400 } },
@@ -48,7 +45,6 @@ test("the page draws the agents to pick, the transcript, beneath each reply what
     { id: "4", who: "agent", text: "So", meta: { finishedToSoundMs: 820, lost: true } },
     { id: "5", who: "agent", text: "On", meta: { audioFailed: true } },
   ]);
-  assert.match(html, /"a1" selected="">Mock interviewer<\/option><option value="a2">Coach</);
   assert.match(html, /"who">You<\/span>Hi<\/div>/);
   assert.match(html, /"who">Mock interviewer<\/span>Hello</);
   assert.deepEqual(
@@ -87,12 +83,12 @@ test("both tabs are drawn, the one the hash doesn't name hidden, so a session an
       Reflect.deleteProperty(globalThis, "window");
     }
   };
+  // The Test tab opens with its start form, the Agents tab with its section.
   const panels = (html: string) =>
-    [
-      ...html.matchAll(
-        /<div( hidden="")?><section>(<div class="row"><select( aria-label="Agent")?)?/g,
-      ),
-    ].map((m) => [m[3] ? "agents" : "test", m[1] ? "hidden" : "shown"]);
+    [...html.matchAll(/<div( hidden="")?><(form|section)>/g)].map((m) => [
+      m[2] === "form" ? "test" : "agents",
+      m[1] ? "hidden" : "shown",
+    ]);
   assert.deepEqual(panels(drawnAt("#agents")), [
     ["test", "hidden"],
     ["agents", "shown"],
