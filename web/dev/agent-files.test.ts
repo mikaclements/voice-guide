@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -192,6 +192,34 @@ test("a path that isn't a bare agent file name is refused before the disk is tou
   }
   assert.equal(await readFile(join(f.dir, "secret.md"), "utf8"), "outside");
   assert.equal(v.calls.length, 0);
+});
+
+test("a link in an agent folder is never followed: not listed, read, saved over or published", async (t) => {
+  const f = await folders(t);
+  const outside = join(f.dir, "outside.md");
+  await writeFile(outside, agentFile(templateId, "Outside"));
+  await mkdir(f.local);
+  await symlink(outside, join(f.local, "linked.md"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  const listed = JSON.parse((await send(route, "/agent-files", "GET")).body).files;
+  assert.deepEqual(
+    listed.map((x: { path: string }) => x.path),
+    [templateFile],
+  );
+  const asks: [string, string, unknown, number][] = [
+    ["/agent-file?path=linked.md", "GET", undefined, 404],
+    ["/agent-file", "PUT", { path: "linked.md", content: "written", modified: 0 }, 404],
+    ["/publish", "POST", { path: "linked.md" }, 404],
+    ["/agent-files", "POST", { name: "Linked" }, 409],
+  ];
+  for (const [url, method, body, status] of asks) {
+    const res = await send(route, url, method, body);
+    assert.equal(res.statusCode, status, `${method} ${url}`);
+    assert.doesNotMatch(res.body, /Outside/, `${method} ${url}`);
+  }
+  assert.equal(await readFile(outside, "utf8"), agentFile(templateId, "Outside"));
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
 });
 
 test("a save replaces the local file whole and answers when it was modified", async (t) => {

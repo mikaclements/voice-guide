@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Incoming, Reply } from "./product-server.ts";
 
@@ -152,7 +152,7 @@ async function save(found: Found, asked: Record<string, unknown>, to: Reply) {
   } finally {
     await rm(temp, { force: true });
   }
-  return json(to, 200, { modified: (await stat(found.file)).mtimeMs });
+  return json(to, 200, { modified: (await lstat(found.file)).mtimeMs });
 }
 
 async function create(folders: AgentFolders, name: unknown, to: Reply) {
@@ -166,8 +166,15 @@ async function create(folders: AgentFolders, name: unknown, to: Reply) {
   const id = uuidv7();
   const text = fromTemplate(await readFile(join(folders.shipped, templateFile), "utf8"), id, given);
   await mkdir(folders.local, { recursive: true });
-  // wx: a file made since the check above is kept, not overwritten.
-  await writeFile(join(folders.local, path), text, { flag: "wx" });
+  try {
+    // wx: whatever has the name, a file made since the check above or a link, is kept.
+    await writeFile(join(folders.local, path), text, { flag: "wx" });
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "EEXIST") {
+      return fail(to, 409, `${path} exists in the local folder`);
+    }
+    throw err;
+  }
   return json(to, 201, { path, id, name: given });
 }
 
@@ -196,11 +203,11 @@ async function publish(found: Found, call: Voice, to: Reply) {
 
 // The file a bare name names: the local folder's when it has one, since a local file takes the
 // place of a shipped one of the same name, as the developer's own seed files do; else the shipped
-// folder's.
+// folder's. Only a regular file: a link is never followed, since it could lead out of the folder.
 async function find(folders: AgentFolders, path: string): Promise<Found | undefined> {
   for (const folder of ["local", "shipped"] as const) {
     const file = join(folders[folder], path);
-    const found = await stat(file).catch(() => undefined);
+    const found = await lstat(file).catch(() => undefined);
     if (found?.isFile()) return { path, folder, file, modified: found.mtimeMs };
   }
 }
