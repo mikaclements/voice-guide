@@ -4,8 +4,7 @@ VALUES (@id, @workspace_id, @hash, @display, @permissions);
 
 -- The key check finds the key by its hash, across workspaces: the key is what names the workspace.
 -- name: WorkingProductKey :one
-SELECT id, workspace_id, display, permissions, created_at FROM product_keys
-WHERE hash = @hash AND revoked_at IS NULL;
+SELECT workspace_id, permissions FROM product_keys WHERE hash = @hash AND revoked_at IS NULL;
 
 -- name: ProductKeys :many
 SELECT id, workspace_id, hash, display, permissions, created_at, revoked_at FROM product_keys

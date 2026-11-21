@@ -101,8 +101,9 @@ type Record struct {
 type Store interface {
 	// Add saves r.
 	Add(ctx context.Context, r Record) error
-	// Find returns the working key with the hash. It looks across
-	// workspaces: the key is what names the workspace.
+	// Find returns the working key with the hash, with at least its
+	// workspace and permissions. It looks across workspaces: the key is what
+	// names the workspace.
 	Find(ctx context.Context, hash []byte) (Record, bool, error)
 	// List returns the workspace's keys, newest first.
 	List(ctx context.Context, workspace uuid.UUID) ([]Record, error)

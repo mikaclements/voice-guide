@@ -100,29 +100,19 @@ func (q *Queries) RevokeProductKey(ctx context.Context, arg RevokeProductKeyPara
 }
 
 const workingProductKey = `-- name: WorkingProductKey :one
-SELECT id, workspace_id, display, permissions, created_at FROM product_keys
-WHERE hash = $1 AND revoked_at IS NULL
+SELECT workspace_id, permissions FROM product_keys WHERE hash = $1 AND revoked_at IS NULL
 `
 
 type WorkingProductKeyRow struct {
-	ID          uuid.UUID
 	WorkspaceID uuid.UUID
-	Display     string
 	Permissions []string
-	CreatedAt   time.Time
 }
 
 // The key check finds the key by its hash, across workspaces: the key is what names the workspace.
 func (q *Queries) WorkingProductKey(ctx context.Context, hash []byte) (WorkingProductKeyRow, error) {
 	row := q.db.QueryRow(ctx, workingProductKey, hash)
 	var i WorkingProductKeyRow
-	err := row.Scan(
-		&i.ID,
-		&i.WorkspaceID,
-		&i.Display,
-		&i.Permissions,
-		&i.CreatedAt,
-	)
+	err := row.Scan(&i.WorkspaceID, &i.Permissions)
 	return i, err
 }
 

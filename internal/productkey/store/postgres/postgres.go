@@ -35,7 +35,7 @@ func (st *Keys) Add(ctx context.Context, k productkey.Record) error {
 	return nil
 }
 
-// Find returns the working key with the hash.
+// Find returns the working key with the hash: its workspace and permissions.
 func (st *Keys) Find(ctx context.Context, hash []byte) (productkey.Record, bool, error) {
 	r, err := db.New(st.pool).WorkingProductKey(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -48,7 +48,7 @@ func (st *Keys) Find(ctx context.Context, hash []byte) (productkey.Record, bool,
 	if err != nil {
 		return productkey.Record{}, false, fmt.Errorf("read the product key's permissions: %w", err)
 	}
-	return productkey.Record{ID: r.ID, Workspace: r.WorkspaceID, Hash: hash, Display: r.Display, Permissions: permissions, CreatedAt: r.CreatedAt}, true, nil
+	return productkey.Record{Workspace: r.WorkspaceID, Hash: hash, Permissions: permissions}, true, nil
 }
 
 // List returns the workspace's keys, newest first.
