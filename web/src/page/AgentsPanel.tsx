@@ -4,10 +4,12 @@ import {
   cloneForm,
   droppedDocuments,
   formFrom,
+  agentModels,
+  isSpeed,
   modelChoice,
-  models,
   newForm,
   settingsFrom,
+  summaryModels,
 } from "./agentForm.ts";
 import {
   type AgentFile,
@@ -297,6 +299,8 @@ function Fields(props: {
     onChange: (e: ChangeEvent<Field>) => on({ ...form, [key]: e.target.value }),
   });
   const text = (key: Exclude<keyof AgentForm, "summaryDocuments">) => ({ ...field(key), readOnly });
+  // Typed as text, so a half-typed number is said rather than read as empty, the server's speed.
+  const badSpeed = form.speed.trim() !== "" && !isSpeed(Number(form.speed));
   // The agent's own voice stays a choice when voice-guide's list lacks it or couldn't be read.
   const offered = [...new Set([form.voice, ...voices])].filter(Boolean);
   const context = form.sessionContext
@@ -334,6 +338,7 @@ function Fields(props: {
           <ModelField
             id="agent-summaryModel"
             value={form.summaryModel}
+            listed={summaryModels}
             empty="The agent's model"
             label="The summary's model name"
             readOnly={readOnly}
@@ -385,6 +390,7 @@ function Fields(props: {
         <ModelField
           id="agent-model"
           value={form.model}
+          listed={agentModels}
           empty="The server's model"
           label="The agent's model name"
           readOnly={readOnly}
@@ -404,13 +410,11 @@ function Fields(props: {
       <Row id="agent-speed" label="Speed">
         <input
           {...text("speed")}
-          type="number"
-          min={0.5}
-          max={2}
-          step={0.05}
+          inputMode="decimal"
           placeholder="0.5 to 2, empty for the server's"
         />
       </Row>
+      {badSpeed && <p className="wide error">Speed is a number from 0.5 to 2.</p>}
       <label className="wide" htmlFor="agent-persona">
         Persona
       </label>
@@ -419,20 +423,20 @@ function Fields(props: {
   );
 }
 
-// A model by name: one of the current models, the default when empty, or Other, which shows a field
-// for any name.
+// A model by name: one of listed, the default when empty, or Other, which shows a field for any name.
 function ModelField(props: {
   id: string;
   value: string;
+  listed: string[];
   empty: string;
   // What the field for another name is called, to a screen reader.
   label: string;
   readOnly: boolean;
   on(value: string): void;
 }) {
-  const { id, value, empty, label, readOnly, on } = props;
+  const { id, value, listed, empty, label, readOnly, on } = props;
   const [other, setOther] = useState(false);
-  const choice = modelChoice(value, other);
+  const choice = modelChoice(listed, value, other);
   return (
     <div className="model">
       <select
@@ -445,7 +449,7 @@ function ModelField(props: {
         }}
       >
         <option value="">{empty}</option>
-        {models.map((m) => (
+        {listed.map((m) => (
           <option key={m} value={m}>
             {m}
           </option>

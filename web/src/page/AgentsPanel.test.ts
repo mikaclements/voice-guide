@@ -115,7 +115,7 @@ test("a picked agent shows what voice holds, then one labelled field per setting
   assert.deepEqual(buttons(html), ["Publish", "Revert", "Clone", "Publish the file as it is"]);
 });
 
-test("the summary's documents are checked among the session context names, a model off the list shows Other and its name, and the speed is a number in voice's range", () => {
+test("the summary's documents are checked among the session context names, each model is picked from its own list or Other with its name, and the speed is text checked against voice's range", () => {
   const html = drawn({ list, picked: "coach.md", form, published });
   assert.match(
     html,
@@ -125,15 +125,25 @@ test("the summary's documents are checked among the session context names, a mod
     html,
     /<select id="agent-summaryModel"><option value="" selected="">The agent&#x27;s model/,
   );
+  // A summary may name Opus, which may think; a live reply only models that needn't.
   assert.match(
     html,
-    /<option value="claude-haiku-5-5">claude-haiku-5-5<\/option><option value="other">Other…/,
+    /<select id="agent-summaryModel">(<option[^>]*>[^<]*<\/option>){2}<option value="claude-haiku-5-5">claude-haiku-5-5<\/option><option value="claude-opus-5-5">claude-opus-5-5<\/option><option value="other">Other…/,
+  );
+  assert.match(
+    html,
+    /<select id="agent-model"><option value="">The server&#x27;s model<\/option><option value="claude-sonnet-5-5">claude-sonnet-5-5<\/option><option value="claude-haiku-5-5">claude-haiku-5-5<\/option><option value="other" selected="">/,
   );
   assert.match(
     html,
     /<option value="other" selected="">Other…<\/option><\/select><input aria-label="The agent&#x27;s model name"[^>]* value="my-model-1"/,
   );
-  assert.match(html, /<input id="agent-speed"[^>]* type="number" min="0.5" max="2" step="0.05"/);
+  assert.match(html, /<input id="agent-speed" inputMode="decimal"/);
+  assert.doesNotMatch(html, /Speed is a number/);
+  for (const speed of ["1e", "3"]) {
+    const bad = drawn({ list, picked: "coach.md", form: { ...form, speed }, published });
+    assert.match(bad, /<p class="wide error">Speed is a number from 0.5 to 2.<\/p>/, speed);
+  }
   const dropped = drawn({
     list,
     picked: "coach.md",

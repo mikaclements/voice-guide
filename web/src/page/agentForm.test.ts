@@ -4,8 +4,9 @@ import {
   cloneForm,
   droppedDocuments,
   formFrom,
+  agentModels,
   modelChoice,
-  models,
+  summaryModels,
   newForm,
   settingsFrom,
   uuidv7,
@@ -56,8 +57,20 @@ const instructionOnly: AgentSettings = {
   summary: { instruction: "Note the ships.", model: null, schema: null, documents: [] },
 };
 
-test("an agent filled into the form comes back from it as the same settings", () => {
-  for (const agent of [full, bare, instructionOnly]) {
+// Summary documents the file lists out of the session context's order, a summary-only one first.
+const interleaved: AgentSettings = {
+  ...bare,
+  session_context: ["resume", "job"],
+  summary: {
+    instruction: "Note it.",
+    model: null,
+    schema: null,
+    documents: ["ship_log", "job", "resume"],
+  },
+};
+
+test("an agent filled into the form comes back from it as the same settings, its summary's documents in the order it has them", () => {
+  for (const agent of [full, bare, instructionOnly, interleaved]) {
     assert.deepEqual(settingsFrom(formFrom(agent)), agent, agent.name);
   }
 });
@@ -115,8 +128,8 @@ test("the summary's documents are checked among the session context names, and t
   const checked = settingsFrom({ ...form, summaryDocuments: ["job", "resume"] });
   assert.deepEqual(typeof checked === "object" && checked.summary?.documents, [
     "job",
-    "resume",
     "ship_log",
+    "resume",
   ]);
 });
 
@@ -124,27 +137,43 @@ test("a checked document no longer among the session context names is dropped, a
   const form = { ...formFrom(full), sessionContext: "job", summaryDocuments: ["job", "resume"] };
   assert.deepEqual(droppedDocuments(form), ["resume"]);
   const sent = settingsFrom(form);
-  assert.deepEqual(typeof sent === "object" && sent.summary?.documents, ["job", "ship_log"]);
+  assert.deepEqual(typeof sent === "object" && sent.summary?.documents, ["ship_log", "job"]);
 });
 
-test("a model is picked from the list, empty for the default, or Other for any other name", () => {
-  assert.deepEqual(models, [
-    "claude-fable-5-2",
-    "claude-opus-5-5",
-    "claude-sonnet-5-5",
-    "claude-haiku-5-5",
+test("documents newly chosen follow those the agent has: checked ones in the session context's order, then summary-only ones, each once", () => {
+  const form = {
+    ...formFrom(interleaved),
+    sessionContext: "resume, job, page",
+    summaryDocuments: ["page", "job"],
+    summaryOnly: "ship_log, notes, page, notes",
+  };
+  const sent = settingsFrom(form);
+  assert.deepEqual(typeof sent === "object" && sent.summary?.documents, [
+    "ship_log",
+    "job",
+    "page",
+    "notes",
   ]);
+});
+
+test("a live reply's model is one the model service turns thinking off for, and a summary's may also think", () => {
+  assert.deepEqual(agentModels, ["claude-sonnet-5-5", "claude-haiku-5-5"]);
+  assert.deepEqual(summaryModels, ["claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-5-5"]);
+});
+
+test("a model is picked from its list, empty for the default, or Other for any other name", () => {
   assert.deepEqual(
     [
-      modelChoice("claude-opus-5-5", false),
-      modelChoice("", false),
-      modelChoice("my-model-1", false),
+      modelChoice(summaryModels, "claude-opus-5-5", false),
+      modelChoice(agentModels, "claude-opus-5-5", false),
+      modelChoice(agentModels, "", false),
+      modelChoice(agentModels, "my-model-1", false),
     ],
-    ["claude-opus-5-5", "", "other"],
+    ["claude-opus-5-5", "other", "", "other"],
   );
   // Other chosen shows the name's field whatever the name, until another choice is made.
   assert.deepEqual(
-    [modelChoice("", true), modelChoice("claude-opus-5-5", true)],
+    [modelChoice(agentModels, "", true), modelChoice(agentModels, "claude-haiku-5-5", true)],
     ["other", "other"],
   );
 });
@@ -157,6 +186,14 @@ test("the speed is a number from its field, or empty for the server's", () => {
   ] as const) {
     const sent = settingsFrom({ ...formFrom(bare), speed: typed });
     assert.equal(typeof sent === "object" && sent.speed, speed, typed);
+  }
+  // Half-typed or out of voice's range: said, never sent as the server's speed.
+  for (const typed of ["1e", "fast", "3", "0.1"]) {
+    assert.equal(
+      settingsFrom({ ...formFrom(bare), speed: typed }),
+      "Speed must be a number from 0.5 to 2, or empty for the server's.",
+      typed,
+    );
   }
 });
 

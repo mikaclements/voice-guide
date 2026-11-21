@@ -84,7 +84,7 @@ The Agents tab's dropdown lists every agent file with the version voice-guide ha
 
 - **Pick an agent** to fill the form with its settings as voice-guide holds them, under "Version 2 is published, since" and when. The form has one row per setting of the agent file, in the file's order, and the persona last:
   - Name, description, reads, session context names and the persona are free text, lists comma-separated.
-  - The models are picked from the current Claude models, or **Other** for any other name; empty is the server's model, or for the summary, the agent's.
+  - The agent's model is Sonnet or Haiku, the models a spoken reply can use, and the summary's may be Opus too, since nobody waits on it; **Other** takes any other name. Empty is the server's model, or for the summary, the agent's.
   - The summary's documents are checkboxes of the session context names. A checked one you remove from the session context is dropped, and the form says so. Documents only the summary reads, which the agent never sees while it talks, go under **Summary only**.
   - The summary's schema is JSON, the speed a number from 0.5 to 2, and an empty voice or speed is the server's.
 - **Publish** writes the form to the agent's file, then publishes the file with the development product key, which the browser never sees. It says `published version 3`, `unchanged, version 3`, or "voice-guide refused it" and why, and the form keeps your edits until voice-guide takes them. The Test tab then lists the agent, so you can talk to it at once. The file is written first, so after a refusal it keeps what was refused; **Revert** fills only the form again from voice-guide.
