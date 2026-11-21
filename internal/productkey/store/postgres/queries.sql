@@ -1,12 +1,14 @@
 -- name: AddProductKey :exec
-INSERT INTO product_keys (id, workspace_id, hash, display) VALUES (@id, @workspace_id, @hash, @display);
+INSERT INTO product_keys (id, workspace_id, hash, display, permissions)
+VALUES (@id, @workspace_id, @hash, @display, @permissions);
 
--- The key check finds the workspace from the key, across workspaces: the key is what names it.
--- name: ProductKeyWorkspace :one
-SELECT workspace_id FROM product_keys WHERE hash = @hash AND revoked_at IS NULL;
+-- The key check finds the key by its hash, across workspaces: the key is what names the workspace.
+-- name: WorkingProductKey :one
+SELECT id, workspace_id, display, permissions, created_at FROM product_keys
+WHERE hash = @hash AND revoked_at IS NULL;
 
 -- name: ProductKeys :many
-SELECT id, workspace_id, hash, display, created_at, revoked_at FROM product_keys
+SELECT id, workspace_id, hash, display, permissions, created_at, revoked_at FROM product_keys
 WHERE workspace_id = @workspace_id ORDER BY id DESC;
 
 -- name: WorkingProductKeys :one

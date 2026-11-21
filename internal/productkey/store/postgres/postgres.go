@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/productkey"
 	"github.com/mikaclements/voice-guide/internal/productkey/store/postgres/db"
 )
@@ -25,23 +26,29 @@ func New(pool *pgxpool.Pool) *Keys { return &Keys{pool: pool} }
 
 // Add saves k.
 func (st *Keys) Add(ctx context.Context, k productkey.Record) error {
-	err := db.New(st.pool).AddProductKey(ctx, db.AddProductKeyParams{ID: k.ID, WorkspaceID: k.Workspace, Hash: k.Hash, Display: k.Display})
+	err := db.New(st.pool).AddProductKey(ctx, db.AddProductKeyParams{
+		ID: k.ID, WorkspaceID: k.Workspace, Hash: k.Hash, Display: k.Display, Permissions: k.Permissions.Names(),
+	})
 	if err != nil {
 		return fmt.Errorf("add the product key: %w", err)
 	}
 	return nil
 }
 
-// Workspace returns the workspace of the working key with the hash.
-func (st *Keys) Workspace(ctx context.Context, hash []byte) (uuid.UUID, bool, error) {
-	ws, err := db.New(st.pool).ProductKeyWorkspace(ctx, hash)
+// Find returns the working key with the hash.
+func (st *Keys) Find(ctx context.Context, hash []byte) (productkey.Record, bool, error) {
+	r, err := db.New(st.pool).WorkingProductKey(ctx, hash)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return uuid.Nil(), false, nil
+		return productkey.Record{}, false, nil
 	}
 	if err != nil {
-		return uuid.Nil(), false, fmt.Errorf("find the product key: %w", err)
+		return productkey.Record{}, false, fmt.Errorf("find the product key: %w", err)
 	}
-	return ws, true, nil
+	permissions, err := access.ParsePermissions(r.Permissions)
+	if err != nil {
+		return productkey.Record{}, false, fmt.Errorf("read the product key's permissions: %w", err)
+	}
+	return productkey.Record{ID: r.ID, Workspace: r.WorkspaceID, Hash: hash, Display: r.Display, Permissions: permissions, CreatedAt: r.CreatedAt}, true, nil
 }
 
 // List returns the workspace's keys, newest first.
@@ -52,7 +59,11 @@ func (st *Keys) List(ctx context.Context, workspace uuid.UUID) ([]productkey.Rec
 	}
 	keys := make([]productkey.Record, 0, len(rows))
 	for _, r := range rows {
-		k := productkey.Record{ID: r.ID, Workspace: r.WorkspaceID, Hash: r.Hash, Display: r.Display, CreatedAt: r.CreatedAt}
+		permissions, err := access.ParsePermissions(r.Permissions)
+		if err != nil {
+			return nil, fmt.Errorf("read the permissions of product key %s: %w", r.ID, err)
+		}
+		k := productkey.Record{ID: r.ID, Workspace: r.WorkspaceID, Hash: r.Hash, Display: r.Display, Permissions: permissions, CreatedAt: r.CreatedAt}
 		if r.RevokedAt.Valid {
 			k.RevokedAt = r.RevokedAt.Time
 		}

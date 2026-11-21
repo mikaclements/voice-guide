@@ -7,12 +7,15 @@ package db
 
 import (
 	"context"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"uuid"
 )
 
 const addProductKey = `-- name: AddProductKey :exec
-INSERT INTO product_keys (id, workspace_id, hash, display) VALUES ($1, $2, $3, $4)
+INSERT INTO product_keys (id, workspace_id, hash, display, permissions)
+VALUES ($1, $2, $3, $4, $5)
 `
 
 type AddProductKeyParams struct {
@@ -20,6 +23,7 @@ type AddProductKeyParams struct {
 	WorkspaceID uuid.UUID
 	Hash        []byte
 	Display     string
+	Permissions []string
 }
 
 func (q *Queries) AddProductKey(ctx context.Context, arg AddProductKeyParams) error {
@@ -28,41 +32,41 @@ func (q *Queries) AddProductKey(ctx context.Context, arg AddProductKeyParams) er
 		arg.WorkspaceID,
 		arg.Hash,
 		arg.Display,
+		arg.Permissions,
 	)
 	return err
 }
 
-const productKeyWorkspace = `-- name: ProductKeyWorkspace :one
-SELECT workspace_id FROM product_keys WHERE hash = $1 AND revoked_at IS NULL
-`
-
-// The key check finds the workspace from the key, across workspaces: the key is what names it.
-func (q *Queries) ProductKeyWorkspace(ctx context.Context, hash []byte) (uuid.UUID, error) {
-	row := q.db.QueryRow(ctx, productKeyWorkspace, hash)
-	var workspace_id uuid.UUID
-	err := row.Scan(&workspace_id)
-	return workspace_id, err
-}
-
 const productKeys = `-- name: ProductKeys :many
-SELECT id, workspace_id, hash, display, created_at, revoked_at FROM product_keys
+SELECT id, workspace_id, hash, display, permissions, created_at, revoked_at FROM product_keys
 WHERE workspace_id = $1 ORDER BY id DESC
 `
 
-func (q *Queries) ProductKeys(ctx context.Context, workspaceID uuid.UUID) ([]ProductKey, error) {
+type ProductKeysRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Hash        []byte
+	Display     string
+	Permissions []string
+	CreatedAt   time.Time
+	RevokedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) ProductKeys(ctx context.Context, workspaceID uuid.UUID) ([]ProductKeysRow, error) {
 	rows, err := q.db.Query(ctx, productKeys, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ProductKey
+	var items []ProductKeysRow
 	for rows.Next() {
-		var i ProductKey
+		var i ProductKeysRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.WorkspaceID,
 			&i.Hash,
 			&i.Display,
+			&i.Permissions,
 			&i.CreatedAt,
 			&i.RevokedAt,
 		); err != nil {
@@ -93,6 +97,33 @@ func (q *Queries) RevokeProductKey(ctx context.Context, arg RevokeProductKeyPara
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const workingProductKey = `-- name: WorkingProductKey :one
+SELECT id, workspace_id, display, permissions, created_at FROM product_keys
+WHERE hash = $1 AND revoked_at IS NULL
+`
+
+type WorkingProductKeyRow struct {
+	ID          uuid.UUID
+	WorkspaceID uuid.UUID
+	Display     string
+	Permissions []string
+	CreatedAt   time.Time
+}
+
+// The key check finds the key by its hash, across workspaces: the key is what names the workspace.
+func (q *Queries) WorkingProductKey(ctx context.Context, hash []byte) (WorkingProductKeyRow, error) {
+	row := q.db.QueryRow(ctx, workingProductKey, hash)
+	var i WorkingProductKeyRow
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Display,
+		&i.Permissions,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const workingProductKeys = `-- name: WorkingProductKeys :one

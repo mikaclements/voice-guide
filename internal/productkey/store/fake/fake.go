@@ -50,20 +50,20 @@ func (f *Keys) Add(_ context.Context, r productkey.Record) error {
 	return nil
 }
 
-// Workspace returns the workspace of the working key with the hash.
-func (f *Keys) Workspace(_ context.Context, hash []byte) (uuid.UUID, bool, error) {
+// Find returns the working key with the hash.
+func (f *Keys) Find(_ context.Context, hash []byte) (productkey.Record, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reads++
 	if f.err != nil {
-		return uuid.Nil(), false, f.err
+		return productkey.Record{}, false, f.err
 	}
 	for _, k := range f.keys {
 		if bytes.Equal(k.Hash, hash) && k.RevokedAt.IsZero() {
-			return k.Workspace, true, nil
+			return k, true, nil
 		}
 	}
-	return uuid.Nil(), false, nil
+	return productkey.Record{}, false, nil
 }
 
 // List returns the workspace's keys, newest first.

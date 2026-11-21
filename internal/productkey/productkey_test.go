@@ -11,6 +11,7 @@ import (
 	"testing"
 	"uuid"
 
+	"github.com/mikaclements/voice-guide/internal/access"
 	"github.com/mikaclements/voice-guide/internal/productkey"
 	"github.com/mikaclements/voice-guide/internal/productkey/store/fake"
 	"github.com/mikaclements/voice-guide/internal/redacttest"
@@ -23,7 +24,7 @@ var (
 
 func create(t *testing.T, keys *productkey.Keys, ws uuid.UUID) (productkey.Key, productkey.Record) {
 	t.Helper()
-	s, k, err := keys.Create(context.Background(), ws)
+	s, k, err := keys.Create(context.Background(), ws, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -35,9 +36,32 @@ func TestAKeyNamesTheWorkspaceItWasMadeFor(t *testing.T) {
 	mine, _ := create(t, keys, workspace)
 	theirs, _ := create(t, keys, elsewhere)
 	for s, want := range map[productkey.Key]uuid.UUID{mine: workspace, theirs: elsewhere} {
-		if got, err := keys.Workspace(context.Background(), s); err != nil || got != want {
-			t.Errorf("Workspace = %v, %v; want %v", got, err, want)
+		if got, err := keys.Find(context.Background(), s); err != nil || got.Workspace != want {
+			t.Errorf("Find = %v, %v; want workspace %v", got.Workspace, err, want)
 		}
+	}
+}
+
+func TestAKeyHoldsThePermissionsItWasMadeWith(t *testing.T) {
+	keys := productkey.NewKeys(fake.New())
+	for _, made := range []access.Permissions{access.RunSessions, access.PublishAgents, access.RunSessions | access.PublishAgents} {
+		s, _, err := keys.Create(context.Background(), workspace, made)
+		if err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		if got, err := keys.Find(context.Background(), s); err != nil || got.Permissions != made {
+			t.Errorf("Find = %v, %v; want %v", got.Permissions, err, made)
+		}
+	}
+}
+
+func TestAKeyWithNoPermissionIsNeverMade(t *testing.T) {
+	store := fake.New()
+	if _, _, err := productkey.NewKeys(store).Create(context.Background(), workspace, 0); err == nil {
+		t.Error("Create with no permission: no error")
+	}
+	if listed, err := store.List(context.Background(), workspace); err != nil || len(listed) != 0 {
+		t.Errorf("List = %v, %v; want no key kept", listed, err)
 	}
 }
 
@@ -119,16 +143,16 @@ func TestAKeyThatDoesntWorkIsUnknownWithoutSayingWhy(t *testing.T) {
 		"a signed ticket": "eyJhbGciOiJIUzI1NiJ9.e30.c2ln",
 		"empty":           "",
 	} {
-		if _, err := keys.Workspace(context.Background(), productkey.NewKey(raw)); !errors.Is(err, productkey.ErrUnknown) {
-			t.Errorf("%s: Workspace err = %v; want ErrUnknown", name, err)
+		if _, err := keys.Find(context.Background(), productkey.NewKey(raw)); !errors.Is(err, productkey.ErrUnknown) {
+			t.Errorf("%s: Find err = %v; want ErrUnknown", name, err)
 		}
 	}
 }
 
 func TestAMalformedKeyIsRefusedWithoutAStoreRead(t *testing.T) {
 	store := fake.New()
-	if _, err := productkey.NewKeys(store).Workspace(context.Background(), productkey.NewKey("vgk_short")); !errors.Is(err, productkey.ErrUnknown) {
-		t.Fatalf("Workspace err = %v; want ErrUnknown", err)
+	if _, err := productkey.NewKeys(store).Find(context.Background(), productkey.NewKey("vgk_short")); !errors.Is(err, productkey.ErrUnknown) {
+		t.Fatalf("Find err = %v; want ErrUnknown", err)
 	}
 	if store.Reads() != 0 {
 		t.Errorf("%d store reads; want none for a malformed key", store.Reads())
@@ -140,9 +164,9 @@ func TestAKeyCheckThatCantReachTheStoreIsNotUnknown(t *testing.T) {
 	keys := productkey.NewKeys(store)
 	s, _ := create(t, keys, workspace)
 	store.Fail(errors.New("database down"))
-	_, err := keys.Workspace(context.Background(), s)
+	_, err := keys.Find(context.Background(), s)
 	if err == nil || errors.Is(err, productkey.ErrUnknown) {
-		t.Errorf("Workspace err = %v; want a failure, not ErrUnknown, so the product isn't told its key is wrong", err)
+		t.Errorf("Find err = %v; want a failure, not ErrUnknown, so the product isn't told its key is wrong", err)
 	}
 }
 
@@ -152,7 +176,7 @@ func TestRevokingAnotherWorkspacesKeyFindsNothing(t *testing.T) {
 	if found, _, err := keys.Revoke(context.Background(), elsewhere, k.ID); err != nil || found {
 		t.Errorf("Revoke from another workspace = %v, %v; want not found", found, err)
 	}
-	if _, err := keys.Workspace(context.Background(), s); err != nil {
+	if _, err := keys.Find(context.Background(), s); err != nil {
 		t.Errorf("the key stopped working: %v", err)
 	}
 }

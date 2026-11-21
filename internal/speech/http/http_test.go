@@ -222,7 +222,7 @@ func TestEveryAudioRouteNeedsATicket(t *testing.T) {
 
 func TestEveryAudioRouteRefusesAProductKey(t *testing.T) {
 	f := newFixture(t, 10)
-	key, _, err := f.keys.Create(context.Background(), workspace)
+	key, _, err := f.keys.Create(context.Background(), workspace, access.RunSessions)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}

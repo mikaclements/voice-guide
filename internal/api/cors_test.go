@@ -5,8 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/mikaclements/voice-guide/internal/access"
 )
 
 // request sends method at path with the headers given, an empty one left out.
@@ -162,7 +160,7 @@ func TestAProductKeyFromAPageIsRefusedUnread(t *testing.T) {
 		t.Errorf("reached %v after %d key reads; want no handler run and no key read", f.reached, f.store.Reads())
 	}
 	if rec := f.send("POST", "/v1/sessions/"+session+"/end", "Bearer "+key); rec.Code != http.StatusOK ||
-		f.reached["POST /v1/sessions/{id}/end"] != (access.Caller{Workspace: caller.Workspace, Product: true}) {
+		f.reached["POST /v1/sessions/{id}/end"] != keyCaller {
 		t.Errorf("the product's server ending a session: %d, reached with %+v; want the product's end", rec.Code, f.reached)
 	}
 }
