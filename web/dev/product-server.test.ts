@@ -61,7 +61,7 @@ function request(url: string, method: string, body = "") {
   return {
     url,
     method,
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", host: "127.0.0.1:5173" },
     on(event: string, cb: (chunk: string) => void) {
       if (event === "data" && body) cb(body);
       if (event === "end") cb("");
@@ -235,7 +235,7 @@ test("a start not sent as JSON is refused before anything is read or sent", asyn
     const res = reply();
     const req = {
       ...request("/start", "POST", '{"agent_id":"keeper","request_id":"r1"}'),
-      headers: type ? { "content-type": type } : {},
+      headers: type ? { "content-type": type, host: "127.0.0.1:5173" } : { host: "127.0.0.1:5173" },
     };
     await route(req, res);
     assert.equal(res.statusCode, 415, String(type));
@@ -538,4 +538,17 @@ test("a voice that is down, or refuses, is told on each new route, and never wit
   await refused.route(request("/sessions", "GET"), res);
   assert.equal(res.statusCode, 403, "voice's problem passes through");
   assert.equal(res.headers["Content-Type"], "application/problem+json");
+});
+
+test("the read routes of the sessions panel refuse a Host that isn't this machine's", async (t) => {
+  const { route, calls } = await richRoute(t);
+  for (const url of ["/voices", "/sessions", "/context?agent=keeper"]) {
+    for (const host of ["evil.example:5173", "127.0.0.1.evil.example:5173", undefined]) {
+      const res = reply();
+      const headers = host ? { host } : {};
+      await route({ ...request(url, "GET"), headers }, res);
+      assert.equal(res.statusCode, 403, `${url} for ${host}`);
+    }
+  }
+  assert.equal(calls.length, 0, "voice heard of none");
 });

@@ -72,7 +72,7 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
 // this machine makes its page's requests same-origin to it, but they carry its name as the Host,
 // so every route, reading or acting, refuses any other name itself, whatever Vite checks first.
 const ownHost = /^(127\.0\.0\.1|localhost):\d+$/;
-const hostRefused = "only this machine's own names reach the dev server";
+export const hostRefused = "only this machine's own names reach the dev server";
 
 export function fromAnotherHost(req: Incoming): boolean {
   return !ownHost.test(String(req.headers?.host ?? ""));

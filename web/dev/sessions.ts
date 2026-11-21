@@ -1,4 +1,6 @@
 import { readFile } from "node:fs/promises";
+import { fromAnotherHost, hostRefused } from "./agent-files.ts";
+import type { Incoming } from "./product-server.ts";
 import { seedFile } from "./seed.ts";
 
 // What the session routes need of the product's server: its calls to voice (which carry the key,
@@ -19,12 +21,6 @@ type Reply = {
   statusCode: number;
   setHeader(name: string, value: string): unknown;
   end(body: string): unknown;
-};
-
-type Request = {
-  url?: string;
-  method?: string;
-  headers?: Record<string, string | string[] | undefined>;
 };
 
 type Document = { name: string; content: string };
@@ -108,9 +104,15 @@ export async function userReference(s: Sessions): Promise<string> {
 
 // The routes the sessions panel uses besides the start: GET /voices, GET /sessions and GET
 // /context?agent=. Returns whether the request was one of them.
-export async function sessionRoutes(s: Sessions, req: Request, to: Reply): Promise<boolean> {
+export async function sessionRoutes(s: Sessions, req: Incoming, to: Reply): Promise<boolean> {
   if (req.method !== "GET" || !req.url) return false;
   const url = new URL(req.url, "http://page");
+  if (!["/voices", "/sessions", "/context"].includes(url.pathname)) return false;
+  // These read what the page shows, so, as for every route here, only the machine's own names.
+  if (fromAnotherHost(req)) {
+    s.fail(to, 403, hostRefused);
+    return true;
+  }
   if (url.pathname === "/voices") {
     await s.pass(await s.call("/v1/voices"), to);
     return true;
