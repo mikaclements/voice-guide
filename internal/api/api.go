@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 	"uuid"
@@ -72,7 +73,8 @@ type Router struct {
 	keys   *productkey.Keys
 	now    func() time.Time
 	log    *slog.Logger
-	client *client // the drop-in client, when served
+	client *client  // the drop-in client, when served
+	routes []string // each pattern registered, in order
 }
 
 // route is a registered route's handler, marked when a page on any site may
@@ -160,7 +162,15 @@ func (rt *Router) HandleProduct(pattern string, timeout time.Duration, h Handler
 	rt.handle(pattern, timeout, takes{keys: true}, h)
 }
 
+// Routes returns the method and path pattern of every route registered, such as
+// "GET /v1/agents", so a test can hold the published description of the API
+// to the routes the router really serves, without reading the code that
+// registers them. The drop-in client's path is not among them: it is no route
+// of the API.
+func (rt *Router) Routes() []string { return slices.Clone(rt.routes) }
+
 func (rt *Router) handle(pattern string, timeout time.Duration, what takes, h Handler) {
+	rt.routes = append(rt.routes, pattern)
 	// A route that takes a ticket is one a page calls, from whatever site embeds it.
 	rt.mux.Handle(pattern, route{anyOrigin: what.tickets, serve: func(w http.ResponseWriter, r *http.Request) {
 		if what.tickets {

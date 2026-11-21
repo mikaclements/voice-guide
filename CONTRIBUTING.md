@@ -131,6 +131,7 @@ Every piece of work is one of four kinds:
 - Requests that create something carry the caller's ID, so a repeat does no harm.
 - A product's server calls with its product key, and the user's browser with the ticket voice-guide signed for its session; every route checks one, a route the browser calls refuses a key, and a product's route refuses a ticket. A page on any site may call a route the browser calls, and none may call a product's route or send a product key anywhere; the drop-in client's script is the one thing served with no credential.
 - Errors use the standard problem details format, and every path starts with `/v1/`.
+- `api/openapi.yaml` describes every route and the webhook, for products to generate their client types from. A change to a route or its body updates it in the same pull request; a test fails when its routes and the router's differ, and review checks the bodies.
 
 ## 7. Persistence
 
