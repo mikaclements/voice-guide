@@ -153,13 +153,15 @@ test("the summary's documents are checked among the session context names, each 
   assert.match(dropped, /Dropped, as no longer session context names: job/);
 });
 
-test("a shipped agent shows read-only, to clone into a test agent, never to publish from the form", () => {
+test("a shipped agent says it is read-only atop a form whose every field is disabled, to clone, never to publish from the form", () => {
   const html = drawn({ list, picked: "lamp.md", form, published });
-  assert.match(html, /agents\/lamp.md, shipped: read-only here/);
-  assert.equal(html.match(/<(input|textarea)[^>]*readOnly=""/g)?.length, 10);
-  assert.equal(html.match(/<select[^>]*disabled=""/g)?.length, 4);
-  assert.equal(html.match(/<input type="checkbox"[^>]*disabled=""/g)?.length, 2);
+  assert.match(
+    html,
+    /<p><strong>Shipped agent: read-only here.<\/strong> Clone it to make your own.<\/p><fieldset class="fields" disabled="">/,
+  );
   assert.deepEqual(buttons(html), ["Clone", "Publish the file as it is"]);
+  const local = drawn({ list, picked: "coach.md", form, published });
+  assert.doesNotMatch(local, /Shipped agent|<fieldset class="fields" disabled/);
 });
 
 test("a new agent says its first publish writes its file; a file never published offers to publish it as it is, having nothing to fill the form", () => {
@@ -196,7 +198,7 @@ test("a file whose id another file holds says which, as neither is published unt
   );
   assert.match(
     drawn({ list: { files }, picked: "lamp.md", form, published }),
-    /agents\/lamp.md, shipped: read-only here · same id as seed\/local\/agents\/copy.md/,
+    /agents\/lamp.md · same id as seed\/local\/agents\/copy.md/,
   );
 });
 
@@ -217,14 +219,14 @@ test("a local file changed after its version was published warns that Publish wo
   );
 });
 
-test("edits not yet published hold off picking another agent and publishing the file, which would drop them", () => {
+test("edits not yet published hold off picking another agent, cloning and publishing the file, which would drop them", () => {
   const html = drawn({ list, picked: "coach.md", form, published, dirty: true });
   assert.match(html, /<select aria-label="Agent" disabled="">/);
   assert.match(html, /Publish or Revert the edits to pick another agent/);
   assert.deepEqual(buttons(html), [
     "Publish",
     "Revert",
-    "Clone",
+    "Clone (disabled)",
     "Publish the file as it is (disabled)",
   ]);
 });

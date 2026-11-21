@@ -65,7 +65,11 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
     listVoices().then(setVoices, () => {});
   }, []);
 
+  // Counts each time the form is filled from outside the fields, so a field's own choices, such as
+  // Other for a model, start afresh with what was filled.
+  const [fills, setFills] = useState(0);
   function show(filled: AgentForm | undefined, voiceHolds: Published | undefined) {
+    setFills((n) => n + 1);
     setBase(filled);
     setForm(filled);
     setPublished(voiceHolds);
@@ -88,7 +92,7 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
 
   return (
     <AgentsView
-      {...{ list, voices, picked, form, published, busy, result, error }}
+      {...{ list, voices, picked, form, published, busy, result, error, fills }}
       dirty={JSON.stringify(form) !== JSON.stringify(base)}
       on={{
         pick: (path) => {
@@ -131,7 +135,7 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
         revert: () =>
           run(async () => {
             if (file) fill(await readAgent(file.id));
-            else setForm(base);
+            else show(base, null);
             return "";
           }),
         clone: () => {
@@ -169,6 +173,8 @@ export type AgentsViewProps = {
   form?: AgentForm;
   // Whether the form holds edits not yet published.
   dirty: boolean;
+  // How many times the form was filled from outside its fields.
+  fills?: number;
   published?: Published;
   busy: boolean;
   result: string;
@@ -180,7 +186,7 @@ export type AgentsViewProps = {
 };
 
 export function AgentsView(props: AgentsViewProps) {
-  const { list, voices, picked, form, dirty, published, busy, result, error, on } = props;
+  const { list, voices, picked, form, dirty, fills, published, busy, result, error, on } = props;
   const file = list?.files.find((f) => f.path === picked);
   const shipped = file?.folder === "shipped";
   return (
@@ -208,7 +214,6 @@ export function AgentsView(props: AgentsViewProps) {
       {file && (
         <p className="meta">
           {`${folders[file.folder]}${file.path}`}
-          {shipped && ", shipped: read-only here"}
           {file.same_id_as.length > 0 &&
             ` · same id as ${file.same_id_as.map((o) => folders[o.folder] + o.path).join(", ")}, so neither is published until one gets a new id`}
         </p>
@@ -232,10 +237,14 @@ export function AgentsView(props: AgentsViewProps) {
             {`The file changed after version ${published.version} was published: to keep edits made there, use Publish the file as it is, or Publish overwrites them.`}
           </p>
         )}
+      {form && shipped && (
+        <p>
+          <strong>Shipped agent: read-only here.</strong> Clone it to make your own.
+        </p>
+      )}
       {form && (
-        // A field's own choices, such as Other for a model, start afresh with each agent.
         <Fields
-          key={form.id}
+          key={fills}
           form={form}
           voices={voices}
           readOnly={shipped}
@@ -256,7 +265,7 @@ export function AgentsView(props: AgentsViewProps) {
             </>
           )}
           {form && file && (
-            <button type="button" onClick={on.clone} disabled={busy}>
+            <button type="button" onClick={on.clone} disabled={busy || dirty}>
               Clone
             </button>
           )}
@@ -298,7 +307,6 @@ function Fields(props: {
     value: form[key],
     onChange: (e: ChangeEvent<Field>) => on({ ...form, [key]: e.target.value }),
   });
-  const text = (key: Exclude<keyof AgentForm, "summaryDocuments">) => ({ ...field(key), readOnly });
   // Typed as text, so a half-typed number is said rather than read as empty, the server's speed.
   const badSpeed = form.speed.trim() !== "" && !isSpeed(Number(form.speed));
   // The agent's own voice stays a choice when voice-guide's list lacks it or couldn't be read.
@@ -316,23 +324,27 @@ function Fields(props: {
         : form.summaryDocuments.filter((d) => d !== name),
     });
   return (
-    <fieldset className="fields" disabled={busy}>
+    // A read-only form disables every field, so none looks editable.
+    <fieldset className="fields" disabled={busy || readOnly}>
       <Row id="agent-name" label="Name">
-        <input {...text("name")} />
+        <input {...field("name")} />
       </Row>
       <Row id="agent-description" label="Description">
-        <textarea {...text("description")} rows={2} />
+        <textarea {...field("description")} rows={2} />
       </Row>
       <Row id="agent-reads" label="Reads">
-        <input {...text("reads")} placeholder="Context kinds, comma-separated" />
+        <input {...field("reads")} placeholder="Context kinds, comma-separated" />
       </Row>
       <Row id="agent-sessionContext" label="Session context">
-        <input {...text("sessionContext")} placeholder="Documents a start sends, comma-separated" />
+        <input
+          {...field("sessionContext")}
+          placeholder="Documents a start sends, comma-separated"
+        />
       </Row>
       <fieldset className="group">
         <legend>Summary</legend>
         <Row id="agent-summaryInstruction" label="Instruction">
-          <textarea {...text("summaryInstruction")} rows={4} placeholder="Empty for no summary" />
+          <textarea {...field("summaryInstruction")} rows={4} placeholder="Empty for no summary" />
         </Row>
         <Row id="agent-summaryModel" label="Model">
           <ModelField
@@ -341,7 +353,6 @@ function Fields(props: {
             listed={summaryModels}
             empty="The agent's model"
             label="The summary's model name"
-            readOnly={readOnly}
             on={(summaryModel) => on({ ...form, summaryModel })}
           />
         </Row>
@@ -353,7 +364,6 @@ function Fields(props: {
                 type="checkbox"
                 checked={form.summaryDocuments.includes(name)}
                 onChange={(e) => check(name, e.target.checked)}
-                disabled={readOnly}
               />
               {name}
             </label>
@@ -367,13 +377,13 @@ function Fields(props: {
         )}
         <Row id="agent-summaryOnly" label="Summary only">
           <input
-            {...text("summaryOnly")}
+            {...field("summaryOnly")}
             placeholder="Documents the agent never sees, comma-separated"
           />
         </Row>
         <Row id="agent-summarySchema" label="Schema">
           <textarea
-            {...text("summarySchema")}
+            {...field("summarySchema")}
             className="code"
             rows={5}
             placeholder="A JSON Schema object, empty for none"
@@ -381,7 +391,7 @@ function Fields(props: {
         </Row>
       </fieldset>
       <Row id="agent-opens" label="Opens">
-        <select {...field("opens")} disabled={readOnly}>
+        <select {...field("opens")}>
           <option value="user">The user speaks first</option>
           <option value="agent">The agent speaks first</option>
         </select>
@@ -393,12 +403,11 @@ function Fields(props: {
           listed={agentModels}
           empty="The server's model"
           label="The agent's model name"
-          readOnly={readOnly}
           on={(model) => on({ ...form, model })}
         />
       </Row>
       <Row id="agent-voice" label="Voice">
-        <select {...field("voice")} disabled={readOnly}>
+        <select {...field("voice")}>
           <option value="">The server's</option>
           {offered.map((v) => (
             <option key={v} value={v}>
@@ -409,7 +418,7 @@ function Fields(props: {
       </Row>
       <Row id="agent-speed" label="Speed">
         <input
-          {...text("speed")}
+          {...field("speed")}
           inputMode="decimal"
           placeholder="0.5 to 2, empty for the server's"
         />
@@ -418,7 +427,7 @@ function Fields(props: {
       <label className="wide" htmlFor="agent-persona">
         Persona
       </label>
-      <textarea {...text("persona")} className="wide" rows={18} />
+      <textarea {...field("persona")} className="wide" rows={18} />
     </fieldset>
   );
 }
@@ -431,10 +440,9 @@ function ModelField(props: {
   empty: string;
   // What the field for another name is called, to a screen reader.
   label: string;
-  readOnly: boolean;
   on(value: string): void;
 }) {
-  const { id, value, listed, empty, label, readOnly, on } = props;
+  const { id, value, listed, empty, label, on } = props;
   const [other, setOther] = useState(false);
   const choice = modelChoice(listed, value, other);
   return (
@@ -442,7 +450,6 @@ function ModelField(props: {
       <select
         id={id}
         value={choice}
-        disabled={readOnly}
         onChange={(e) => {
           setOther(e.target.value === "other");
           if (e.target.value !== "other") on(e.target.value);
@@ -461,7 +468,6 @@ function ModelField(props: {
           aria-label={label}
           value={value}
           onChange={(e) => on(e.target.value)}
-          readOnly={readOnly}
           placeholder="Any model name voice-guide accepts"
         />
       )}

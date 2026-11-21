@@ -90,8 +90,8 @@ The Agents tab's dropdown lists every agent file with the version voice-guide ha
 - **Publish** writes the form to the agent's file, then publishes the file with the development product key, which the browser never sees. It says `published version 3`, `unchanged, version 3`, or "voice-guide refused it" and why, and the form keeps your edits until voice-guide takes them. The Test tab then lists the agent, so you can talk to it at once. The file is written first, so after a refusal it keeps what was refused; **Revert** fills only the form again from voice-guide.
 - **The form rewrites the whole file**: comments and layout you wrote by hand in the settings block aren't kept. A file changed in your editor since the page listed it isn't overwritten: reload the page. A file changed after its version was published is flagged when you pick it; publish it as it is first to keep those edits.
 - **New agent** starts an empty form with a fresh `id`. Its first Publish writes a file named for it, and version 1.
-- **The shipped agents** in `agents/` show read-only, so the page never changes a tracked file.
-- **Clone**, for any agent, starts a new test agent with the same settings, a fresh `id` and "(copy)" after the name; its first Publish writes its file.
+- **The shipped agents** in `agents/` show read-only, every field greyed out, so the page never changes a tracked file.
+- **Clone**, for any agent with no edits waiting, starts a new test agent with the same settings, a fresh `id` and "(copy)" after the name; its first Publish writes its file.
 - **Publish the file as it is** sends the file on disk: one never published, which has nothing to fill the form from yet, or one you changed in your editor. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
 
 <details>
