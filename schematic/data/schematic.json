@@ -360,7 +360,7 @@
       "title": "A product's server starts each session with its key; the user's browser holds only what voice-guide signed",
       "section": "Platform · Security and access",
       "status": "accepted",
-      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most.",
+      "decision": "A product's server proves its workspace with a product key, kept only as its SHA-256, and starts each session itself for the user it names by its own stable ID. The start answers with a ticket the browser holds for that one session: signed by voice-guide, working until the session ends or for four hours at most. Each key holds permissions fixed when it is made, running sessions or publishing agents, and each route names the one it needs.",
       "why": "Every start passes the product's server, so it decides who may start a session and what the agent is told, and its key never reaches a browser; a copy of the database holds only hashes. A product signing its own tokens would need its key kept readable, and a public key in the page can be copied by anyone.",
       "tradeoff": "The product needs a server and calls voice-guide before each session; a stolen ticket works in its one session until the product ends it with its key or four hours pass; rotating the signing key drops every user."
     },
@@ -1012,7 +1012,7 @@
           "name": "Router",
           "path": "internal/api",
           "summary": "The public API's one router: every route behind a key or ticket check, open to any site where tickets go.",
-          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key and refuses a ticket, and HandleTicket for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key as well. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes HandleTicket and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
+          "description": "The public API's one router, the same an outside product calls and voice-guide's own page uses. Each module's HTTP adapter registers its routes here, the only way to add one: HandleProduct for a route a product's server calls, which takes its product key, only with the permission the route names (a working key without it is answered 403, insufficient_scope), and refuses a ticket, and HandleTicket for a route in one session, which the browser calls with that session's ticket: a ticket for another session is answered 404, as a session that doesn't exist, one past its four hours 401 of type ticket-expired, and a key is refused without being read. HandleSessionEnd, for the session's end, takes the ticket up to 15 minutes past its four hours too, and the product's key, with the permission it names, as well; a route taking a key can't be registered without one. Each puts the route behind the check and a deadline of its own, and a key's caller is marked a product, naming the workspace, the key's permissions and no user. It mints the ticket a start answers with. Every error, including unknown paths and wrong methods, is an RFC 9457 problem details document. The routes HandleTicket and HandleSessionEnd register answer a page on any origin, and the router answers their preflight from the route alone, with no handler run and no credential read; HandleProduct's routes send no CORS headers and their preflight is refused. A product key sent with an Origin header is refused before it is read, on every route. Without a credential it serves only those preflights and the drop-in client, from the folder cmd/voice gives it, read at each request.",
           "why": "One router checks every credential in one place, so no module's routes can skip the check.",
           "considerations": ["product-keys", "problem-details", "api-for-products", "any-origin"]
         },
@@ -1034,7 +1034,7 @@
           "name": "Caller",
           "path": "internal/access",
           "summary": "Who calls: workspace, user and the session a ticket allows, or a product's server.",
-          "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
+          "description": "Says who a request comes from (its workspace, its user and the one session its ticket works in, or a product's server, proven by its key, naming its workspace, the key's permissions and no user) and imports nothing of voice-guide's, so the router, the ticket check, conversation and speech all name a caller without the router or the tickets importing a module.",
           "why": "A plain type every part may import, so the caller crosses module walls without a module importing another.",
           "considerations": ["one-service-four-modules", "workspace-every-record"],
           "importedFreely": true
@@ -1046,7 +1046,7 @@
           "name": "Product keys",
           "path": "internal/productkey",
           "summary": "Makes product keys and checks one by its SHA-256 across workspaces; the key itself is never kept.",
-          "description": "Makes a product key (vgk_ and 256 random bits), keeping only its SHA-256 and first 12 characters, checks one by finding its hash among the working keys of every workspace, and lists and revokes a workspace's keys. A key is held in a type that prints, logs and encodes redacted. Like the ticket check it imports no module, so the router checks keys without reaching into one; its store is an adapter of its own.",
+          "description": "Makes a product key (vgk_ and 256 random bits) holding the permissions it is made with, keeping only its SHA-256, first 12 characters and permissions, checks one by finding its hash among the working keys of every workspace, and lists and revokes a workspace's keys. A key is held in a type that prints, logs and encodes redacted. Like the ticket check it imports no module, so the router checks keys without reaching into one; its store is an adapter of its own.",
           "why": "Only each key's hash is kept, so a copy of the database can't be used to act for a workspace.",
           "considerations": ["product-keys", "workspace-every-record"],
           "drill": "productkey"
@@ -1180,7 +1180,7 @@
           "protocol": "HTTP",
           "send": "agents · start, end, read past sessions, with the product key",
           "back": "agents · the session and its ticket · problem details",
-          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
+          "detail": "GET /v1/agents and POST /v1/sessions, the routes registered through HandleProduct, with a key that may run sessions; the start names the user by the product's own stable ID. GET /v1/users/{user}/sessions and GET /v1/sessions/{id} read past sessions through HandleProduct, so a ticket is refused.",
           "considerations": ["product-keys"]
         },
         {
@@ -1217,9 +1217,9 @@
           "from": "api",
           "to": "productkey",
           "protocol": "call",
-          "send": "Workspace(key)",
-          "back": "the workspace, unknown, or unchecked",
-          "detail": "Only on the routes a product's server calls; a key sent where the browser's ticket belongs, or sent from a page with an Origin header, is refused unread. A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, never a 401.",
+          "send": "Find(key)",
+          "back": "its workspace and permissions, unknown, or unchecked",
+          "detail": "Only on the routes a product's server calls; a key sent where the browser's ticket belongs, or sent from a page with an Origin header, is refused unread. A key revoked, unknown or malformed is refused (401); one the database can't check is a 503, never a 401; a working key without the permission the route names is refused 403, with insufficient_scope naming it.",
           "considerations": ["product-keys"]
         },
         {
@@ -1236,7 +1236,7 @@
           "to": "conversation",
           "protocol": "route",
           "send": "agents · sessions · typed turns · end · past sessions",
-          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key), and GET /v1/users/{user}/sessions and GET /v1/sessions/{id} through HandleProduct.",
+          "detail": "conversation's HTTP adapter registers GET /v1/agents and POST /v1/sessions through HandleProduct (a product's key) and POST /v1/sessions/{id}/turns through HandleTicket (a ticket) and POST /v1/sessions/{id}/end through HandleSessionEnd (a ticket or the product's key), and GET /v1/users/{user}/sessions and GET /v1/sessions/{id} through HandleProduct; every route taking a key needs run_sessions.",
           "considerations": ["http-and-webrtc"]
         },
         {
@@ -3395,7 +3395,7 @@
       "id": "productkey",
       "title": "product keys",
       "level": 3,
-      "lead": "Hexagonal like a module: Keys holds the rules and declares one port, Store, implemented by a PostgreSQL store. The router asks Keys which workspace a key acts for; cmd/productkey makes, lists and revokes keys. Only each key's hash is kept.",
+      "lead": "Hexagonal like a module: Keys holds the rules and declares one port, Store, implemented by a PostgreSQL store. The router asks Keys which workspace a key acts for and what it may do; cmd/productkey makes, lists and revokes keys. Only each key's hash is kept.",
       "considerations": ["product-keys", "workspace-every-record", "hexagonal"],
       "flows": [
         {
@@ -3415,7 +3415,7 @@
             {
               "nodes": ["x-api", "keys"],
               "edges": ["api-keys"],
-              "caption": "The router asks Keys for the key's Workspace; Keys answers unknown for a key of the wrong length or form without asking the store"
+              "caption": "The router asks Keys to Find the key; Keys answers unknown for a key of the wrong length or form without asking the store"
             },
             {
               "nodes": ["keys", "p-store", "storepg", "x-postgres"],
@@ -3425,7 +3425,7 @@
             {
               "nodes": ["x-api", "keys"],
               "edges": ["api-keys"],
-              "caption": "Found, the request goes on as that workspace's product; an unknown or revoked key gets 401, a check that couldn't be made 503, to retry"
+              "caption": "Found, a key holding the route's permission goes on as that workspace's product; one without it gets 403, unknown or revoked 401, unchecked 503"
             }
           ]
         },
@@ -3436,12 +3436,12 @@
             {
               "nodes": ["x-cmd", "keys"],
               "edges": ["cmd-keys"],
-              "caption": "A member runs scripts/product-key.sh create, and cmd/productkey asks Keys to Create a key for the workspace"
+              "caption": "A member runs scripts/product-key.sh create, naming its permissions or taking run_sessions, and cmd/productkey asks Keys to Create the key"
             },
             {
               "nodes": ["keys"],
               "edges": [],
-              "caption": "Create makes vgk_ plus 32 random bytes in base64url, and keeps only the key's SHA-256 and its first 12 characters"
+              "caption": "Create refuses a key with no permission, makes vgk_ plus 32 random bytes in base64url, and keeps only its SHA-256, first 12 characters and permissions"
             },
             {
               "nodes": ["keys", "p-store", "storepg", "x-postgres"],
@@ -3462,7 +3462,7 @@
             {
               "nodes": ["x-cmd", "keys", "p-store", "storepg", "x-postgres"],
               "edges": ["cmd-keys", "keys-store", "pg-store", "pg-db"],
-              "caption": "list shows the workspace's keys, newest first: each one's ID, first characters, when it was made and whether it is revoked"
+              "caption": "list shows the workspace's keys, newest first: each one's ID, first characters, permissions, when it was made and whether it is revoked"
             },
             {
               "nodes": ["x-cmd", "keys"],
@@ -3506,7 +3506,7 @@
           "name": "Keys",
           "path": "productkey.go",
           "summary": "Makes a key, checks one by its hash, lists and revokes; a Key prints and logs redacted.",
-          "description": "Create makes a key, vgk_ and 256 random bits in base64url, and keeps its SHA-256 and first 12 characters; the key is returned once, held in a Key that formats, logs and encodes redacted, behind a pointer. Workspace refuses a malformed key without a read, then finds the hash among the working keys: unknown, revoked and malformed look alike, and a store that can't answer is a failure, never unknown. Revoke stops a key at once and counts the keys still working.",
+          "description": "Create makes a key, vgk_ and 256 random bits in base64url, holding the permissions given, never none, and keeps its SHA-256, first 12 characters and permissions; the key is returned once, held in a Key that formats, logs and encodes redacted, behind a pointer. Find refuses a malformed key without a read, then finds the hash among the working keys, with its workspace and permissions: unknown, revoked and malformed look alike, and a store that can't answer is a failure, never unknown. Revoke stops a key at once and counts the keys still working.",
           "why": "A key is kept only as its SHA-256 and found by that hash, since the key itself names its workspace.",
           "considerations": ["product-keys"],
           "drill": "types-productkey",
@@ -3519,8 +3519,8 @@
           "name": "Store",
           "path": "productkey.go",
           "summary": "Where what is kept of each key lives.",
-          "members": ["Add", "Workspace", "List", "Revoke", "Working"],
-          "description": "The port for what is kept of product keys: add a record, find the workspace of the working key with a hash, list a workspace's keys newest first, revoke one keeping the first revoke time, and count a workspace's working keys.",
+          "members": ["Add", "Find", "List", "Revoke", "Working"],
+          "description": "The port for what is kept of product keys: add a record, find the working key with a hash, list a workspace's keys newest first, revoke one keeping the first revoke time, and count a workspace's working keys.",
           "considerations": ["product-keys"],
           "drill": "types-productkey",
           "focus": "internal/productkey"
@@ -3533,7 +3533,7 @@
           "name": "store/postgres",
           "path": "internal/productkey/store/postgres",
           "summary": "The product_keys table: a key found by its hash, across workspaces.",
-          "description": "Keeps the records in the product_keys table through sqlc-generated queries. Finding a key by its hash looks across workspaces, since the key is what names the workspace, and reads out only that workspace; listing, revoking and counting name the workspace.",
+          "description": "Keeps the records in the product_keys table through sqlc-generated queries. Finding a key by its hash looks across workspaces, since the key is what names the workspace, and reads out only that key; its permissions are a text array, which a database check keeps non-empty and known. Listing, revoking and counting name the workspace.",
           "considerations": ["sqlc", "workspace-every-record"],
           "drill": "types-productkey",
           "focus": "internal/productkey/store/postgres"
@@ -3544,7 +3544,7 @@
           "context": true,
           "name": "Router",
           "path": "internal/api",
-          "summary": "Checks a product key on the routes a product's server calls."
+          "summary": "Checks a product key, and the permission its route needs, on the routes a product's server calls."
         },
         {
           "id": "x-cmd",
@@ -3570,9 +3570,9 @@
           "from": "x-api",
           "to": "keys",
           "protocol": "call",
-          "send": "Workspace(key)",
-          "back": "the workspace, unknown, or unchecked",
-          "detail": "A 401 for unknown, a 503 when the store can't answer.",
+          "send": "Find(key)",
+          "back": "its workspace and permissions, unknown, or unchecked",
+          "detail": "A 401 for unknown, a 503 when the store can't answer; the router answers 403 to a key without the route's permission.",
           "considerations": ["product-keys"]
         },
         {
@@ -3589,7 +3589,7 @@
           "from": "keys",
           "to": "p-store",
           "protocol": "port",
-          "send": "Add · Workspace · List · Revoke · Working"
+          "send": "Add · Find · List · Revoke · Working"
         },
         {
           "id": "pg-store",

@@ -39,7 +39,7 @@ How voice-guide is built, in plain words. Setting up, the commands and where thi
 | `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; the Go service serves the new build from the next load |
 | `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
 | `scripts/migrate.sh` | Applies migrations the database in `.env` hasn't run, without restarting |
-| `scripts/product-key.sh create\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept |
+| `scripts/product-key.sh create [--permissions run_sessions,publish_agents]\|list\|revoke ID` | The workspace's product keys. `create` prints a new key, the only time it's shown, since only its hash is kept; it may run sessions unless `--permissions` names others, and its permissions never change |
 | `scripts/webhook.sh set URL\|rotate\|show` | The workspace's webhook. `set` prints the signing secret the first time, the only time it's shown; `rotate` replaces it |
 | `scripts/workspace.sh create NAME` | A new workspace besides the seeded one, so each product has its own agents, keys and webhook. Prints its ID and its first product key, the only time the key is shown; the other scripts take the workspace in `VOICE_WORKSPACE_ID` |
 
@@ -129,7 +129,7 @@ Every piece of work is one of four kinds:
 - Every endpoint is designed for an outside product to call, and voice-guide's own web page uses nothing else.
 - HTTP for agents, sessions and typed turns, whose reply streams back as it is written; WebRTC for audio.
 - Requests that create something carry the caller's ID, so a repeat does no harm.
-- A product's server calls with its product key, and the user's browser with the ticket voice-guide signed for its session; every route checks one, a route the browser calls refuses a key, and a product's route refuses a ticket. A page on any site may call a route the browser calls, and none may call a product's route or send a product key anywhere; the drop-in client's script is the one thing served with no credential.
+- A product's server calls with its product key, and the user's browser with the ticket voice-guide signed for its session; every route checks one, a route the browser calls refuses a key, a product's route refuses a ticket, and a key without the permission a route names is refused there. A page on any site may call a route the browser calls, and none may call a product's route or send a product key anywhere; the drop-in client's script is the one thing served with no credential.
 - Errors use the standard problem details format, and every path starts with `/v1/`.
 - `api/openapi.yaml` describes every route and the webhook, for products to generate their client types from. A change to a route or its body updates it in the same pull request; a test fails when its routes and the router's differ, and review checks the bodies.
 
