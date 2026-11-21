@@ -7,7 +7,7 @@ export type Sessions = {
   call(path: string, init?: RequestInit): Promise<Response>;
   pass(res: Response, to: Reply): Promise<unknown>;
   fail(to: Reply, status: number, why: string): unknown;
-  // A block of session context by name, or undefined when the placeholder user has none.
+  // A document of session context by name, or undefined when the placeholder user has none.
   block(name: string): Promise<string | undefined>;
   // The folder the placeholder user's files are in, as the page may be told of it.
   folder: string;
@@ -29,26 +29,10 @@ type Request = {
 
 type Document = { name: string; content: string };
 
-// A start's body holds documents, which voice allows 280,000 characters of by default; JSON can
-// double that when the text is mostly quotes or line breaks, so this leaves room for that and for
-// the rest of the body. Voice's own limit still decides what it takes.
-export const startWithDocumentsLimit = 600_000;
-
-// Whether a request that changes something came from another site: a page on another origin can
-// send a JSON-typed POST to 127.0.0.1 only with a preflight this server never answers, but the
-// check doesn't lean on that alone. The browser says where a request came from, and a page of this
-// server's own always says its own origin, so one from anywhere else is refused.
-export function crossSite(req: Request): boolean {
-  const headers = req.headers ?? {};
-  if (headers["sec-fetch-site"] === "cross-site") return true;
-  const origin = headers.origin;
-  if (origin === undefined) return false;
-  try {
-    return new URL(String(origin)).host !== headers.host;
-  } catch {
-    return true;
-  }
-}
+// A start's body holds documents, which voice allows 280,000 characters of by default: 840,000
+// bytes at the most UTF-8 takes for a character in the languages voice speaks, and the rest of the
+// body is small, so 1 MiB leaves room. Voice's own limit still decides what it takes.
+export const startWithDocumentsLimit = 1_048_576;
 
 // What a start may override, as the page sent it, or why it can't be read. Only what voice
 // wouldn't say plainly is checked here; voice checks the rest, and its problem is shown as it is.

@@ -1,10 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import type { Plugin } from "vite";
-import { type AgentFolders, agentFileRoutes } from "./agent-files.ts";
+import { type AgentFolders, agentFileRoutes, fromElsewhere, readJSON } from "./agent-files.ts";
 import { seedFile } from "./seed.ts";
 import {
-  crossSite,
   documentsFor,
   overrides,
   type Sessions,
@@ -17,10 +16,6 @@ const repo = resolve(import.meta.dirname, "../..");
 const placeholderUser = resolve(repo, "seed/placeholder-user");
 // The developer's own test data, gitignored: a file here is used instead of its sample.
 const localUser = resolve(repo, "seed/local");
-
-// A body is small unless it carries documents: a start's is two UUIDs and a few settings, and this
-// leaves room, and stops a page that sends more from being read.
-const startBodyLimit = 4096;
 
 // Where voice is: VOICE_ADDR, which the other scripts find it by too.
 export const voiceAddress = process.env.VOICE_ADDR ?? "127.0.0.1:8080";
@@ -141,22 +136,20 @@ export function productRoutes(product: Product) {
       }
       if (await sessionRoutes(sessions, req, to)) return;
       if (req.url === "/start" && req.method === "POST") {
-        // Like every route that changes anything: not for a page on another site.
-        if (crossSite(req)) return fail(to, 403, "the start is for this page only");
-        // A page on another site can send a form-typed POST here with no preflight; JSON it can't.
-        if (!String(req.headers?.["content-type"] ?? "").startsWith("application/json")) {
-          return fail(to, 415, "the start takes application/json");
+        const refusal = fromElsewhere(req);
+        if (refusal) return fail(to, ...refusal);
+        // Past the limit the connection is kept for this answer and closed after it, so the page
+        // reads the reason instead of a dropped connection.
+        const asked = await readJSON(req, startWithDocumentsLimit, false).catch(() => undefined);
+        if (!asked) {
+          to.setHeader("Connection", "close");
+          return fail(to, 413, `the start is over ${startWithDocumentsLimit} bytes`);
         }
-        let agent: string;
-        let request: string;
-        let asked: Record<string, unknown>;
-        try {
-          asked = JSON.parse(await readBody(req, startWithDocumentsLimit));
-          agent = String(asked.agent_id);
-          request = String(asked.request_id);
-        } catch {
+        if (typeof asked.agent_id !== "string" || typeof asked.request_id !== "string") {
           return fail(to, 400, "the body must be a small JSON object with agent_id and request_id");
         }
+        const agent = asked.agent_id;
+        const request = asked.request_id;
         const chosen = overrides(asked);
         if (typeof chosen === "string") return fail(to, 400, chosen);
         // What the agent asks the product for at its start, which its list says.
@@ -189,27 +182,6 @@ export function productRoutes(product: Product) {
       );
     }
   };
-}
-
-// Reads a request's body up to limit characters; past that it stops reading, drops the connection
-// and refuses.
-export function readBody(req: Incoming, limit = startBodyLimit): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    let over = false;
-    req.on("data", (chunk: Buffer | string) => {
-      if (over) return;
-      body += chunk;
-      if (body.length > limit) {
-        over = true;
-        body = "";
-        req.destroy?.();
-        reject(new Error("the request is over the limit"));
-      }
-    });
-    req.on("end", () => resolve(body));
-    req.on("error", reject);
-  });
 }
 
 // One block of session context by name from folder, one file per name, or undefined when there is

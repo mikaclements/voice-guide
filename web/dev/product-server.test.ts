@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { contextBlock, defaultTimeoutMs, productRoutes, readBody } from "./product-server.ts";
+import { contextBlock, defaultTimeoutMs, productRoutes } from "./product-server.ts";
 import { seedFile } from "./seed.ts";
 
 async function userFolder(t: { after(fn: () => unknown): void }) {
@@ -243,25 +243,6 @@ test("a start not sent as JSON is refused before anything is read or sent", asyn
   assert.equal(v.calls.length, 0, "voice never heard of it");
 });
 
-test("a body over the limit is dropped, not read to its end", async () => {
-  let destroyed = 0;
-  let listener: ((chunk: string) => void) | undefined;
-  const req = {
-    on(event: string, cb: (chunk: string) => void) {
-      if (event === "data") listener = cb;
-    },
-    destroy() {
-      destroyed++;
-    },
-  };
-  const read = readBody(req);
-  listener?.("x".repeat(3000));
-  listener?.("x".repeat(3000));
-  listener?.("x".repeat(3000));
-  await assert.rejects(read, /over the limit/);
-  assert.equal(destroyed, 1, "the connection is dropped once, at the limit");
-});
-
 test("a voice that doesn't answer in time ends the call with an error", async (t) => {
   const hangs = ((_url: string, init?: RequestInit) =>
     new Promise((_resolve, reject) => {
@@ -439,24 +420,51 @@ test("overrides that voice wouldn't explain are refused before anything is sent"
   assert.equal(calls.length, 0, "voice heard of none");
 });
 
-test("a start over the documents' limit is dropped", async (t) => {
+test("a start over the documents' limit is answered 413 with the limit, and the connection closes after", async (t) => {
   const { route, calls } = await richRoute(t);
-  const big = "x".repeat(700_000);
   const res = reply();
-  await route(
-    request(
-      "/start",
-      "POST",
-      JSON.stringify({
-        agent_id: "keeper",
-        request_id: "r1",
-        session_context: [{ name: "log", content: big }],
-      }),
-    ),
-    res,
-  );
-  assert.equal(res.statusCode, 400);
+  let destroyed = 0;
+  const body = JSON.stringify({
+    agent_id: "keeper",
+    request_id: "r1",
+    session_context: [{ name: "log", content: "x".repeat(1_100_000) }],
+  });
+  await route({ ...request("/start", "POST", body), destroy: () => destroyed++ }, res);
+  assert.equal(res.statusCode, 413);
+  assert.match(res.body, /over 1048576 bytes/);
+  assert.equal(res.headers.Connection, "close");
+  assert.equal(destroyed, 0, "the connection is left for the answer");
   assert.equal(calls.length, 0);
+});
+
+test("a document with a character split across two chunks reaches voice whole", async (t) => {
+  const { route, calls } = await richRoute(t);
+  const content = "灯台守の日記。".repeat(30_000);
+  const bytes = Buffer.from(
+    JSON.stringify({
+      agent_id: "keeper",
+      request_id: "r1",
+      session_context: [{ name: "log", content }],
+    }),
+  );
+  // Cut inside a three-byte character, as the network may.
+  const cut = bytes.indexOf(Buffer.from("灯")) + 1;
+  const req = {
+    ...request("/start", "POST"),
+    on(event: string, cb: (chunk: Buffer | string) => void) {
+      if (event === "data") {
+        cb(bytes.subarray(0, cut));
+        cb(bytes.subarray(cut));
+      }
+      if (event === "end") cb("");
+    },
+  };
+  const res = reply();
+  await route(req, res);
+  assert.equal(res.statusCode, 201);
+  const sent = calls.at(-1)?.body as { session_context: { content: string }[] } | undefined;
+  assert.equal(sent?.session_context[0].content, content);
+  assert.doesNotMatch(sent?.session_context[0].content ?? "", /\uFFFD/);
 });
 
 test("a start from another site is refused before anything is read or sent, and the page's own is not", async (t) => {
@@ -467,6 +475,7 @@ test("a start from another site is refused before anything is read or sent, and 
   });
   const cases: [Record<string, string>, number, string][] = [
     [{ "sec-fetch-site": "cross-site" }, 403, "the browser says cross-site"],
+    [{ "sec-fetch-site": "same-site" }, 403, "another port of this machine"],
     [{ origin: "https://evil.example" }, 403, "an origin that isn't the page's"],
     [{ origin: "http://127.0.0.1:9999" }, 403, "the page's host on another port"],
     [{ origin: "null" }, 403, "an opaque origin"],

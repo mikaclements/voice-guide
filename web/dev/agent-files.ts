@@ -309,8 +309,13 @@ export function uuidv7(now = Date.now()): string {
 }
 
 // Reads a JSON object from a request's body up to limit bytes, decoded once whole so a character
-// split between chunks stays whole; past the limit it stops reading and drops the connection.
-export function readJSON(req: Incoming, limit: number): Promise<Record<string, unknown>> {
+// split between chunks stays whole; past the limit it stops reading and, unless told to keep the
+// connection (so the caller can answer the page before closing it), drops the connection.
+export function readJSON(
+  req: Incoming,
+  limit: number,
+  drop = true,
+): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -319,7 +324,7 @@ export function readJSON(req: Incoming, limit: number): Promise<Record<string, u
       const bytes = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
       size += bytes.length;
       if (size > limit) {
-        req.destroy?.();
+        if (drop) req.destroy?.();
         reject(new Error("the request is over the limit"));
       } else chunks.push(bytes);
     });
