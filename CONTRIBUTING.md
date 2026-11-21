@@ -63,6 +63,7 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `internal/jobs/` | Background jobs (summaries, webhook deliveries), claimed from PostgreSQL |
 | `internal/pgtest/` | Gives each database test its own freshly migrated database |
 | `internal/redacttest/` | Checks, in a test, that a value holding a secret never shows it |
+| `api/` | `openapi.yaml`, the OpenAPI description of every route and the webhook, for products to generate their client types from |
 | `agents/` | The agents, one Markdown file each: a settings block, then the persona |
 | `migrations/` | Database migrations (goose), numbered across modules |
 | `web/` | voice-guide's web page (React), using only the public API, and the drop-in client built from its code: `src/client/` is what the drop-in client bundles, `src/page/` the test page, `dev/` the product's server stand-in the dev server mounts |

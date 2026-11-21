@@ -35,6 +35,7 @@ The plan, item specs and decision register are working notes, never committed; `
 | A reference doc's change at its people doc's level | The reference | The matching section of its people doc; a section added or renamed on both sides |
 | A tracked doc or agent file added, removed or renamed | The file itself | Where things are, in `CONTRIBUTING.md` |
 | Agent permissions and hooks | `.claude/settings.json` | The guardrails in `CLAUDE.md` if it's a policy change |
+| A route, a route's credential, request, reply or problem type, or the webhook's payload | The code | `api/openapi.yaml` (a test fails on a route it lacks or has extra, not on a changed body); the README where it describes the route |
 | A service, package, port or its methods, adapter or connection between parts added, changed or removed | The code | The schematic, through the `schematic` skill (`go test` fails on a package or an import between the parts of voice it doesn't show) |
 | A rule that would apply to any project | The playbook | |
 
