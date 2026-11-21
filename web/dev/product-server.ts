@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import type { Plugin } from "vite";
+import { type AgentFolders, agentFileRoutes } from "./agent-files.ts";
 import { seedFile } from "./seed.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
@@ -24,6 +25,8 @@ type Product = {
   user: string;
   // A folder of the developer's own files that take the place of the same names in user.
   local?: string;
+  // The agent files the page lists, edits and publishes; without them, it has no such routes.
+  agents?: AgentFolders;
   fetcher?: typeof fetch;
   // How long a call to voice may take before the product's server gives up on it, defaultTimeoutMs
   // unless set.
@@ -35,14 +38,14 @@ type Product = {
 // on the page instead of leaving it waiting.
 export const defaultTimeoutMs = 10_000;
 
-type Reply = {
+export type Reply = {
   statusCode: number;
   setHeader(name: string, value: string): unknown;
   end(body: string): unknown;
 };
 
 // What the routes read of a request: where it goes, and its body as it arrives.
-type Incoming = {
+export type Incoming = {
   url?: string;
   method?: string;
   headers?: Record<string, string | string[] | undefined>;
@@ -71,6 +74,7 @@ export function devProduct(): Plugin {
           key: process.env.VOICE_DEV_PRODUCT_KEY ?? "",
           user: placeholderUser,
           local: localUser,
+          agents: { local: resolve(localUser, "agents"), shipped: resolve(repo, "agents") },
         }),
       );
     },
@@ -100,6 +104,7 @@ export function productRoutes(product: Product) {
     to.setHeader("Content-Type", "text/plain; charset=utf-8");
     to.end(why);
   };
+  const agentFiles = product.agents && agentFileRoutes(product.agents, call);
 
   return async (req: Incoming, to: Reply) => {
     try {
@@ -110,6 +115,7 @@ export function productRoutes(product: Product) {
           "VOICE_DEV_PRODUCT_KEY is not set; serve the page with scripts/web.sh",
         );
       }
+      if (agentFiles && (await agentFiles(req, to))) return;
       if (req.url === "/agents" && req.method === "GET") {
         return await pass(await call("/v1/agents"), to);
       }
