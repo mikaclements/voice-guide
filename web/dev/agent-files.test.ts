@@ -303,6 +303,34 @@ test("a write or publish sent from another site, from another port of this machi
   assert.equal(await readFile(join(f.local, "coach.md"), "utf8"), agentFile(templateId, "Coach"));
 });
 
+test("a request naming a host other than this machine is refused on every route, reads included", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher);
+  // A site whose name was pointed at this machine: its page's requests are same-origin to it.
+  const rebound = {
+    ...fromPage,
+    host: "rebound.example:5173",
+    origin: "http://rebound.example:5173",
+  };
+  const asks: [string, string, unknown][] = [
+    ["/agent-files", "GET", undefined],
+    ["/agent-file?path=coach.md", "GET", undefined],
+    ...writes,
+  ];
+  for (const headers of [rebound, { ...fromPage, host: undefined }]) {
+    for (const [url, method, body] of asks) {
+      const res = await send(route, url, method, body, headers);
+      assert.equal(res.statusCode, 403, `${method} ${url} ${headers.host}`);
+    }
+  }
+  assert.equal(v.calls.length, 0, "voice never heard of it");
+  assert.deepEqual(await readdir(f.local), ["coach.md"]);
+  const local = { ...fromPage, host: "localhost:5173", origin: "http://localhost:5173" };
+  assert.equal((await send(route, "/agent-files", "GET", undefined, local)).statusCode, 200);
+});
+
 test("a new agent is the template with a fresh UUIDv7 id and the name given, in a file named for it", async (t) => {
   const f = await folders(t);
   const name = "Night Watch: Ünïcode $1";

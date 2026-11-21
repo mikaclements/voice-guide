@@ -38,6 +38,7 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
     const writes = ["PUT /agent-file", "POST /agent-files", "POST /publish"];
     if (!["GET /agent-files", "GET /agent-file", ...writes].includes(route)) return false;
     try {
+      if (fromAnotherHost(req)) return fail(to, 403, hostRefused);
       if (writes.includes(route)) {
         const refusal = fromElsewhere(req);
         if (refusal) return fail(to, ...refusal);
@@ -67,13 +68,24 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
   };
 }
 
+// This machine's own names for the dev server, at its port. A site whose name an attacker points at
+// this machine makes its page's requests same-origin to it, but they carry its name as the Host,
+// so every route, reading or acting, refuses any other name itself, whatever Vite checks first.
+const ownHost = /^(127\.0\.0\.1|localhost):\d+$/;
+const hostRefused = "only this machine's own names reach the dev server";
+
+export function fromAnotherHost(req: Incoming): boolean {
+  return !ownHost.test(String(req.headers?.host ?? ""));
+}
+
 // Whether a request that acts, rather than reads, must be refused, and how: every such route of the
 // dev server takes this one rule. A browser sends a JSON body to another origin only after a
-// preflight, which this server never answers, and names where a request came from; Vite has
-// already refused a Host that isn't this machine's, so the page's own origin is the Host it asked
-// for. A page on another site, or on another port of this machine, then can't act with the product
-// key through the developer's browser.
+// preflight, which this server never answers, and names where a request came from; the Host is one
+// of this machine's own names, so the page's own origin is the Host it asked for. A page on
+// another site, or on another port of this machine, then can't act with the product key through the
+// developer's browser.
 export function fromElsewhere(req: Incoming): [number, string] | undefined {
+  if (fromAnotherHost(req)) return [403, hostRefused];
   const site = req.headers?.["sec-fetch-site"];
   const origin = req.headers?.origin;
   if (
