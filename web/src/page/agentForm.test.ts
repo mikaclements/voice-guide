@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { copyForm, formFrom, newForm, settingsFrom, uuidv7 } from "./agentForm.ts";
+import {
+  cloneForm,
+  droppedDocuments,
+  formFrom,
+  modelChoice,
+  models,
+  newForm,
+  settingsFrom,
+  uuidv7,
+} from "./agentForm.ts";
 import type { AgentSettings } from "./agents.ts";
 
 const id = "01900000-0000-7000-8000-000000000001";
@@ -86,10 +95,69 @@ test("a new agent is an empty form with a fresh UUIDv7, the user speaking first 
   assert.deepEqual(settingsFrom(form), { ...bare, id: form.id, name: "" });
 });
 
-test("a copy of an agent is the same settings under a fresh UUIDv7, its name marked as a test", () => {
-  const copy = copyForm(formFrom(full));
-  assert.match(copy.id, uuidV7);
-  assert.deepEqual(settingsFrom(copy), { ...full, id: copy.id, name: 'Keeper: "the" #1 (test)' });
+test("a clone of an agent is the same settings under a fresh UUIDv7, its name marked as a copy", () => {
+  const clone = cloneForm(formFrom(full));
+  assert.match(clone.id, uuidV7);
+  assert.deepEqual(settingsFrom(clone), { ...full, id: clone.id, name: 'Keeper: "the" #1 (copy)' });
+});
+
+test("the summary's documents are checked among the session context names, and the others it reads are listed apart, as only it reads them", () => {
+  const agent = {
+    ...full,
+    session_context: ["resume", "job"],
+    summary: {
+      ...(full.summary as NonNullable<AgentSettings["summary"]>),
+      documents: ["job", "ship_log"],
+    },
+  };
+  const form = formFrom(agent);
+  assert.deepEqual([form.summaryDocuments, form.summaryOnly], [["job"], "ship_log"]);
+  const checked = settingsFrom({ ...form, summaryDocuments: ["job", "resume"] });
+  assert.deepEqual(typeof checked === "object" && checked.summary?.documents, [
+    "job",
+    "resume",
+    "ship_log",
+  ]);
+});
+
+test("a checked document no longer among the session context names is dropped, and said to be", () => {
+  const form = { ...formFrom(full), sessionContext: "job", summaryDocuments: ["job", "resume"] };
+  assert.deepEqual(droppedDocuments(form), ["resume"]);
+  const sent = settingsFrom(form);
+  assert.deepEqual(typeof sent === "object" && sent.summary?.documents, ["job", "ship_log"]);
+});
+
+test("a model is picked from the list, empty for the default, or Other for any other name", () => {
+  assert.deepEqual(models, [
+    "claude-fable-5-2",
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+  ]);
+  assert.deepEqual(
+    [
+      modelChoice("claude-opus-5-5", false),
+      modelChoice("", false),
+      modelChoice("my-model-1", false),
+    ],
+    ["claude-opus-5-5", "", "other"],
+  );
+  // Other chosen shows the name's field whatever the name, until another choice is made.
+  assert.deepEqual(
+    [modelChoice("", true), modelChoice("claude-opus-5-5", true)],
+    ["other", "other"],
+  );
+});
+
+test("the speed is a number from its field, or empty for the server's", () => {
+  for (const [typed, speed] of [
+    ["1.25", 1.25],
+    ["0.5", 0.5],
+    ["", null],
+  ] as const) {
+    const sent = settingsFrom({ ...formFrom(bare), speed: typed });
+    assert.equal(typeof sent === "object" && sent.speed, speed, typed);
+  }
 });
 
 test("a UUIDv7 holds its time in milliseconds, then version 7 and the RFC 9562 variant around random bits", () => {

@@ -82,11 +82,16 @@ The page has two tabs: **Test**, where you talk to an agent, and **Agents**, whe
 
 The Agents tab's dropdown lists every agent file with the version voice-guide has published, or "not published", then **New agent**. Your test agents live in `seed/local/agents/`, git-ignored like your resume:
 
-- **Pick an agent** to fill the form with its settings as voice-guide holds them, under "Version 2 is published, since" and when. The form has one row per setting of the agent file, in the file's order, and the persona last. Lists are comma-separated, the summary's schema is JSON, and an empty model, voice or speed is the server's.
+- **Pick an agent** to fill the form with its settings as voice-guide holds them, under "Version 2 is published, since" and when. The form has one row per setting of the agent file, in the file's order, and the persona last:
+  - Name, description, reads, session context names and the persona are free text, lists comma-separated.
+  - The models are picked from the current Claude models, or **Other** for any other name; empty is the server's model, or for the summary, the agent's.
+  - The summary's documents are checkboxes of the session context names. A checked one you remove from the session context is dropped, and the form says so. Documents only the summary reads, which the agent never sees while it talks, go under **Summary only**.
+  - The summary's schema is JSON, the speed a number from 0.5 to 2, and an empty voice or speed is the server's.
 - **Publish** writes the form to the agent's file, then publishes the file with the development product key, which the browser never sees. It says `published version 3`, `unchanged, version 3`, or "voice-guide refused it" and why, and the form keeps your edits until voice-guide takes them. The Test tab then lists the agent, so you can talk to it at once. The file is written first, so after a refusal it keeps what was refused; **Revert** fills only the form again from voice-guide.
 - **The form rewrites the whole file**: comments and layout you wrote by hand in the settings block aren't kept. A file changed in your editor since the page listed it isn't overwritten: reload the page. A file changed after its version was published is flagged when you pick it; publish it as it is first to keep those edits.
 - **New agent** starts an empty form with a fresh `id`. Its first Publish writes a file named for it, and version 1.
-- **The shipped agents** in `agents/` show read-only, so the page never changes a tracked file. **Copy to a test agent** starts a new agent with the same settings and "(test)" after the name.
+- **The shipped agents** in `agents/` show read-only, so the page never changes a tracked file.
+- **Clone**, for any agent, starts a new test agent with the same settings, a fresh `id` and "(copy)" after the name; its first Publish writes its file.
 - **Publish the file as it is** sends the file on disk: one never published, which has nothing to fill the form from yet, or one you changed in your editor. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
 
 <details>

@@ -1,5 +1,5 @@
-// The Agents tab's form: one field per agent file setting, as text the developer types, and the
-// mapping between it and the settings voice answers and the dev server writes.
+// The Agents tab's form: one field per agent file setting, as the developer types or picks it, and
+// the mapping between it and the settings voice answers and the dev server writes.
 import type { AgentSettings } from "./agents.ts";
 
 export type AgentForm = {
@@ -11,7 +11,10 @@ export type AgentForm = {
   sessionContext: string;
   summaryInstruction: string;
   summaryModel: string;
-  summaryDocuments: string;
+  // The session context names the summary reads too, checked.
+  summaryDocuments: string[];
+  // Documents only the summary reads, never the agent while it talks, comma-separated.
+  summaryOnly: string;
   // A JSON Schema object, as JSON; empty for none.
   summarySchema: string;
   opens: "agent" | "user";
@@ -22,6 +25,22 @@ export type AgentForm = {
   persona: string;
 };
 
+// The model names the form offers. voice-guide has no route listing models, so the page keeps the
+// current ones here; Other takes any name the loader accepts.
+export const models = [
+  "claude-fable-5-2",
+  "claude-opus-5-5",
+  "claude-sonnet-5-5",
+  "claude-haiku-5-5",
+];
+
+// What a model's dropdown shows for its value: the name when listed, empty for the default, and
+// Other for any other name, or while Other is chosen.
+export function modelChoice(value: string, other: boolean): string {
+  if (other || (value && !models.includes(value))) return "other";
+  return value;
+}
+
 const joined = (list: string[]) => list.join(", ");
 const listed = (text: string) =>
   text
@@ -30,6 +49,7 @@ const listed = (text: string) =>
     .filter(Boolean);
 
 export function formFrom(a: AgentSettings): AgentForm {
+  const documents = a.summary?.documents ?? [];
   return {
     id: a.id,
     name: a.name,
@@ -38,7 +58,8 @@ export function formFrom(a: AgentSettings): AgentForm {
     sessionContext: joined(a.session_context),
     summaryInstruction: a.summary?.instruction ?? "",
     summaryModel: a.summary?.model ?? "",
-    summaryDocuments: joined(a.summary?.documents ?? []),
+    summaryDocuments: documents.filter((d) => a.session_context.includes(d)),
+    summaryOnly: joined(documents.filter((d) => !a.session_context.includes(d))),
     summarySchema: a.summary?.schema ? JSON.stringify(a.summary.schema, null, 2) : "",
     opens: a.opens,
     model: a.model ?? "",
@@ -66,7 +87,11 @@ export function settingsFrom(f: AgentForm): AgentSettings | string {
   if (speed !== null && !Number.isFinite(speed)) {
     return "Speed must be a number, or empty for the server's.";
   }
-  const documents = listed(f.summaryDocuments);
+  const context = listed(f.sessionContext);
+  const documents = [
+    ...f.summaryDocuments.filter((d) => context.includes(d)),
+    ...listed(f.summaryOnly),
+  ];
   const summary =
     f.summaryInstruction || f.summaryModel || documents.length || schema
       ? { instruction: f.summaryInstruction, model: f.summaryModel || null, schema, documents }
@@ -103,10 +128,17 @@ export function newForm(): AgentForm {
   });
 }
 
-// A test agent copied from another, usually a shipped one the page only reads: its own id, so
-// publishing it never replaces the original.
-export function copyForm(f: AgentForm): AgentForm {
-  return { ...f, id: uuidv7(), name: `${f.name} (test)` };
+// The checked documents no longer among the session context names, which the summary then no
+// longer reads.
+export function droppedDocuments(f: AgentForm): string[] {
+  const context = listed(f.sessionContext);
+  return f.summaryDocuments.filter((d) => !context.includes(d));
+}
+
+// A new agent cloned from another, local or shipped: its own id, so publishing it never replaces
+// the original.
+export function cloneForm(f: AgentForm): AgentForm {
+  return { ...f, id: uuidv7(), name: `${f.name} (copy)` };
 }
 
 // A UUID version 7 (RFC 9562): the time in milliseconds, then random bits, so agents' IDs sort by

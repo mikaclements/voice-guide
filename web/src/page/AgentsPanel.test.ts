@@ -30,10 +30,10 @@ const form = formFrom({
   name: "Coach",
   description: "Helps you practise.",
   reads: ["profile"],
-  session_context: [],
-  summary: { instruction: "Note it.", model: null, schema: null, documents: [] },
+  session_context: ["resume", "job"],
+  summary: { instruction: "Note it.", model: null, schema: null, documents: ["job"] },
   opens: "agent",
-  model: null,
+  model: "my-model-1",
   voice: "bf_emma",
   speed: null,
   persona: "You coach.",
@@ -51,7 +51,7 @@ const drawn = (props: Partial<AgentsViewProps>) =>
       busy: false,
       result: "",
       error: "",
-      on: { pick: none, form: none, publish: none, revert: none, copy: none, publishFile: none },
+      on: { pick: none, form: none, publish: none, revert: none, clone: none, publishFile: none },
       ...props,
     }),
   );
@@ -83,7 +83,9 @@ test("a picked agent shows what voice holds, then one labelled field per setting
   const html = drawn({ list, picked: "coach.md", form, published, voices: ["af_heart"] });
   assert.match(html, /<p>Version 3 is published, since 2026-01-02 03:04:05 UTC.<\/p>/);
   assert.deepEqual(
-    [...html.matchAll(/<(?:label[^>]*|legend)>([^<]*)</g)].map((m) => m[1]),
+    [...html.matchAll(/<(?:label [^>]*for=[^>]*|legend|span class="label")>([^<]+)</g)].map(
+      (m) => m[1],
+    ),
     [
       "Name",
       "Description",
@@ -93,6 +95,7 @@ test("a picked agent shows what voice holds, then one labelled field per setting
       "Instruction",
       "Model",
       "Documents",
+      "Summary only",
       "Schema",
       "Opens",
       "Model",
@@ -109,15 +112,44 @@ test("a picked agent shows what voice holds, then one labelled field per setting
     html,
     /<option value="">The server&#x27;s<\/option><option value="bf_emma" selected="">bf_emma<\/option><option value="af_heart">af_heart</,
   );
-  assert.deepEqual(buttons(html), ["Publish", "Revert", "Publish the file as it is"]);
+  assert.deepEqual(buttons(html), ["Publish", "Revert", "Clone", "Publish the file as it is"]);
 });
 
-test("a shipped agent shows read-only, to copy into a test agent, never to publish from the form", () => {
+test("the summary's documents are checked among the session context names, a model off the list shows Other and its name, and the speed is a number in voice's range", () => {
+  const html = drawn({ list, picked: "coach.md", form, published });
+  assert.match(
+    html,
+    /<div class="choices"><label><input type="checkbox"\/>resume<\/label><label><input type="checkbox" checked=""\/>job<\/label><\/div>/,
+  );
+  assert.match(
+    html,
+    /<select id="agent-summaryModel"><option value="" selected="">The agent&#x27;s model/,
+  );
+  assert.match(
+    html,
+    /<option value="claude-haiku-5-5">claude-haiku-5-5<\/option><option value="other">Other…/,
+  );
+  assert.match(
+    html,
+    /<option value="other" selected="">Other…<\/option><\/select><input aria-label="The agent&#x27;s model name"[^>]* value="my-model-1"/,
+  );
+  assert.match(html, /<input id="agent-speed"[^>]* type="number" min="0.5" max="2" step="0.05"/);
+  const dropped = drawn({
+    list,
+    picked: "coach.md",
+    form: { ...form, sessionContext: "resume" },
+    published,
+  });
+  assert.match(dropped, /Dropped, as no longer session context names: job/);
+});
+
+test("a shipped agent shows read-only, to clone into a test agent, never to publish from the form", () => {
   const html = drawn({ list, picked: "lamp.md", form, published });
   assert.match(html, /agents\/lamp.md, shipped: read-only here/);
-  assert.equal(html.match(/<(input|textarea)[^>]*readOnly=""/g)?.length, 11);
-  assert.equal(html.match(/<select[^>]*disabled=""/g)?.length, 2);
-  assert.deepEqual(buttons(html), ["Copy to a test agent", "Publish the file as it is"]);
+  assert.equal(html.match(/<(input|textarea)[^>]*readOnly=""/g)?.length, 10);
+  assert.equal(html.match(/<select[^>]*disabled=""/g)?.length, 4);
+  assert.equal(html.match(/<input type="checkbox"[^>]*disabled=""/g)?.length, 2);
+  assert.deepEqual(buttons(html), ["Clone", "Publish the file as it is"]);
 });
 
 test("a new agent says its first publish writes its file; a file never published offers to publish it as it is, having nothing to fill the form", () => {
@@ -179,7 +211,12 @@ test("edits not yet published hold off picking another agent and publishing the 
   const html = drawn({ list, picked: "coach.md", form, published, dirty: true });
   assert.match(html, /<select aria-label="Agent" disabled="">/);
   assert.match(html, /Publish or Revert the edits to pick another agent/);
-  assert.deepEqual(buttons(html), ["Publish", "Revert", "Publish the file as it is (disabled)"]);
+  assert.deepEqual(buttons(html), [
+    "Publish",
+    "Revert",
+    "Clone",
+    "Publish the file as it is (disabled)",
+  ]);
 });
 
 test("a press's result line, or what it failed with, shows beside the form", () => {
