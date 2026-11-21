@@ -48,7 +48,7 @@ What you need installed:
 
 http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product: its own small server holds a development product key and starts each session for a sample user, sending their resume. So you can talk to an agent without building anything.
 
-1. Open http://127.0.0.1:5173, pick the mock interviewer, press Start and allow the microphone.
+1. Open http://127.0.0.1:5173, which opens on the Test tab, pick the mock interviewer, press Start and allow the microphone.
 2. It greets you by the resume's name, asks about the resume, and follows up on your answers:
    - your words show as they're heard;
    - once you finish speaking, the reply streams in and is spoken as it arrives;
@@ -57,7 +57,7 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 
 ### Start with your own settings, and read past sessions
 
-Below the interviewer, the page has a sessions panel. Its form starts the chosen agent with settings of your own:
+Below the interviewer, the Test tab has a form that starts the chosen agent with settings of your own:
 
 - **Voice and speed:** the voice from the list voice offers (`/v1/voices`), and a speed from 0.5 to 2. Left empty, the agent's own are used.
 - **Documents:** one text area for each document of session context the agent asks for at its start, filled from `seed/local/` or the sample in `seed/placeholder-user/`. Change one to try the agent with other context; a document you empty is refused by voice, and the page shows its problem.
@@ -78,10 +78,12 @@ Under the form, the past sessions of the sample user, newest first: the agent, w
 <a id="test-agents"></a>
 ### Make test agents on the page
 
-The page's Agents panel lists every agent file with its folder and the version voice-guide has published, or "not published". Your test agents live in `seed/local/agents/`, git-ignored like your resume:
+The page has two tabs: **Test**, where you talk to an agent, and **Agents**, where you make and change agents. The address keeps the tab (`#agents`), so a reload stays on it.
+
+The Agents tab lists every agent file with its folder and the version voice-guide has published, or "not published". Your test agents live in `seed/local/agents/`, git-ignored like your resume:
 - **New agent** makes one from the name you give: a copy of `agents/mock-interviewer.md` with a fresh `id`, in a file named for it.
 - Pick an agent to open its file, edit it there or in your editor, then **Save**. A file changed on disk since you opened it isn't overwritten: open it again.
-- **Publish**, beside each agent, sends its saved file to voice-guide with the development product key, which the browser never sees, and says `published version 2`, `unchanged, version 2`, or what voice-guide refused and why. The agent list above then shows it, so you can talk to it at once. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
+- **Publish**, beside each agent, sends its saved file to voice-guide with the development product key, which the browser never sees, and says `published version 2`, `unchanged, version 2`, or what voice-guide refused and why. The Test tab's agent list then shows it, so you can talk to it at once. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
 - The shipped agents in `agents/` open read-only, so the page never changes a tracked file; Publish sends them as they are.
 
 <details>
