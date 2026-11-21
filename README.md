@@ -48,7 +48,7 @@ What you need installed:
 
 http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product: its own small server holds a development product key and starts each session for a sample user, sending their resume. So you can talk to an agent without building anything.
 
-1. Open http://127.0.0.1:5173, which opens on the Test tab, pick the mock interviewer, press Start and allow the microphone.
+1. Open http://127.0.0.1:5173, which opens on the Test tab, pick the mock interviewer at the top, press Start under the settings and allow the microphone.
 2. It greets you by the resume's name, asks about the resume, and follows up on your answers:
    - your words show as they're heard;
    - once you finish speaking, the reply streams in and is spoken as it arrives;
@@ -57,12 +57,12 @@ http://127.0.0.1:5173 is voice-guide's web page. It plays the part of a product:
 
 ### Start with your own settings, and read past sessions
 
-Below the interviewer, the Test tab has a form that starts the chosen agent with settings of your own:
+The Test tab opens with what a start carries: the agent, then settings of your own, then one Start button:
 
 - **Voice and speed:** the voice from the list voice offers (`/v1/voices`), and a speed from 0.5 to 2. Left empty, the agent's own are used.
 - **Documents:** one text area for each document of session context the agent asks for at its start, filled from `seed/local/` or the sample in `seed/placeholder-user/`. Change one to try the agent with other context; a document you empty is refused by voice, and the page shows its problem.
 
-Under the form, the past sessions of the sample user, newest first: the agent, when each started and ended, the summary's status and its text. Press Refresh after ending a session; a summary arrives a few seconds after the end.
+The session shows under the form, and under it the past sessions of the sample user, newest first: the agent, when each started and ended, the summary's status and its text. Press Refresh after ending a session; a summary arrives a few seconds after the end.
 
 <a id="your-own-data"></a>
 ### Use your own interviewer and resume

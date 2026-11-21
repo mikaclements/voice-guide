@@ -16,19 +16,27 @@ const none = () => {};
 const form = (rest: Partial<Parameters<typeof panel.StartForm>[0]> = {}) =>
   renderToStaticMarkup(
     createElement(panel.StartForm, {
+      agents: [
+        { id: "a1", name: "Mock interviewer", description: "", session_context: [] },
+        { id: "a2", name: "Coach", description: "", session_context: [] },
+      ],
+      agentId: "a1",
+      started: false,
       voices: ["en_us", "ja_jp"],
       voice: "ja_jp",
       speed: "1.25",
       documents: [{ name: "resume", content: "Ten years of lamps." }],
       busy: false,
       errors: [],
-      on: { voice: none, speed: none, document: none, start: none },
+      on: { agent: none, voice: none, speed: none, document: none, start: none },
       ...rest,
     }),
   );
 
-test("the start form draws the voices, the speed and each document prefilled in a text area", () => {
+test("the start form draws the agents to pick at its top, the voices, the speed, each document prefilled in a text area, and one Start under them", () => {
   const html = form();
+  assert.match(html, /^<form><div class="row"><select aria-label="Agent to start">/);
+  assert.match(html, /"a1" selected="">Mock interviewer<\/option><option value="a2">Coach</);
   assert.match(html, /<option value="">The agent&#x27;s voice<\/option>/);
   assert.match(html, /value="ja_jp" selected="">ja_jp</);
   assert.match(html, /value="1.25"/);
@@ -36,7 +44,8 @@ test("the start form draws the voices, the speed and each document prefilled in 
     html,
     /<span class="meta">resume<\/span><textarea[^>]*>Ten years of lamps\.<\/textarea>/,
   );
-  assert.match(html, /<button type="submit">Start with these<\/button>/);
+  assert.match(html, /<button type="submit">Start<\/button><\/div><\/form>$/);
+  assert.match(form({ started: true }), /<button type="submit">Start again<\/button>/);
 });
 
 test("a speed out of voice's range says so and can't be sent, and a problem shows as it came", () => {
