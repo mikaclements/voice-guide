@@ -61,6 +61,39 @@ paths:
         "503":
           $ref: "#/components/responses/Unavailable"
 
+  /v1/agents/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The agent's ID, as its file names it. One that isn't a UUID, another workspace's agent and one never published all answer `404`.
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: readAgent
+      tags: [Agents]
+      summary: Read an agent at its newest version
+      description: |
+        One of the workspace's agents at its newest version, under its agent file's names and in its shapes, so a product reads back what it wrote, with the version's number and when it was published.
+      security:
+        - productKey: [publish_agents]
+      responses:
+        "200":
+          description: The agent's newest version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentVersion"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
   /v1/voices:
     get:
       operationId: listVoices
@@ -680,6 +713,75 @@ components:
           description: The names of the documents the summary reads; those not under `session_context` a start may also send.
           items:
             type: string
+
+    AgentVersion:
+      description: One version of an agent under its agent file's names and in its shapes, with the version's number and when it was published. A setting the file leaves out is `null`, so the server's own applies; a list it leaves out is empty.
+      type: object
+      required: [id, version, published_at, name, description, reads, session_context, summary, opens, model, voice, speed, persona]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+          description: The version's number, counted from 1 within the agent.
+        published_at:
+          type: string
+          format: date-time
+          description: When the version was saved, by the database's clock, in UTC.
+        name:
+          type: string
+        description:
+          type: string
+          description: Empty when the file has none.
+        reads:
+          type: array
+          description: The context kinds the agent may be given about a user.
+          items:
+            type: string
+        session_context:
+          type: array
+          description: The names of the documents a start must send.
+          items:
+            type: string
+        summary:
+          type: [object, "null"]
+          description: The summary section in the file's mapping form, even when the file wrote the instruction alone; null when the agent asks for no summary.
+          required: [instruction, model, schema, documents]
+          properties:
+            instruction:
+              type: string
+            model:
+              type: [string, "null"]
+              description: The model that writes the summary; null, the agent's own.
+            schema:
+              type: [object, "null"]
+              description: The JSON Schema of the summary's structured part, as its author wrote it; null for none.
+              additionalProperties: true
+            documents:
+              type: array
+              description: The names of the documents the summary reads.
+              items:
+                type: string
+        opens:
+          type: string
+          enum: [agent, user]
+          description: Who speaks first in the agent's sessions.
+        model:
+          type: [string, "null"]
+          description: The model that answers the agent's turns; null, the server's.
+        voice:
+          type: [string, "null"]
+          description: The voice its replies are spoken in, such as `af_heart`; null, the server's.
+        speed:
+          type: [number, "null"]
+          minimum: 0.5
+          maximum: 2
+          description: How fast the voice speaks, `1` its own pace; null, the server's.
+        persona:
+          type: string
+          description: The persona, sent to the model as written.
 
     StartRequest:
       type: object
