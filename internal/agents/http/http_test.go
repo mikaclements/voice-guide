@@ -33,22 +33,30 @@ var (
 )
 
 type fixture struct {
-	rt   *api.Router
-	key  ticket.Key
-	keys *productkey.Keys
+	rt    *api.Router
+	key   ticket.Key
+	keys  *productkey.Keys
+	store agents.Versions
 }
 
 // newFixture serves the agents module's routes over the store of versions,
 // taking product keys kept in a fake store.
 func newFixture(t *testing.T, store agents.Versions) fixture {
 	t.Helper()
+	return newFixtureWithVoices(t, store, &voiceList{names: []string{"af_heart", "bf_emma"}})
+}
+
+// newFixtureWithVoices is newFixture with the text-to-speech service's voices, as the publish route
+// checks them.
+func newFixtureWithVoices(t *testing.T, store agents.Versions, voices agents.VoiceList) fixture {
+	t.Helper()
 	key, err := ticket.NewKey([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
 		t.Fatalf("NewKey: %v", err)
 	}
-	f := fixture{key: key, keys: productkey.NewKeys(keysfake.New())}
+	f := fixture{key: key, keys: productkey.NewKeys(keysfake.New()), store: store}
 	f.rt = api.NewRouter(key, f.keys, time.Now, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	agentshttp.Register(f.rt, agents.NewCatalog(store))
+	agentshttp.Register(f.rt, agents.NewCatalog(store), agents.NewPublisher(store, []string{"profile"}, voices))
 	return f
 }
 

@@ -349,8 +349,9 @@ linters:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/agents$
             - github.com/mikaclements/voice-guide/internal/agents/store/fake$
-        # Agents' part of the API registers on the API's router and reads the catalog; it imports no
-        # other module.
+        # Agents' part of the API registers on the API's router, reads the catalog, publishes through the
+        # agents core's checked publish and reads an agent file with the same parser as the folder
+        # loader; it imports no other module.
         agents-http:
           list-mode: strict
           files:
@@ -359,6 +360,7 @@ linters:
           allow:
             - $gostd
             - github.com/mikaclements/voice-guide/internal/agents$
+            - github.com/mikaclements/voice-guide/internal/agents/agentfile$
             - github.com/mikaclements/voice-guide/internal/access$
             - github.com/mikaclements/voice-guide/internal/api$
         # Its tests serve a real catalog over the fake store, on a router that checks product keys kept

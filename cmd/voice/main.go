@@ -274,7 +274,7 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 	// set up after it.
 	defer audio.Close()
 	routes := api.NewRouter(cfg.key, productkey.NewKeys(productkeystore.New(pool)), time.Now, log)
-	registerRoutes(routes, svc, audio, catalog, cfg.clientDir)
+	registerRoutes(routes, svc, audio, catalog, agents.NewPublisher(agentsstore.New(pool), usercontext.Kinds(), voices), cfg.clientDir)
 	// The server's own timeouts are round guesses that only bound misbehaving clients. A
 	// request's headers and body arrive in milliseconds, so 5s and 15s stop a client that opens
 	// connections and sends slowly; each route replaces the write timeout with its own deadline;
@@ -308,10 +308,10 @@ func run(ctx context.Context, getenv func(string) string, log *slog.Logger) erro
 
 // registerRoutes puts every module's routes on the router. Kept apart from run so a test can wire
 // the router as run does, and learn what the service serves.
-func registerRoutes(routes *api.Router, svc *conversation.Service, audio *speech.Service, catalog *agents.Catalog, clientDir string) {
+func registerRoutes(routes *api.Router, svc *conversation.Service, audio *speech.Service, catalog *agents.Catalog, publisher *agents.Publisher, clientDir string) {
 	conversationhttp.Register(routes, svc)
 	speechhttp.Register(routes, audio)
-	agentshttp.Register(routes, catalog)
+	agentshttp.Register(routes, catalog, publisher)
 	routes.ServeClient(clientDir)
 }
 

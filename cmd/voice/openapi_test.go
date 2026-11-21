@@ -40,7 +40,7 @@ func servedRoutes(t *testing.T) []string {
 		t.Fatalf("NewKey: %v", err)
 	}
 	routes := api.NewRouter(key, nil, time.Now, log)
-	registerRoutes(routes, svc, audio, catalog, t.TempDir())
+	registerRoutes(routes, svc, audio, catalog, agents.NewPublisher(agentsfake.New(), usercontext.Kinds(), nil), t.TempDir())
 	return routes.Routes()
 }
 
