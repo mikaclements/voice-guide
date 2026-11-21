@@ -11,6 +11,7 @@ const templateId = "01900000-0000-7000-8000-000000000001";
 const agentFile = (id: string, name: string) =>
   `---\nid: ${id}\nname: ${name}\nopens: agent\n---\nYou keep the lamp lit.\n`;
 const template = agentFile(templateId, "Lamp keeper");
+const otherId = "01900000-0000-7000-8000-000000000009";
 const uuidV7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 // Both agent folders in a fresh temp folder: the shipped one holds the template, and the local one
@@ -364,6 +365,35 @@ test("publishing sends the file on disk to voice as text/markdown with the key, 
     type: "text/markdown",
     body: template,
   });
+});
+
+test("two agent files with one id are marked in the list, and neither is published over the other's agent", async (t) => {
+  const f = await folders(t);
+  // A copy of a shipped agent file that kept its id, and one that takes a shipped file's place.
+  await localFile(f, "copy.md", agentFile(templateId, "Copy"));
+  await writeFile(join(f.shipped, "guide.md"), agentFile(otherId, "Guide"));
+  await localFile(f, "guide.md", agentFile(otherId, "My guide"));
+  const v = voice(notFound);
+  const route = routes(f, v.fetcher);
+  const listed = JSON.parse((await send(route, "/agent-files", "GET")).body).files;
+  assert.deepEqual(
+    listed.map((x: { path: string; same_id_as: unknown }) => [x.path, x.same_id_as]),
+    [
+      ["copy.md", [{ path: templateFile, folder: "shipped" }]],
+      ["guide.md", [{ path: "guide.md", folder: "shipped" }]],
+      [templateFile, [{ path: "copy.md", folder: "local" }]],
+    ],
+  );
+  for (const [path, other] of [
+    ["copy.md", templateFile],
+    [templateFile, "copy.md"],
+    ["guide.md", "guide.md"],
+  ]) {
+    const res = await send(route, "/publish", "POST", { path });
+    assert.equal(res.statusCode, 409, path);
+    assert.match(res.body, new RegExp(`id of ${other}`), path);
+  }
+  assert.equal(v.calls.filter((c) => c.method === "PUT").length, 0, "nothing published");
 });
 
 test("voice's problem with a publish passes through as it is", async (t) => {

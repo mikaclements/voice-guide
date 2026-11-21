@@ -25,6 +25,7 @@ const slugLength = 64;
 
 type Voice = (path: string, init?: RequestInit) => Promise<Response>;
 type Found = { path: string; folder: "local" | "shipped"; file: string; modified: number };
+type Scanned = Found & { id: string; name: string };
 
 // The routes behind the page's agents panel, mounted at /product beside the product's own: the
 // files in both folders with their published versions, one file's text, a save, a new agent and a
@@ -59,7 +60,7 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
       const found = await find(folders, path);
       if (!found) return fail(to, 404, `no agent file named ${path}`);
       if (route === "PUT /agent-file") return await save(found, asked, to);
-      return await publish(found, call, to);
+      return await publish(folders, found, call, to);
     } catch (err) {
       return fail(to, 500, `the agent files couldn't be read or written: ${message(err)}`);
     }
@@ -87,29 +88,52 @@ export function fromElsewhere(req: Incoming): [number, string] | undefined {
 }
 
 async function list(folders: AgentFolders, call: Voice) {
-  const names = new Set<string>();
-  for (const dir of [folders.local, folders.shipped]) {
-    for (const name of await readdir(dir).catch(() => [])) {
-      if (fileName.test(name)) names.add(name);
-    }
-  }
+  const all = await scan(folders);
+  // One file per name, a local one in place of a shipped one.
+  const listed = all
+    .filter(
+      (f) => f.folder === "local" || !all.some((o) => o.folder === "local" && o.path === f.path),
+    )
+    .sort((a, b) => (a.path < b.path ? -1 : 1));
   let problem: string | undefined;
   const files = await Promise.all(
-    [...names].sort().map(async (path) => {
-      const found = await find(folders, path);
-      if (!found) return undefined;
-      const text = await readFile(found.file, "utf8");
-      const id = setting(text, "id");
-      const file = { ...shown(found), id, name: setting(text, "name") };
+    listed.map(async (f) => {
+      const file = { ...shown(f), id: f.id, name: f.name, same_id_as: sameId(all, f) };
       try {
-        return { ...file, ...(await published(call, id)) };
+        return { ...file, ...(await published(call, f.id)) };
       } catch (err) {
         problem ??= message(err);
         return { ...file, version: "unknown", published_at: null };
       }
     }),
   );
-  return { files: files.filter(Boolean), problem };
+  return { files, problem };
+}
+
+// Every agent file in both folders, a shipped one that a local one of its name takes the place of
+// included, with its id and name. Only regular files, as find takes.
+async function scan(folders: AgentFolders): Promise<Scanned[]> {
+  const all: Scanned[] = [];
+  for (const folder of ["local", "shipped"] as const) {
+    for (const path of await readdir(folders[folder]).catch(() => [])) {
+      if (!fileName.test(path)) continue;
+      const file = join(folders[folder], path);
+      const found = await lstat(file).catch(() => undefined);
+      if (!found?.isFile()) continue;
+      const text = await readFile(file, "utf8");
+      const [id, name] = [setting(text, "id"), setting(text, "name")];
+      all.push({ path, folder, file, modified: found.mtimeMs, id, name });
+    }
+  }
+  return all;
+}
+
+// The other files with f's id: publishing either would replace the other's agent, as when a
+// shipped agent file is copied with its id kept.
+function sameId(all: Scanned[], f: { file: string; id: string }) {
+  return all
+    .filter((o) => o.id !== "" && o.id === f.id && o.file !== f.file)
+    .map((o) => ({ path: o.path, folder: o.folder }));
 }
 
 // The newest published version of the agent with this id, or nulls when there is none: voice
@@ -178,12 +202,17 @@ async function create(folders: AgentFolders, name: unknown, to: Reply) {
   return json(to, 201, { path, id, name: given });
 }
 
-async function publish(found: Found, call: Voice, to: Reply) {
+async function publish(folders: AgentFolders, found: Found, call: Voice, to: Reply) {
   const file = await readFile(found.file);
   if (file.length > fileLimit) return fail(to, 413, "the file is over 256 KiB, voice's limit");
   // The id goes in the path to voice, so nothing but a UUID may reach it.
   const id = setting(file.toString("utf8"), "id");
   if (!uuid.test(id)) return fail(to, 422, `${found.path} needs an id that is a UUID`);
+  const others = sameId(await scan(folders), { file: found.file, id });
+  if (others.length) {
+    const named = others.map((o) => `${o.path} (${o.folder})`).join(", ");
+    return fail(to, 409, `${found.path} has the id of ${named}; give one of them a new id`);
+  }
   let res: Response;
   try {
     res = await call(`/v1/agents/${id}`, {

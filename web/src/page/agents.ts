@@ -11,6 +11,8 @@ export type AgentFile = {
   // The newest published version: null when never published, "unknown" when voice couldn't say.
   version: number | null | "unknown";
   published_at: string | null;
+  // The other agent files with this one's id, which a publish refuses until one gets a new id.
+  same_id_as: { path: string; folder: "local" | "shipped" }[];
 };
 // The files, and why voice couldn't say their versions when it couldn't.
 export type AgentFiles = { files: AgentFile[]; problem?: string };

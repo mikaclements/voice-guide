@@ -134,6 +134,8 @@ export function AgentsView(props: AgentsViewProps) {
           <span className="meta">
             {folders[f.folder]}
             {f.path} · {version(f)}
+            {f.same_id_as.length > 0 &&
+              ` · same id as ${f.same_id_as.map((o) => folders[o.folder] + o.path).join(", ")}`}
           </span>
           <button
             type="button"

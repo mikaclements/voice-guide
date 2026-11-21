@@ -22,6 +22,7 @@ const file = (path: string, folder: AgentFile["folder"], version: AgentFile["ver
   name: path.replace(".md", ""),
   modified: 1,
   published_at: null,
+  same_id_as: [],
 });
 
 // The panel drawn with these, and nothing loaded, open or pressed otherwise.
@@ -60,6 +61,24 @@ test("the panel lists each agent file with its folder, published version and a P
   assert.equal(html.match(/<button type="button">Publish<\/button>/g)?.length, 3);
   assert.match(html, /<div class="error">the product&#x27;s server couldn&#x27;t reach voice/);
   assert.match(drawn({ list: { files: [] } }), /No agent files yet.*New agent<\/button>/);
+});
+
+test("a file whose id another file holds says which, as that one does", () => {
+  const html = drawn({
+    list: {
+      files: [
+        { ...file("copy.md", "local", null), same_id_as: [{ path: "lamp.md", folder: "shipped" }] },
+        { ...file("lamp.md", "shipped", 1), same_id_as: [{ path: "copy.md", folder: "local" }] },
+      ],
+    },
+  });
+  assert.deepEqual(
+    [...html.matchAll(/<span class="meta">([^<]*)</g)].map((m) => m[1]),
+    [
+      "seed/local/agents/copy.md · not published · same id as agents/lamp.md",
+      "agents/lamp.md · version 1 · same id as seed/local/agents/copy.md",
+    ],
+  );
 });
 
 test("a local file opens to edit and save, a shipped one read-only", () => {
