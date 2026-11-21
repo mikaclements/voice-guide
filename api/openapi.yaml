@@ -9,7 +9,7 @@ info:
     - a product key, which names a workspace and no user, for the product's server;
     - a ticket, which voice-guide signs for one session and hands back when the session starts, for the user's browser, which holds it for that session's routes and nothing else.
 
-    A product key sent with an `Origin` header is refused unread, so a key never works from a page. Routes that take a ticket answer a page on any site; routes that take only a product key answer none.
+    A product key holds permissions, fixed when it is made; each route's security requirement names the one it needs, and a working key without it is answered `403`. A product key sent with an `Origin` header is refused unread, so a key never works from a page. Routes that take a ticket answer a page on any site; routes that take only a product key answer none.
 
     Every error is a problem details document (RFC 9457, `application/problem+json`). A problem has its own `type` when a client must tell it apart from another error with the same status; every other problem has the type `about:blank`. A `503` means the same request may be sent again. A `500` carries no `detail`.
 
@@ -19,7 +19,7 @@ servers:
     description: Where voice-guide runs; http://127.0.0.1:8080 on a developer's machine.
 
 security:
-  - productKey: []
+  - productKey: [run_sessions]
 
 tags:
   - name: Agents
@@ -38,7 +38,7 @@ paths:
       tags: [Agents]
       summary: List the agents a session may start with
       security:
-        - productKey: []
+        - productKey: [run_sessions]
       responses:
         "200":
           description: The workspace's agents.
@@ -54,6 +54,8 @@ paths:
                       $ref: "#/components/schemas/Agent"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/ServerError"
         "503":
@@ -66,7 +68,7 @@ paths:
       summary: List the voices a session may speak in
       description: As the text-to-speech service names them.
       security:
-        - productKey: []
+        - productKey: [run_sessions]
       responses:
         "200":
           description: The voices on offer.
@@ -82,6 +84,8 @@ paths:
                       type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/Unavailable"
 
@@ -93,7 +97,7 @@ paths:
       description: |
         Starts a session for the user the product names, or returns the one the same `request_id` started, so a retry after a lost reply starts nothing new. Each reply carries a fresh ticket for the session, which expires when the session's first ticket would have. The reply is never cached.
       security:
-        - productKey: []
+        - productKey: [run_sessions]
       requestBody:
         required: true
         content:
@@ -123,6 +127,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "413":
@@ -173,7 +179,7 @@ paths:
       description: |
         One session of the product's workspace, with every turn as the user heard it. A session still live holds the turns finished so far. The reply's length isn't capped. Another workspace's session is `404`.
       security:
-        - productKey: []
+        - productKey: [run_sessions]
       responses:
         "200":
           description: The session.
@@ -183,6 +189,8 @@ paths:
                 $ref: "#/components/schemas/PastSessionWithTurns"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -201,7 +209,7 @@ paths:
         Ends the session, and answers the same to a repeat. The browser ends its own session with its ticket, which works here for a while past its lifetime; the product's server ends any session of its workspace with its key. The session stays, to be read.
       security:
         - ticket: []
-        - productKey: []
+        - productKey: [run_sessions]
       responses:
         "200":
           description: The session, now carrying `ended_at`.
@@ -214,6 +222,8 @@ paths:
                 $ref: "#/components/schemas/Session"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "500":
@@ -229,7 +239,7 @@ paths:
       description: |
         A page of the user's sessions, newest first, without their turns. A user the product never started a session for has an empty list. For the next page, send `before` with the last session's ID; a page shorter than `limit` is the last.
       security:
-        - productKey: []
+        - productKey: [run_sessions]
       parameters:
         - name: user
           in: path
@@ -268,6 +278,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/ServerError"
         "503":
@@ -496,7 +508,12 @@ components:
     productKey:
       type: http
       scheme: bearer
-      description: A product's key, for its server. It names a workspace and no user, and is refused when sent with an `Origin` header.
+      description: |
+        A product's key, for its server. It names a workspace and no user, and is refused when sent with an `Origin` header. It holds permissions, fixed when it is made, and each operation's security requirement names the one it needs:
+        - `run_sessions`, for running sessions: listing agents and voices, starting and ending sessions, and reading past ones;
+        - `publish_agents`, for the agent routes, the routes on one agent.
+
+        A key without the permission an operation needs is answered `403`. To change a key's permissions, make a new key and revoke the old one.
     ticket:
       type: http
       scheme: bearer
@@ -555,6 +572,23 @@ components:
                 title: Ticket expired
                 status: 401
                 detail: the session's ticket has expired; start a new session
+    Forbidden:
+      description: |
+        The product key works but lacks the permission the route needs. `WWW-Authenticate` is `Bearer error="insufficient_scope"` with the permissions needed as `scope`, space-separated (RFC 6750), and `detail` names them too. Sending the key again never helps; a key made with the permission does.
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+          example: Bearer error="insufficient_scope", scope="run_sessions"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          example:
+            type: about:blank
+            title: Forbidden
+            status: 403
+            detail: this route needs a product key with the run_sessions permission
     NotFound:
       description: No such resource in the caller's workspace or session, told the same whether it is missing or another's.
       content:
