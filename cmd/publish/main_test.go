@@ -113,7 +113,7 @@ func TestPublishRefusesAnAgentReadingAKindUserContextDoesntHold(t *testing.T) {
 }
 
 // The voice check itself is the agents core's, tested there; here, that the script reports a
-// check it couldn't make, with the database no one listens on: the warning comes before the save.
+// check it couldn't make, with the database no one listens on: the save fails, and the warning is logged all the same.
 func TestPublishWarnsThatVoicesWereNotCheckedWhenTheTextToSpeechServiceCantBeAsked(t *testing.T) {
 	kokoro := httptest.NewServer(http.NotFoundHandler())
 	kokoro.Close() // nothing listens at its address now
