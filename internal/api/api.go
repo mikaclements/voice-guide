@@ -174,7 +174,7 @@ func (rt *Router) Routes() []string { return slices.Clone(rt.routes) }
 
 func (rt *Router) handle(pattern string, timeout time.Duration, what takes, h Handler) {
 	if what.keys && what.need == 0 {
-		// A route any key could call would let a key made only to publish run sessions, and the reverse.
+		// A route any key could call would let a key made for one kind of route reach every other.
 		panic("api: " + pattern + " takes a product key but needs no permission")
 	}
 	rt.routes = append(rt.routes, pattern)
