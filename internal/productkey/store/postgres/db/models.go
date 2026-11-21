@@ -3,19 +3,3 @@
 //   sqlc v1.31.1
 
 package db
-
-import (
-	"time"
-
-	"github.com/jackc/pgx/v5/pgtype"
-	"uuid"
-)
-
-type ProductKey struct {
-	ID          uuid.UUID
-	WorkspaceID uuid.UUID
-	Hash        []byte
-	Display     string
-	CreatedAt   time.Time
-	RevokedAt   pgtype.Timestamptz
-}

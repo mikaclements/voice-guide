@@ -3,10 +3,13 @@ package migrations_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 
 	"github.com/mikaclements/voice-guide/internal/pgtest"
 	"github.com/mikaclements/voice-guide/migrations"
@@ -136,6 +139,52 @@ func TestIDsMustBeUUIDv7(t *testing.T) {
 	} {
 		if _, err := pool.Exec(context.Background(), sql); code(err) != "23514" {
 			t.Errorf("%s with a UUIDv4: err = %v, want a check violation", table, err)
+		}
+	}
+}
+
+// beforePermissions is the last migration before product keys held permissions.
+const beforePermissions = 32
+
+func TestEveryProductKeyMadeBeforePermissionsCanStillRunSessions(t *testing.T) {
+	ctx := context.Background()
+	pool := pgtest.New(t)
+	db := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = db.Close() }()
+	p, err := goose.NewProvider(goose.DialectPostgres, db, migrations.Files)
+	if err != nil {
+		t.Fatalf("read migrations: %v", err)
+	}
+	if _, err := p.DownTo(ctx, beforePermissions); err != nil {
+		t.Fatalf("migrate down to before permissions: %v", err)
+	}
+	pgtest.Exec(t, pool, "INSERT INTO workspaces (id, name) VALUES ('"+workspace+"', 'Harbour')")
+	pgtest.Exec(t, pool, "INSERT INTO product_keys (id, workspace_id, hash, display) VALUES (uuidv7(), '"+workspace+"', sha256('older'), 'vgk_older')")
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("migrate up: %v", err)
+	}
+	var got []string
+	if err := pool.QueryRow(ctx, "SELECT permissions FROM product_keys").Scan(&got); err != nil || !slices.Equal(got, []string{"run_sessions"}) {
+		t.Errorf("permissions = %v, %v; want run_sessions alone, all such a key could do", got, err)
+	}
+}
+
+func TestAProductKeyHoldsAtLeastOnePermissionAndOnlyKnownOnes(t *testing.T) {
+	pool := pgtest.New(t)
+	pgtest.Exec(t, pool, "INSERT INTO workspaces (id, name) VALUES ('"+workspace+"', 'Harbour')")
+	add := func(permissions string) error {
+		_, err := pool.Exec(context.Background(), "INSERT INTO product_keys (id, workspace_id, hash, display, permissions)"+
+			" VALUES (uuidv7(), '"+workspace+"', sha256(uuid_send(uuidv7())), 'vgk_test', '"+permissions+"')")
+		return err
+	}
+	for _, refused := range []string{"{}", "{NULL}", "{manage_keys}", "{run_sessions,manage_keys}"} {
+		if err := add(refused); code(err) != "23514" {
+			t.Errorf("permissions %s: err = %v, want a check violation", refused, err)
+		}
+	}
+	for _, allowed := range []string{"{publish_agents}", "{run_sessions,publish_agents}"} {
+		if err := add(allowed); err != nil {
+			t.Errorf("permissions %s: %v", allowed, err)
 		}
 	}
 }
