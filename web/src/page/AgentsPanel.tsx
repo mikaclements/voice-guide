@@ -19,8 +19,9 @@ function load(show: (list: AgentFiles) => void, failed: (why: string) => void) {
 
 // The agents panel: the agent files with their published versions, a new test agent from the
 // template, and one file open to edit, save and publish. The shipped files open read-only, so the
-// page never edits a tracked file.
-export function AgentsPanel() {
+// page never edits a tracked file. onPublished is told after each publish, since a first one adds
+// an agent a session can start with.
+export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
   const [list, setList] = useState<AgentFiles>();
   const [name, setName] = useState("");
   const [open, setOpen] = useState<Opened>();
@@ -75,7 +76,13 @@ export function AgentsPanel() {
             setOpen({ ...open, content: text, modified });
             return "saved";
           }),
-        publish: () => run(() => (open ? publishAgentFile(open.path) : Promise.resolve(""))),
+        publish: () =>
+          run(async () => {
+            if (!open) return "";
+            const line = await publishAgentFile(open.path);
+            onPublished?.();
+            return line;
+          }),
       }}
     />
   );

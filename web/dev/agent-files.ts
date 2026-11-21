@@ -66,22 +66,23 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
   };
 }
 
-// A browser sends a JSON body to another origin only after a preflight, which this server never
-// answers, and names where a request came from; Vite has already refused a Host that isn't this
-// machine's, so the page's own origin is the Host it asked for. A page on another site, or on
-// another port of this machine, can then neither write a file nor publish through the developer's
-// browser.
-function fromElsewhere(req: Incoming): [number, string] | undefined {
+// Whether a request that acts, rather than reads, must be refused, and how: every such route of the
+// dev server takes this one rule. A browser sends a JSON body to another origin only after a
+// preflight, which this server never answers, and names where a request came from; Vite has
+// already refused a Host that isn't this machine's, so the page's own origin is the Host it asked
+// for. A page on another site, or on another port of this machine, then can't act with the product
+// key through the developer's browser.
+export function fromElsewhere(req: Incoming): [number, string] | undefined {
   const site = req.headers?.["sec-fetch-site"];
   const origin = req.headers?.origin;
   if (
     (site !== undefined && site !== "same-origin" && site !== "none") ||
     (origin !== undefined && origin !== `http://${req.headers?.host}`)
   ) {
-    return [403, "only the page itself may write or publish agent files"];
+    return [403, "only the page itself may send this"];
   }
   if (!String(req.headers?.["content-type"] ?? "").startsWith("application/json")) {
-    return [415, "agent file writes take application/json"];
+    return [415, "this takes application/json"];
   }
 }
 
@@ -261,7 +262,7 @@ export function uuidv7(now = Date.now()): string {
 
 // Reads a JSON object from a request's body up to limit bytes, decoded once whole so a character
 // split between chunks stays whole; past the limit it stops reading and drops the connection.
-function readJSON(req: Incoming, limit: number): Promise<Record<string, unknown>> {
+export function readJSON(req: Incoming, limit: number): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
