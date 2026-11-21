@@ -1,10 +1,10 @@
 import { type ChangeEvent, type ReactNode, useEffect, useState } from "react";
 import {
   type AgentForm,
+  agentModels,
   cloneForm,
   droppedDocuments,
   formFrom,
-  agentModels,
   isSpeed,
   modelChoice,
   newForm,
