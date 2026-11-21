@@ -3,13 +3,23 @@ import { relative, resolve } from "node:path";
 import type { Plugin } from "vite";
 import { type AgentFolders, agentFileRoutes } from "./agent-files.ts";
 import { seedFile } from "./seed.ts";
+import {
+  crossSite,
+  documentsFor,
+  overrides,
+  type Sessions,
+  sessionRoutes,
+  startWithDocumentsLimit,
+  userReference,
+} from "./sessions.ts";
 
 const repo = resolve(import.meta.dirname, "../..");
 const placeholderUser = resolve(repo, "seed/placeholder-user");
 // The developer's own test data, gitignored: a file here is used instead of its sample.
 const localUser = resolve(repo, "seed/local");
 
-// A start's body is two UUIDs; this leaves room, and stops a page that sends more from being read.
+// A body is small unless it carries documents: a start's is two UUIDs and a few settings, and this
+// leaves room, and stops a page that sends more from being read.
 const startBodyLimit = 4096;
 
 // Where voice is: VOICE_ADDR, which the other scripts find it by too.
@@ -106,6 +116,16 @@ export function productRoutes(product: Product) {
   };
   const agentFiles = product.agents && agentFileRoutes(product.agents, call);
 
+  const sessions: Sessions = {
+    call,
+    pass,
+    fail,
+    block: (name) => contextBlock(product.user, name, product.local),
+    folder: relative(repo, product.user),
+    user: product.user,
+    local: product.local,
+  };
+
   return async (req: Incoming, to: Reply) => {
     try {
       if (!product.key) {
@@ -119,49 +139,36 @@ export function productRoutes(product: Product) {
       if (req.url === "/agents" && req.method === "GET") {
         return await pass(await call("/v1/agents"), to);
       }
+      if (await sessionRoutes(sessions, req, to)) return;
       if (req.url === "/start" && req.method === "POST") {
+        // Like every route that changes anything: not for a page on another site.
+        if (crossSite(req)) return fail(to, 403, "the start is for this page only");
         // A page on another site can send a form-typed POST here with no preflight; JSON it can't.
         if (!String(req.headers?.["content-type"] ?? "").startsWith("application/json")) {
           return fail(to, 415, "the start takes application/json");
         }
         let agent: string;
         let request: string;
+        let asked: Record<string, unknown>;
         try {
-          const asked = JSON.parse(await readBody(req));
+          asked = JSON.parse(await readBody(req, startWithDocumentsLimit));
           agent = String(asked.agent_id);
           request = String(asked.request_id);
         } catch {
           return fail(to, 400, "the body must be a small JSON object with agent_id and request_id");
         }
+        const chosen = overrides(asked);
+        if (typeof chosen === "string") return fail(to, 400, chosen);
         // What the agent asks the product for at its start, which its list says.
-        const list = await call("/v1/agents");
-        if (!list.ok) {
-          // Voice refused the list, not the start: the page must not take that for voice's answer
-          // to its request ID, which voice hasn't seen.
-          return fail(to, 502, `voice refused the agent list (${list.status}); try again`);
-        }
-        const offered: { id: string; session_context: string[] }[] = (await list.json()).agents;
-        const wanted = offered.find((a) => a.id === agent)?.session_context ?? [];
-        const session_context = [];
-        for (const name of wanted) {
-          const content = await contextBlock(product.user, name, product.local);
-          if (content === undefined) {
-            return fail(
-              to,
-              404,
-              `the placeholder user has no "${name}" in ${relative(repo, product.user)}/`,
-            );
-          }
-          session_context.push({ name, content });
-        }
-        const user = (
-          await readFile(seedFile(product.user, product.local, "reference.txt"), "utf8")
-        ).trim();
+        const found = await documentsFor(sessions, agent, chosen.session_context);
+        if ("why" in found) return fail(to, found.status, found.why);
         const body = JSON.stringify({
           agent_id: agent,
           request_id: request,
-          user,
-          session_context,
+          user: await userReference(sessions),
+          session_context: found.documents,
+          voice: chosen.voice,
+          speed: chosen.speed,
         });
         return await pass(
           await call("/v1/sessions", {
@@ -184,16 +191,16 @@ export function productRoutes(product: Product) {
   };
 }
 
-// Reads a request's body up to startBodyLimit characters; past that it stops reading, drops the
-// connection and refuses.
-export function readBody(req: Incoming): Promise<string> {
+// Reads a request's body up to limit characters; past that it stops reading, drops the connection
+// and refuses.
+export function readBody(req: Incoming, limit = startBodyLimit): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = "";
     let over = false;
     req.on("data", (chunk: Buffer | string) => {
       if (over) return;
       body += chunk;
-      if (body.length > startBodyLimit) {
+      if (body.length > limit) {
         over = true;
         body = "";
         req.destroy?.();
