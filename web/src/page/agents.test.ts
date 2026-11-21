@@ -89,35 +89,42 @@ test("listing the files and reading an agent ask the dev server, which holds the
   );
 });
 
-test("publishing the form sends its settings and answers how it went with the version voice holds", async () => {
+test("publishing the form sends its settings, with when the list says its file was modified, and answers how it went with the version voice holds", async () => {
   for (const [status, line] of [
     [201, "published version 1"],
     [200, "unchanged, version 1"],
   ] as const) {
     const agent = { ...settings, version: 1, published_at: "2026-01-02T03:04:05Z" };
     const dev = devServer(() => Response.json(agent, { status }));
-    assert.deepEqual(await publishAgent(settings, dev.fetcher), { line, agent });
-    assert.deepEqual(dev.asked, [{ url: "/product/agent", method: "POST", body: settings }]);
+    assert.deepEqual(await publishAgent({ ...settings, modified: 12.5 }, dev.fetcher), {
+      line,
+      agent,
+    });
+    assert.deepEqual(dev.asked, [
+      { url: "/product/agent", method: "POST", body: { ...settings, modified: 12.5 } },
+    ]);
   }
 });
 
-test("what voice refuses in the form is told as its refusal, by its detail or else its title; voice down, with the reason", async () => {
-  const cases: [Response, RegExp][] = [
+test("what voice refuses in the form is told as its refusal, by its detail or else its title; voice down, with the reason; either way the file keeps what was sent", async () => {
+  const kept = "\nThe agent file keeps what was sent; Revert fills only the form again.";
+  const cases: [Response, string][] = [
     [
       problem(422, "Unprocessable Entity", "the agent file: name is missing"),
-      /: voice-guide refused it: the agent file: name is missing$/,
+      `voice-guide refused it: the agent file: name is missing${kept}`,
     ],
-    [problem(422, "Unknown voice"), /: voice-guide refused it: Unknown voice$/],
+    [problem(422, "Unknown voice"), `voice-guide refused it: Unknown voice${kept}`],
     [
       plain(502, "the product's server couldn't reach voice: fetch failed"),
-      /\(502\): the product's server couldn't reach voice/,
+      `Error (502): the product's server couldn't reach voice: fetch failed${kept}`,
     ],
+    // The dev server refused it before writing anything.
     [
       plain(409, "an agent file named coach.md exists; give the agent another name"),
-      /\(409\): an agent file named coach.md exists/,
+      "Error (409): an agent file named coach.md exists; give the agent another name",
     ],
   ];
   for (const [answer, why] of cases) {
-    await assert.rejects(publishAgent(settings, devServer(() => answer).fetcher), why);
+    await assert.rejects(publishAgent(settings, devServer(() => answer).fetcher), { message: why });
   }
 });

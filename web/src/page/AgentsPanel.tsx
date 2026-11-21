@@ -101,15 +101,20 @@ export function AgentsPanel({ onPublished }: { onPublished?: () => void }) {
             const settings = form && settingsFrom(form);
             if (typeof settings === "string") throw new Error(settings);
             if (!settings) return "";
-            const { line, agent } = await publishAgent(settings);
-            fill(agent);
-            onPublished?.();
-            // A new agent's first publish wrote its file, which it is picked as from now on.
-            const written = (await loadList())?.files.find(
-              (f) => f.folder === "local" && f.id === agent.id,
-            );
-            if (written) setPicked(written.path);
-            return line;
+            try {
+              const { line, agent } = await publishAgent({ ...settings, modified: file?.modified });
+              fill(agent);
+              onPublished?.();
+              return line;
+            } finally {
+              // The file is written before voice is asked, so it changed even when voice refused,
+              // and a new agent's first try made it, which the agent is picked as from now on.
+              const id = settings.id.toLowerCase();
+              const written = (await loadList())?.files.find(
+                (f) => f.folder === "local" && f.id.toLowerCase() === id,
+              );
+              if (written) setPicked(written.path);
+            }
           }),
         // Refilled from voice, so a refused publish's edits give way to what voice holds.
         revert: () =>
@@ -202,11 +207,20 @@ export function AgentsView(props: AgentsViewProps) {
       )}
       {published === null && (
         <p>
-          {picked === newAgent
-            ? `Not published yet: Publish writes its file in ${folders.local} and version 1.`
-            : "Not published yet, so voice-guide has nothing to fill the form from: publish the file as it is first."}
+          {!form
+            ? "Not published yet, so voice-guide has nothing to fill the form from: publish the file as it is first."
+            : picked === newAgent
+              ? `Not published yet: Publish writes its file in ${folders.local} and version 1.`
+              : "Not published yet: Publish writes the form to its file and publishes version 1."}
         </p>
       )}
+      {published &&
+        file?.folder === "local" &&
+        file.modified > Date.parse(published.published_at) && (
+          <p className="meta">
+            {`The file changed after version ${published.version} was published: to keep edits made there, use Publish the file as it is, or Publish overwrites them.`}
+          </p>
+        )}
       {form && <Fields form={form} voices={voices} readOnly={shipped} busy={busy} on={on.form} />}
       {(form || file) && (
         <div className="row">

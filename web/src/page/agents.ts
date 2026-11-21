@@ -56,18 +56,25 @@ export async function readAgent(
 }
 
 // Has the dev server write the settings to the agent's file and publish it, and answers how it went
-// with the version voice now holds. What voice refuses in the file is told as its refusal, in the
-// loader's or the check's own words.
-export async function publishAgent(settings: AgentSettings, fetcher: typeof fetch = fetch) {
+// with the version voice now holds. modified is when the page's list says the file was modified, so
+// a file changed since isn't overwritten; a new agent has none. What voice refuses in the file is
+// told as its refusal, in the loader's or the check's own words. The file is written before voice is
+// asked, so when voice refuses it or can't be reached, the file keeps what was sent.
+export async function publishAgent(
+  settings: AgentSettings & { modified?: number },
+  fetcher: typeof fetch = fetch,
+) {
   const res = await fetcher("/product/agent", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(settings),
   });
+  const kept = "\nThe agent file keeps what was sent; Revert fills only the form again.";
   if (res.status === 422 && res.headers.get("Content-Type")?.includes("application/problem+json")) {
     const p = await res.json();
-    throw new Error(`voice-guide refused it: ${p.detail || p.title}`);
+    throw new Error(`voice-guide refused it: ${p.detail || p.title}${kept}`);
   }
+  if (res.status === 502) throw new Error(`${(await problemFrom(res)).message}${kept}`);
   if (!res.ok) throw await problemFrom(res);
   const agent: AgentVersion & { voice_checked?: boolean } = await res.json();
   return { line: publishedLine(res.status, agent), agent };

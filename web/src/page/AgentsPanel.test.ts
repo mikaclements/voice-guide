@@ -137,6 +137,44 @@ test("a new agent says its first publish writes its file; a file never published
   assert.deepEqual(buttons(never), ["Publish the file as it is"]);
 });
 
+test("a file whose id another file holds says which, as neither is published until one gets a new id", () => {
+  const files = [
+    {
+      ...file("copy.md", "local", null),
+      same_id_as: [{ path: "lamp.md", folder: "shipped" as const }],
+    },
+    {
+      ...file("lamp.md", "shipped", 1),
+      same_id_as: [{ path: "copy.md", folder: "local" as const }],
+    },
+  ];
+  assert.match(
+    drawn({ list: { files }, picked: "copy.md", published: null }),
+    /<p class="meta">seed\/local\/agents\/copy.md · same id as agents\/lamp.md, so neither is published until one gets a new id<\/p>/,
+  );
+  assert.match(
+    drawn({ list: { files }, picked: "lamp.md", form, published }),
+    /agents\/lamp.md, shipped: read-only here · same id as seed\/local\/agents\/copy.md/,
+  );
+});
+
+test("a local file changed after its version was published warns that Publish would overwrite what it holds", () => {
+  const at = Date.parse(published.published_at);
+  const warned = (modified: number, folder: AgentFile["folder"] = "local") =>
+    /The file changed after version 3 was published: to keep edits made there, use Publish the file as it is, or Publish overwrites them/.test(
+      drawn({
+        list: { files: [{ ...file("coach.md", folder, 3), modified }] },
+        picked: "coach.md",
+        form,
+        published,
+      }),
+    );
+  assert.deepEqual(
+    [warned(at + 60_000), warned(at - 60_000), warned(at + 60_000, "shipped")],
+    [true, false, false],
+  );
+});
+
 test("edits not yet published hold off picking another agent and publishing the file, which would drop them", () => {
   const html = drawn({ list, picked: "coach.md", form, published, dirty: true });
   assert.match(html, /<select aria-label="Agent" disabled="">/);
