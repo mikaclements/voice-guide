@@ -17,7 +17,8 @@ func TestAKeyWithoutTheRoutesPermissionIsForbiddenAndToldWhichItNeeds(t *testing
 		}
 		t.Run(r.pattern, func(t *testing.T) {
 			method, _, _ := strings.Cut(r.pattern, " ")
-			rec := f.send(method, r.path, "Bearer "+f.productKeyWith(t, every&^r.need))
+			key := f.productKeyWith(t, every&^r.need)
+			rec := f.send(method, r.path, "Bearer "+key)
 			if !strings.Contains(rec.Body.String(), r.need.String()) {
 				t.Errorf("body %s doesn't name the permission %s", rec.Body, r.need)
 			}
@@ -29,7 +30,20 @@ func TestAKeyWithoutTheRoutesPermissionIsForbiddenAndToldWhichItNeeds(t *testing
 			if _, ok := f.reached[r.pattern]; ok {
 				t.Error("the route's handler ran")
 			}
+			if strings.Contains(f.logs.String(), key) {
+				t.Error("the key is in the log")
+			}
 		})
+	}
+}
+
+func TestTheScopeARouteNeedsIsItsPermissionsSpaceSeparated(t *testing.T) {
+	f := newFixture(t)
+	f.rt.HandleProduct("GET /v1/probe", api.RequestTimeout, every, func(http.ResponseWriter, *http.Request, access.Caller) { t.Error("the handler ran") })
+	rec := f.send("GET", "/v1/probe", "Bearer "+f.productKeyWith(t, access.RunSessions))
+	// As RFC 6750 lists a scope's names.
+	if got, want := rec.Header().Get("WWW-Authenticate"), `Bearer error="insufficient_scope", scope="run_sessions publish_agents"`; rec.Code != http.StatusForbidden || got != want {
+		t.Errorf("%d, WWW-Authenticate = %q; want 403 and %q", rec.Code, got, want)
 	}
 }
 

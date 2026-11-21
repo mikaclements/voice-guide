@@ -340,7 +340,8 @@ func (rt *Router) authenticate(w http.ResponseWriter, r *http.Request, what take
 		// 403, not 401, as RFC 6750 asks: the key works, and sending it again never will here; the
 		// product uses a key made with the permission named.
 		rt.log.InfoContext(r.Context(), "credential refused", "reason", "a product key without the route's permission", "needs", what.need.String())
-		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="`+what.need.String()+`"`)
+		// RFC 6750 lists the scope as space-separated names.
+		w.Header().Set("WWW-Authenticate", `Bearer error="insufficient_scope", scope="`+strings.Join(what.need.Names(), " ")+`"`)
 		rt.Problem(w, r, http.StatusForbidden, "this route needs a product key with the "+what.need.String()+" permission")
 		return access.Caller{}, false
 	}
