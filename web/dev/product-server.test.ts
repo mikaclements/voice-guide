@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { contextBlock, defaultTimeoutMs, productRoutes } from "./product-server.ts";
+import {
+  contextBlock,
+  defaultTimeoutMs,
+  productRoutes,
+  viteAllowedHosts,
+} from "./product-server.ts";
 import { seedFile } from "./seed.ts";
 
 async function userFolder(t: { after(fn: () => unknown): void }) {
@@ -326,13 +331,18 @@ function richVoice() {
   return { fetcher, calls };
 }
 
-async function richRoute(t: { after(fn: () => unknown): void }, fetcher?: typeof fetch) {
+async function richRoute(
+  t: { after(fn: () => unknown): void },
+  fetcher?: typeof fetch,
+  hosts?: string[],
+) {
   const v = richVoice();
   const route = productRoutes({
     voice: "http://voice",
     key,
     user: await userFolder(t),
     fetcher: fetcher ?? v.fetcher,
+    hosts,
   });
   return { route, calls: v.calls };
 }
@@ -538,6 +548,39 @@ test("a voice that is down, or refuses, is told on each new route, and never wit
   await refused.route(request("/sessions", "GET"), res);
   assert.equal(res.statusCode, 403, "voice's problem passes through");
   assert.equal(res.headers["Content-Type"], "application/problem+json");
+});
+
+test("behind an HTTPS proxy, the sessions panel reads and a start come through under the name set for it", async (t) => {
+  const { route, calls } = await richRoute(t, undefined, ["mac.tail0.ts.net"]);
+  const proxied = { "content-type": "application/json", host: "mac.tail0.ts.net" };
+  const read = reply();
+  await route({ ...request("/sessions", "GET"), headers: proxied }, read);
+  assert.equal(read.statusCode, 200, read.body);
+  const start = reply();
+  const body = JSON.stringify({ agent_id: "keeper", request_id: "r1" });
+  const fromPage = {
+    ...proxied,
+    origin: "https://mac.tail0.ts.net",
+    "sec-fetch-site": "same-origin",
+  };
+  await route({ ...request("/start", "POST", body), headers: fromPage }, start);
+  assert.equal(start.statusCode, 201, start.body);
+  const paths = calls.map((c) => new URL(c.url).pathname);
+  assert.ok(
+    paths.some((p) => p.startsWith("/v1/users/")),
+    `the read reached voice: ${paths}`,
+  );
+  assert.ok(paths.includes("/v1/sessions"), `the start reached voice: ${paths}`);
+});
+
+test("Vite gets the names without their ports, in an array of its own", () => {
+  const hosts = Object.freeze(["mac.tail0.ts.net", "other.local:8443"]);
+  const vite = viteAllowedHosts(hosts);
+  // Vite compares a Host without its port, so a name with one would never match.
+  assert.deepEqual(vite, ["mac.tail0.ts.net", "other.local"]);
+  // Vite adds its own names to the array it gets; the routes' list must stay as set.
+  vite.push("127.0.0.1");
+  assert.deepEqual(hosts, ["mac.tail0.ts.net", "other.local:8443"]);
 });
 
 test("the read routes of the sessions panel refuse a Host that isn't this machine's", async (t) => {

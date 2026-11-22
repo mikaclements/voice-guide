@@ -52,16 +52,16 @@ type Settings = {
 // form written to its file and published, and a file published as it is on disk. call reaches voice
 // with the product key, which these routes never see. Answers true when the request was one of these
 // routes.
-export function agentFileRoutes(folders: AgentFolders, call: Voice) {
+export function agentFileRoutes(folders: AgentFolders, call: Voice, hosts: readonly string[]) {
   return async (req: Incoming, to: Reply): Promise<boolean> => {
     const url = new URL(req.url ?? "/", "http://product");
     const route = `${req.method} ${url.pathname}`;
     const writes = ["POST /agent", "POST /publish"];
     if (!["GET /agent-files", "GET /agent", ...writes].includes(route)) return false;
     try {
-      if (fromAnotherHost(req)) return fail(to, 403, hostRefused);
+      if (fromAnotherHost(req, hosts)) return fail(to, 403, hostRefused);
       if (writes.includes(route)) {
-        const refusal = fromElsewhere(req);
+        const refusal = fromElsewhere(req, hosts);
         if (refusal) return fail(to, ...refusal);
       }
       if (route === "GET /agent-files") return json(to, 200, await list(folders, call));
@@ -90,25 +90,62 @@ export function agentFileRoutes(folders: AgentFolders, call: Voice) {
 // this machine makes its page's requests same-origin to it, but they carry its name as the Host,
 // so every route, reading or acting, refuses any other name itself, whatever Vite checks first.
 const ownHost = /^(127\.0\.0\.1|localhost):\d+$/;
-export const hostRefused = "only this machine's own names reach the dev server";
+export const hostRefused =
+  "only this machine's own names, and those WEB_ALLOWED_HOSTS lists, reach the dev server";
 
-export function fromAnotherHost(req: Incoming): boolean {
-  return !ownHost.test(String(req.headers?.host ?? ""));
+// A name the dev server also answers to: one an HTTPS proxy on this machine serves it under, which
+// the developer's other devices reach it by, such as a private network's name for the machine. A
+// host name, with a port only when the proxy serves on one other than 443, matched whole.
+const hostName = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/;
+
+// The names WEB_ALLOWED_HOSTS lists, comma-separated, in lower case. A scheme, a path, a wildcard or
+// a leading dot is refused rather than read loosely: each would let in more names than meant, or
+// none, and the dev server holds the product key.
+export function parseHosts(list: string): string[] {
+  const names = list
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s !== "");
+  for (const name of names) {
+    if (!hostName.test(name)) {
+      throw new Error(
+        `WEB_ALLOWED_HOSTS: "${name}" is not a host name with an optional port, such as mac.example.ts.net`,
+      );
+    }
+  }
+  return names;
+}
+
+function proxied(req: Incoming, hosts: readonly string[]): boolean {
+  return hosts.includes(String(req.headers?.host ?? "").toLowerCase());
+}
+
+export function fromAnotherHost(req: Incoming, hosts: readonly string[]): boolean {
+  return !ownHost.test(String(req.headers?.host ?? "")) && !proxied(req, hosts);
 }
 
 // Whether a request that acts, rather than reads, must be refused, and how: every such route of the
 // dev server takes this one rule. A browser sends a JSON body to another origin only after a
 // preflight, which this server never answers, and names where a request came from; the Host is one
-// of this machine's own names, so the page's own origin is the Host it asked for. A page on
+// of the names this server answers to, so the page's own origin is that Host, over http at this
+// machine's own names and over https behind the proxy. A page on
 // another site, or on another port of this machine, then can't act with the product key through the
 // developer's browser.
-export function fromElsewhere(req: Incoming): [number, string] | undefined {
-  if (fromAnotherHost(req)) return [403, hostRefused];
+export function fromElsewhere(
+  req: Incoming,
+  hosts: readonly string[],
+): [number, string] | undefined {
+  if (fromAnotherHost(req, hosts)) return [403, hostRefused];
   const site = req.headers?.["sec-fetch-site"];
   const origin = req.headers?.origin;
+  // The page's own origin: plain http at this machine's own names, https behind the proxy, which
+  // ends the TLS and passes the name on as the Host.
+  const page = proxied(req, hosts)
+    ? `https://${String(req.headers?.host).toLowerCase()}`
+    : `http://${req.headers?.host}`;
   if (
     (site !== undefined && site !== "same-origin" && site !== "none") ||
-    (origin !== undefined && origin !== `http://${req.headers?.host}`)
+    (origin !== undefined && origin !== page)
   ) {
     return [403, "only the page itself may send this"];
   }

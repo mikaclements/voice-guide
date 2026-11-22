@@ -94,6 +94,17 @@ The Agents tab's dropdown lists every agent file with the version voice-guide ha
 - **Clone**, for any agent with no edits waiting, starts a new test agent with the same settings, a fresh `id` and "(copy)" after the name; its first Publish writes its file.
 - **Publish the file as it is** sends the file on disk: one never published, which has nothing to fill the form from yet, or one you changed in your editor. Two files with one `id`, such as a copy that kept the original's, are marked and not published until one gets a new `id`.
 
+<a id="other-device"></a>
+### Use the page from another device
+
+The page and voice listen only on this machine. To use the page from your phone or another computer of yours, run it with `scripts/run.sh` or `scripts/web.sh` and put it behind an HTTPS proxy on this machine that only your own devices can reach: a browser gives a page the microphone only over HTTPS. Say the proxy is Tailscale Serve, on a tailnet only you are in, with this machine not shared:
+
+1. With Tailscale running on both devices, `tailscale serve --bg 5173` serves the page at `https://<this-machine>.<tailnet>.ts.net`, and keeps serving it after a restart; `tailscale serve --https=443 off` stops it.
+2. Set `WEB_ALLOWED_HOSTS` in `.env` to that name and restart the script. It takes exact names, comma-separated, each with a port only when the proxy uses one other than 443. The page then answers to them, and acts only for a page served from `https://` under them; unset, it answers only to `127.0.0.1` and `localhost`. `scripts/up.sh` doesn't pass it on.
+3. The audio goes from the device to voice directly. Voice offers its private and loopback addresses by default, which include Tailscale's IPv6 address. When the device reaches this machine only on its Tailscale IPv4 address, which starts `100.`, set `VOICE_AUDIO_IPS` to `127.0.0.1` and that address, such as `127.0.0.1,100.101.102.103`: it replaces the default, and voice won't start on an address this machine doesn't have.
+
+Never open the page to the internet, as Tailscale Funnel would: any device that reaches it holds the development product key's power, every permission and sessions on your account, and can read this checkout's files through the development server.
+
 <details>
 <summary>If you hear nothing, or you aren't heard</summary>
 
