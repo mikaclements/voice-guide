@@ -7,7 +7,6 @@
 FROM node:26-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS packages
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY schematic/package.json schematic/
 COPY services/model/package.json services/model/
 COPY web/package.json web/
 RUN npm ci
@@ -44,7 +43,6 @@ CMD ["voice"]
 FROM node:26-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS model
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY schematic/package.json schematic/
 COPY services/model/package.json services/model/
 COPY web/package.json web/
 RUN npm ci --omit=dev --workspace services/model

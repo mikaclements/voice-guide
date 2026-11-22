@@ -34,7 +34,6 @@ How voice-guide is built, in plain words. Setting up, the commands and where thi
 | `scripts/kokoro-mlx.sh` | Runs Kokoro on the Mac's GPU through Apple's MLX at http://127.0.0.1:8882; `scripts/run.sh` starts it with `KOKORO=mlx`. Needs Apple silicon and uv; installs pinned packages and the model (about 0.9 GB) under `~/Library/Caches/voice-guide/`; delete that folder to remove it |
 | `scripts/web.sh` | Serves the web page at http://127.0.0.1:5173 on its own, as `scripts/run.sh` does, to restart the page alone (start it first). It plays the product's server, starting each session with the development product key and the placeholder user's resume, and publishing the agent files its Agents panel makes and edits in `seed/local/agents/` |
 | `scripts/demo.sh` | Serves the test embedding at http://127.0.0.1:5190 ([Try it embedded](README.md#embedded)) |
-| `scripts/schematic.sh` | Serves the schematic at http://127.0.0.1:5180; `check` screenshots every level, folded, unfolded and mid-walk-through, failing on overlaps or cut-off text |
 | `scripts/publish.sh` | Publishes changed files in `agents/` as new versions; `VOICE_AGENTS_DIR` names another folder, and `VOICE_WORKSPACE_ID` another workspace, for a product's own agents |
 | `scripts/build-client.sh` | Builds the drop-in client into `web/dist-client/` when its sources changed; the Go service serves the new build from the next load |
 | `scripts/sqlc.sh generate` | Regenerates the Go code for the queries after a query or a migration changes (`diff` checks it is current) |
@@ -53,7 +52,6 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `cmd/voice/` | The Go service's entry point; wires the modules together |
 | `cmd/migrate/`, `cmd/publish/`, `cmd/productkey/`, `cmd/webhook/` | The migration step, publishing agents, product keys and the webhook, for the scripts above |
 | `cmd/checkspeak/` | Acts as a browser that talks to an agent, for the speed checks in `.claude/skills/measure/` |
-| `cmd/classgen/` | Writes the schematic's type views; its tests check the schematic against the code |
 | `internal/conversation/` | Sessions and their turns, in text: each turn's prompt, the model's reply, the HTTP API for agents, sessions and typed turns, and the webhook at a session's end |
 | `internal/speech/` | A session's audio connection over WebRTC: the user's turns from their microphone (Silero speech detection, speech-to-text, Smart Turn) and the agent's replies spoken (Kokoro), each with a fake |
 | `internal/usercontext/` | Loads what an agent may know about the user and saves what a session learned; imports none of the other modules |
@@ -70,10 +68,9 @@ The hooks check and never rewrite. A commit checks the formatting of what is sta
 | `examples/job-board/` | The test embedding: a small job board that puts an agent on its page, as a product would |
 | `services/model/` | The model service: one streaming API in front of the model providers (Claude through its API or a Claude subscription, or a fake) |
 | `services/stt/` | The speech-to-text service (Python): Moonshine behind OpenAI's realtime transcription API, and the end-of-turn check (Smart Turn) |
-| `schematic/` | The schematic's page and its hand-written levels |
 | `seed/` | The user the test embedding and the web page start sessions for: their reference and resume; `seed/local/`, git-ignored, holds the developer's own files in their place and the web page's test agents |
 | `compose.yaml` | The local runtime: PostgreSQL, Kokoro and the speech-to-text service; its `app` profile adds the Go service, its setup, the model service and the web page, built by `Dockerfile` |
-| `CLAUDE.md`, `.claude/` | The maintainer's setup for AI coding assistants: instructions, skills and hooks. The working notes they mention are kept outside the repository |
+| `CLAUDE.md`, `.claude/` | Instructions, skills and hooks for AI coding assistants |
 
 ## 1. Principles
 
@@ -148,7 +145,7 @@ Every piece of work is one of four kinds:
 - The core is tested with fakes: no network, no real vendors, no sleeping.
 - Every failure mode in the design gets a test.
 - Failure modes are found before writing code, by walking each flow through a fixed list: several copies running, a crash mid-step, a dependency slow or full, repeats, races, extreme settings, the user acting mid-flow, order in time.
-- Fix what breaks the obvious path, ordinary use or security while building; extreme edge cases wait for the hardening phase's thorough search. One review round per pull request, and run the feature end to end as soon as it lands.
+- Fix what breaks the obvious path, ordinary use or security while building; extreme edge cases wait for a later, thorough pass, noted in the pull request. One review round per pull request, and run the feature end to end as soon as it lands.
 - One behaviour per test, named for the rule.
 - Tests read on their own: helpers named for what they build, example data invented.
 - What lives in the database is tested against a real PostgreSQL, each test on its own fresh database; `scripts/check.sh` runs these tests locally, and CI always does.
@@ -181,7 +178,7 @@ Every piece of work is one of four kinds:
 ## 12. Version control
 
 - Small commits in Conventional Commits form.
-- One idea per pull request, planned at 300 to 600 lines and never past 800; lockfiles, generated code and the schematic's files don't count, and docs-only work is exempt.
+- One idea per pull request, planned at 300 to 600 lines; past 800, only a cleanup or refactor that is one idea, or a change agreed with a maintainer first; lockfiles and generated code don't count, and docs-only work is exempt.
 - Work that builds on an open pull request is a GitHub stack, merged bottom up. When something below it changes, the stack is rebased and pushed with `--force-with-lease`, never updated with merge commits.
 - A pull request's description reads in a minute: a summary that opens with how things work before and after the change, each with a small example, then every change with its why; a diagram, the key files, and notes. Every number chosen, such as a timeout or a limit, says where it comes from, even when it's a guess.
 - The hooks are never skipped.
@@ -189,14 +186,13 @@ Every piece of work is one of four kinds:
 
 ## 13. Workflow
 
-- Agree a change's design before writing its code.
+- Agree a change's design with a maintainer before writing its code.
 - Update every affected doc in the same change.
 - Anything that isn't one plain command gets a script: in `scripts/` if people run it, `scripts/lib/` if only other scripts, the hooks or CI do, or its skill's folder in `.claude/skills/` if only AI coding assistants do.
 - Watch every new check fail once before trusting it.
-- A change to a part, a port, a connection between parts or a design decision updates the schematic in the same pull request, its walk-throughs included; the tests fail on a package, an import or a port's method it doesn't show, and on a walk-through step naming a card or connection that isn't there.
 - When review raises a rule, it goes into the standards in the same pull request.
-- The repository carries instructions for AI coding assistants beside the code: `CLAUDE.md` and skills in `.claude/skills/` (such as `verify`, `measure` and `schematic`) that run the project's checks, measurements and upkeep. They follow the same rules as everyone else, and "agent" in these docs always means the AI a user talks to.
+- The repository carries instructions for AI coding assistants beside the code: `CLAUDE.md` and skills in `.claude/skills/` (`verify`, `drive-session` and `measure`) that run the project's checks, sessions and measurements. They follow the same rules as everyone else, and "agent" in these docs always means the AI a user talks to.
 
 ## 14. Engineering decisions
 
-The main ones: one formatting script; golangci-lint with module boundaries as errors; no dead Go code; the Go service at the root with other services beside it; adapters in folders by role; hooks that check and never rewrite; CI with pinned actions and images; small pull requests; a docs check on every push; database tests against a real PostgreSQL; and a schematic of the system kept with the code. Each is in the [reference](docs/reference/contributing.md#decisions) with its reasons and what checks it.
+The main ones: one formatting script; golangci-lint with module boundaries as errors; no dead Go code; the Go service at the root with other services beside it; adapters in folders by role; hooks that check and never rewrite; CI with pinned actions and images; small pull requests; a docs check on every push; and database tests against a real PostgreSQL. Each is in the [reference](docs/reference/contributing.md#decisions) with its reasons and what checks it.

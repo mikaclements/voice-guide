@@ -128,9 +128,6 @@ At voice-guide's centre is one Go service, scaled by running more copies. It has
 
 Conversation and speech together are voice: the part of voice-guide that gives an agent a voice.
 
-<a id="schematic"></a>
-**The schematic** is a clickable map of all of it, from the services down to the types in the code, with what flows over every connection and the design decisions behind each part. Each level has walk-throughs to play, such as "You say something" or "A session ends", that light up the parts involved one step at a time. Run `scripts/schematic.sh` (nothing else needs to be running), open http://127.0.0.1:5180, and double-click a card to go down a level.
-
 <a id="embedding"></a>
 ## Put an agent on a product
 
