@@ -16,10 +16,6 @@ seed/local/
 node_modules/
 web/dist/
 web/dist-client/
-schematic/dist/
-# The schematic's class views, generated from the Go code by scripts/schematic.sh
-schematic/data/classes/
-schematic/.shots/
 .venv/
 __pycache__/
 .pytest_cache/

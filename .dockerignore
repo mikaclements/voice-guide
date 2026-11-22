@@ -8,7 +8,6 @@
 !migrations/
 !package.json
 !package-lock.json
-!schematic/package.json
 !services/model/package.json
 !services/model/src/
 !web/
