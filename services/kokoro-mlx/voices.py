@@ -1,7 +1,7 @@
 """The voices and speeds this server answers for, apart from the model, so they are tested without it.
 
-GET /v1/audio/voices answers {"voices": [...]} as Kokoro-FastAPI does, and a speech request may carry
-its "speed" field.
+GET /v1/audio/voices answers {"voices": [...]} with names only, where Kokoro-FastAPI describes each
+voice by its "id"; voice reads either. A speech request may carry its "speed" field.
 """
 
 import json

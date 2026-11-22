@@ -20,7 +20,7 @@ def model_dir(tmp_path):
     return tmp_path
 
 
-def test_the_voices_route_lists_the_models_voices_sorted_in_kokoro_fastapis_shape(model_dir):
+def test_the_voices_route_lists_the_models_voices_sorted_by_name(model_dir):
     assert json.loads(voices_body(model_dir)) == {
         "voices": ["af_heart", "af_v0bella", "am_adam", "bf_emma"]
     }
