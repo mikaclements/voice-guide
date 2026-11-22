@@ -3,7 +3,7 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { readJSON } from "./agent-files.ts";
+import { parseHosts, readJSON } from "./agent-files.ts";
 import { productRoutes } from "./product-server.ts";
 
 const key = "vgk_the-product-key";
@@ -85,8 +85,12 @@ const fromPage = {
 };
 type Headers_ = Record<string, string | undefined>;
 
-function routes(f: { dir: string; local: string; shipped: string }, fetcher: typeof fetch) {
-  return productRoutes({ voice: "http://voice", key, user: f.dir, agents: f, fetcher });
+function routes(
+  f: { dir: string; local: string; shipped: string },
+  fetcher: typeof fetch,
+  hosts?: string[],
+) {
+  return productRoutes({ voice: "http://voice", key, user: f.dir, agents: f, fetcher, hosts });
 }
 
 // When the list says a file was modified, which the page sends back with the form.
@@ -286,6 +290,80 @@ test("a request naming a host other than this machine is refused on every route,
   assert.deepEqual(await readdir(f.local), ["coach.md"]);
   const local = { ...fromPage, host: "localhost:5173", origin: "http://localhost:5173" };
   assert.equal((await send(route, "/agent-files", "GET", undefined, local)).statusCode, 200);
+});
+
+test("a name set for the page behind an HTTPS proxy reaches every route, a page there acts only over https, and no other name does", async (t) => {
+  const f = await folders(t);
+  await localFile(f, "coach.md", agentFile(otherId, "Coach"));
+  const v = voice(() => Response.json({ version: 1 }, { status: 201 }));
+  const route = routes(f, v.fetcher, ["mac.tail0.ts.net"]);
+  const proxied = { ...fromPage, host: "mac.tail0.ts.net", origin: "https://mac.tail0.ts.net" };
+  assert.equal((await send(route, "/agent-files", "GET", undefined, proxied)).statusCode, 200);
+  // A name is matched whole, whatever its case, as DNS matches it.
+  const upper = { ...proxied, host: "MAC.tail0.ts.net" };
+  assert.equal((await send(route, "/agent-files", "GET", undefined, upper)).statusCode, 200);
+  const published = await send(route, "/publish", "POST", { path: "coach.md" }, proxied);
+  assert.equal(published.statusCode, 201, "a write from the page itself, over https");
+  // The proxy serves the page over https, so a page at http:// under that name isn't the page.
+  const plain = { ...proxied, origin: "http://mac.tail0.ts.net" };
+  assert.equal(
+    (await send(route, "/publish", "POST", { path: "coach.md" }, plain)).statusCode,
+    403,
+  );
+  // A name that only starts or ends like it, or the name at another port, is another site.
+  for (const host of [
+    "mac.tail0.ts.net.evil.example",
+    "evil.mac.tail0.ts.net",
+    "mac.tail0.ts.net:8443",
+  ]) {
+    const headers = { ...proxied, host, origin: `https://${host}` };
+    assert.equal(
+      (await send(route, "/agent-files", "GET", undefined, headers)).statusCode,
+      403,
+      host,
+    );
+  }
+  // A proxy on another port: the name is listed with it, and the page's origin carries it.
+  const ported = routes(f, v.fetcher, ["mac.tail0.ts.net:8443"]);
+  const at8443 = {
+    ...fromPage,
+    host: "mac.tail0.ts.net:8443",
+    origin: "https://mac.tail0.ts.net:8443",
+  };
+  assert.equal((await send(ported, "/agent-files", "GET", undefined, at8443)).statusCode, 200);
+  assert.equal(
+    (await send(ported, "/publish", "POST", { path: "coach.md" }, at8443)).statusCode,
+    201,
+  );
+  assert.equal((await send(ported, "/agent-files", "GET", undefined, proxied)).statusCode, 403);
+  // Unset, the page answers only to this machine's own names, as before.
+  const unset = routes(f, v.fetcher);
+  assert.equal((await send(unset, "/agent-files", "GET", undefined, proxied)).statusCode, 403);
+  assert.equal(
+    v.calls.filter((c) => c.method === "PUT").length,
+    2,
+    "only the https writes reached voice",
+  );
+});
+
+test("the names for the page behind a proxy are host names with an optional port, and anything else stops the page", () => {
+  assert.deepEqual(parseHosts(""), []);
+  assert.deepEqual(parseHosts(" mac.tail0.ts.net , Other.Local:8443 ,"), [
+    "mac.tail0.ts.net",
+    "other.local:8443",
+  ]);
+  // A scheme, a path, a wildcard or a leading dot would let more than one name in, or none.
+  for (const bad of [
+    "https://mac.tail0.ts.net",
+    "mac/page",
+    "*",
+    ".ts.net",
+    "mac tail",
+    "mac:port",
+    "-mac.example",
+  ]) {
+    assert.throws(() => parseHosts(bad), /WEB_ALLOWED_HOSTS/, bad);
+  }
 });
 
 test("publishing sends the file on disk to voice as text/markdown with the key, and voice's answer passes through", async (t) => {

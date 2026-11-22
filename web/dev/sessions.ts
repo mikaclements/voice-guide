@@ -15,6 +15,8 @@ export type Sessions = {
   folder: string;
   user: string;
   local?: string;
+  // The names besides this machine's own that the dev server answers to, behind an HTTPS proxy.
+  hosts: readonly string[];
 };
 
 type Reply = {
@@ -109,7 +111,7 @@ export async function sessionRoutes(s: Sessions, req: Incoming, to: Reply): Prom
   const url = new URL(req.url, "http://page");
   if (!["/voices", "/sessions", "/context"].includes(url.pathname)) return false;
   // These read what the page shows, so, as for every route here, only the machine's own names.
-  if (fromAnotherHost(req)) {
+  if (fromAnotherHost(req, s.hosts)) {
     s.fail(to, 403, hostRefused);
     return true;
   }

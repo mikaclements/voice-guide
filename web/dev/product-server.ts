@@ -1,7 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import type { Plugin } from "vite";
-import { type AgentFolders, agentFileRoutes, fromElsewhere, readJSON } from "./agent-files.ts";
+import {
+  type AgentFolders,
+  agentFileRoutes,
+  fromElsewhere,
+  parseHosts,
+  readJSON,
+} from "./agent-files.ts";
 import { seedFile } from "./seed.ts";
 import {
   documentsFor,
@@ -20,6 +26,20 @@ const localUser = resolve(repo, "seed/local");
 // Where voice is: VOICE_ADDR, which the other scripts find it by too.
 export const voiceAddress = process.env.VOICE_ADDR ?? "127.0.0.1:8080";
 
+// The names an HTTPS proxy on this machine serves the page under, for the developer's other devices,
+// from WEB_ALLOWED_HOSTS; none unless set, so the page answers only to this machine's own names.
+// Frozen, since the routes check exactly this list.
+export const proxiedHosts: readonly string[] = Object.freeze(
+  parseHosts(process.env.WEB_ALLOWED_HOSTS ?? ""),
+);
+
+// Vite's allowedHosts for the same names: Vite compares a Host without its port, and keeps the array
+// it is given and adds its own names to it, so it gets a copy of its own, ports dropped. The routes
+// still match a name with its port.
+export function viteAllowedHosts(hosts: readonly string[]): string[] {
+  return hosts.map((h) => h.replace(/:\d+$/, ""));
+}
+
 // What the product's server needs to call voice: where it is, and the product key it starts sessions
 // and lists agents with.
 type Product = {
@@ -32,6 +52,9 @@ type Product = {
   local?: string;
   // The agent files the page lists, edits and publishes; without them, it has no such routes.
   agents?: AgentFolders;
+  // Names the routes answer to besides this machine's own: those an HTTPS proxy on this machine
+  // serves the page under. None unless set.
+  hosts?: readonly string[];
   fetcher?: typeof fetch;
   // How long a call to voice may take before the product's server gives up on it, defaultTimeoutMs
   // unless set.
@@ -80,6 +103,7 @@ export function devProduct(): Plugin {
           user: placeholderUser,
           local: localUser,
           agents: { local: resolve(localUser, "agents"), shipped: resolve(repo, "agents") },
+          hosts: proxiedHosts,
         }),
       );
     },
@@ -109,7 +133,8 @@ export function productRoutes(product: Product) {
     to.setHeader("Content-Type", "text/plain; charset=utf-8");
     to.end(why);
   };
-  const agentFiles = product.agents && agentFileRoutes(product.agents, call);
+  const hosts = product.hosts ?? [];
+  const agentFiles = product.agents && agentFileRoutes(product.agents, call, hosts);
 
   const sessions: Sessions = {
     call,
@@ -119,6 +144,7 @@ export function productRoutes(product: Product) {
     folder: relative(repo, product.user),
     user: product.user,
     local: product.local,
+    hosts,
   };
 
   return async (req: Incoming, to: Reply) => {
@@ -136,7 +162,7 @@ export function productRoutes(product: Product) {
       }
       if (await sessionRoutes(sessions, req, to)) return;
       if (req.url === "/start" && req.method === "POST") {
-        const refusal = fromElsewhere(req);
+        const refusal = fromElsewhere(req, hosts);
         if (refusal) return fail(to, ...refusal);
         // Past the limit the connection is kept for this answer and closed after it, so the page
         // reads the reason instead of a dropped connection.
