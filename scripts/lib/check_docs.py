@@ -106,12 +106,14 @@ def defined_labels(design, standards):
 
 
 def check_numbering(labels):
-    """Each label defined once; numbers 1..n with no gaps, in any order (labels keep their creation number)."""
+    """Each label defined once, in any order. Labels keep their creation number, so a removed
+    decision leaves a gap rather than its neighbours moving up."""
     for kind, numbers in labels.items():
-        values = sorted(int(n) for n in numbers)
-        if values != list(range(1, len(values) + 1)):
+        values = [int(n) for n in numbers]
+        repeats = sorted({v for v in values if values.count(v) > 1})
+        if repeats:
             home = STANDARDS if kind == "E" else DESIGN
-            problem(home, 0, f"{kind} labels not numbered 1..n without gaps or repeats: {values}")
+            problem(home, 0, f"{kind} labels defined more than once: {repeats}")
 
 
 def check_mentions_linked(path, text):
