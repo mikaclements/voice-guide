@@ -418,14 +418,24 @@ func TestEachPhraseIsAskedForInTheSessionsVoiceAtItsSpeed(t *testing.T) {
 }
 
 func TestVoicesAreListedFromKokorosVoicesRoute(t *testing.T) {
-	tts := serving(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.Path != "/v1/audio/voices" {
-			t.Errorf("request %s %s, want GET /v1/audio/voices", r.Method, r.URL.Path)
-		}
-		_, _ = w.Write([]byte(`{"voices":["af_heart","bf_emma"]}`))
-	})
-	if got, err := tts.Voices(t.Context()); err != nil || !reflect.DeepEqual(got, []string{"af_heart", "bf_emma"}) {
-		t.Errorf("Voices = %v, %v; want af_heart and bf_emma", got, err)
+	for name, answer := range map[string]string{
+		// The MLX server names each voice.
+		"names": `{"voices":["af_heart","bf_emma"]}`,
+		// Kokoro-FastAPI's image describes each voice, as its answer begins, recorded from the
+		// image compose pins.
+		"objects": `{"default_voice":"af_heart","voices":[{"id":"af_heart","name":"af_heart","target_quality":"B","training_duration":"MM minutes","overall_grade":"C"},{"id":"bf_emma","name":"bf_emma"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			tts := serving(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1/audio/voices" {
+					t.Errorf("request %s %s, want GET /v1/audio/voices", r.Method, r.URL.Path)
+				}
+				_, _ = w.Write([]byte(answer))
+			})
+			if got, err := tts.Voices(t.Context()); err != nil || !reflect.DeepEqual(got, []string{"af_heart", "bf_emma"}) {
+				t.Errorf("Voices = %v, %v; want af_heart and bf_emma", got, err)
+			}
+		})
 	}
 }
 
@@ -436,6 +446,13 @@ func TestVoicesFailWhenKokoroIsDownOrAnswersWithoutAList(t *testing.T) {
 		"not a list":  func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":"af_heart"}`)) },
 		"no list":     func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{}`)) },
 		"a null list": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":null}`)) },
+		// A voice that is neither a name nor an object naming it by id can't be named in an agent file.
+		"a voice without an id": func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"voices":[{"name":"af_heart"}]}`))
+		},
+		"a number for a voice": func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":[3]}`)) },
+		"an empty name":        func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":[""]}`)) },
+		"a null voice":         func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"voices":[null]}`)) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			if got, err := serving(t, h).Voices(t.Context()); err == nil {

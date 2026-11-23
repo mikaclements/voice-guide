@@ -69,8 +69,8 @@ func New(baseURL string, o Options) *TextToSpeech {
 	return &TextToSpeech{url: base + "/v1/audio/speech", voices: base + "/v1/audio/voices", o: o, client: &http.Client{}}
 }
 
-// maxVoicesBytes bounds the voices list read: Kokoro has about sixty voices, a few hundred bytes
-// of names, so a megabyte is far over any real list. A round guess.
+// maxVoicesBytes bounds the voices list read: the pinned Kokoro-FastAPI image describes its 72
+// voices in 6,856 bytes (measured), so a megabyte is far over any real list. A round bound.
 const maxVoicesBytes = 1 << 20
 
 // Voices asks Kokoro-FastAPI, or the MLX server that answers the same route, which voices it can
@@ -91,7 +91,7 @@ func (k *TextToSpeech) Voices(ctx context.Context) ([]string, error) {
 	// A pointer, so an answer with no list or a null one is told from an empty list: a service that
 	// answers so is not working, and no voice can be named against it.
 	var list struct {
-		Voices *[]string `json:"voices"`
+		Voices *[]json.RawMessage `json:"voices"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxVoicesBytes)).Decode(&list); err != nil {
 		return nil, fmt.Errorf("kokoro: voices: %w", err)
@@ -99,7 +99,32 @@ func (k *TextToSpeech) Voices(ctx context.Context) ([]string, error) {
 	if list.Voices == nil {
 		return nil, errors.New("kokoro: voices: the answer has no list")
 	}
-	return *list.Voices, nil
+	names := make([]string, 0, len(*list.Voices))
+	for i, raw := range *list.Voices {
+		name, err := voiceName(raw)
+		if err != nil {
+			return nil, fmt.Errorf("kokoro: voices: voice %d: %w", i, err)
+		}
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+// voiceName reads one voice of the list: the MLX server sends its name, Kokoro-FastAPI's image an
+// object that names it by id beside fields voice doesn't use.
+func voiceName(raw json.RawMessage) (string, error) {
+	// An empty name, or null, which decodes as one, names no voice, as an empty id doesn't.
+	var name string
+	if err := json.Unmarshal(raw, &name); err == nil && name != "" {
+		return name, nil
+	}
+	var described struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &described); err != nil || described.ID == "" {
+		return "", errors.New("neither a name nor an object with an id")
+	}
+	return described.ID, nil
 }
 
 // Speak asks Kokoro for each phrase once the phrase before is made, so the next is made while

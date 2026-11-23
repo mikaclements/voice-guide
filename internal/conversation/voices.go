@@ -54,7 +54,7 @@ func checkVoiceSettings(r StartRequest) error {
 	return nil
 }
 
-// defaultVoicesTimeout is how long the voice list is waited for: a list is a few hundred bytes
+// defaultVoicesTimeout is how long the voice list is waited for: a list is a few kilobytes
 // from a service on the same network, answered in milliseconds, so 2s is a wide margin that still
 // answers 503 well inside a start's 10s when the text-to-speech service stalls. A round guess, to
 // be measured against Kokoro-FastAPI under load.
