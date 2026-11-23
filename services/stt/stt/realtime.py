@@ -18,14 +18,16 @@ from aiohttp import WSCloseCode, WSMsgType, web
 
 # The only rate the API takes for PCM.
 SAMPLE_RATE = 24000
-# An item holds at most a minute of audio, the cap voice plans for one turn's speech, so a
-# microphone left open without a commit can't fill memory.
-MAX_ITEM_SECONDS = 60
+# An item holds at most two minutes of audio, the cap voice plans for one turn's speech, so a
+# microphone left open without a commit can't fill memory. A long spoken answer runs past a minute;
+# two minutes is a round guess at one, measured against real answers' lengths once sessions are
+# timed.
+MAX_ITEM_SECONDS = 120
 # voice appends 32 ms of audio at a time, about 2 KiB as base64; 256 KiB holds 4 s, a wide margin.
 MAX_MESSAGE = 256 * 1024
 # How many connections one process holds. voice keeps one open for each audio connection, mostly
-# silent, so what a connection costs is memory: at most one item, up to a minute of audio, about
-# 6 MB as the service holds it. 64 keeps that under 400 MB, a round guess to measure when a
+# silent, so what a connection costs is memory: at most one item, up to two minutes of audio,
+# about 12 MB as the service holds it. 64 keeps that under 800 MB, a round guess to measure when a
 # host's memory is chosen. More containers serve more.
 DEFAULT_MAX_CONNECTIONS = 64
 # How many recognition calls may run or wait at once. Moonshine's calls take turns on one lock,

@@ -346,6 +346,26 @@ def test_audio_past_an_items_cap_drops_the_item_so_the_next_starts_clean():
     run(recogniser, script, max_item_seconds=1)
 
 
+def test_an_item_holds_two_minutes_of_audio_and_is_dropped_past_them():
+    # 4 s a message, the most one may carry.
+    four_seconds = [0] * (4 * 24000)
+
+    async def script(ws, _):
+        for _ in range(30):
+            await append(ws, *four_seconds)
+        await commit(ws)
+        completed = await receive_until(ws, COMPLETED)
+        assert completed["usage"]["seconds"] == 120
+        for _ in range(30):
+            await append(ws, *four_seconds)
+        await append(ws, 0)
+        assert (await receive(ws))["error"]["code"] == "input_audio_buffer_full"
+        await commit(ws)
+        assert (await receive(ws))["error"]["code"] == "input_audio_buffer_commit_empty"
+
+    run(FakeRecogniser(), script)
+
+
 def test_recognition_past_its_bound_fails_the_item_at_once():
     recogniser = FakeRecogniser()
     recogniser.go = threading.Event()
