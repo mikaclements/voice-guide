@@ -156,8 +156,8 @@ export function PastSessions(props: PastSessionsProps) {
 
 // The sessions panel: it loads the voices, the documents the chosen agent asks for and the past
 // sessions from the page's dev server, and hands a start with the settings to the page's own start.
-// children, the session started, show under the start form, in a column beside the past sessions
-// on a wide screen and above them on a narrow one.
+// children, the conversation, come first: to the right of the context on a wide screen, above it on
+// a narrow one; the context holds the start form above the past sessions.
 export function SessionsPanel(props: {
   agents: Agent[];
   agentId: string;
@@ -219,7 +219,8 @@ export function SessionsPanel(props: {
 
   return (
     <div className="columns">
-      <div className="column">
+      {children}
+      <div className="context">
         <StartForm
           {...{ agents, agentId, started, voices, voice, speed, documents, busy }}
           errors={[voicesError, documentsError, error]}
@@ -232,9 +233,6 @@ export function SessionsPanel(props: {
             start: () => start(startOptions(voice, speed, documents)),
           }}
         />
-        {children}
-      </div>
-      <div className="column">
         <PastSessions
           {...{ sessions, loading, error: listError, refresh }}
           agentName={(id) => agents.find((a) => a.id === id)?.name ?? id}

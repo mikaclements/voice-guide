@@ -1,65 +1,66 @@
-// The page follows the conversation: while the user reads along at the bottom of the session, each
-// new line, and each reply as it grows, is scrolled into view; once they scroll up to reread, it
-// stays put until they scroll back down. On a wide screen the session's column scrolls, on a narrow
-// one the whole page does, so what is seen is measured from wherever the session sits.
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef } from "react";
+// The transcript follows the conversation: while the user reads along at its bottom, each new line,
+// and each reply as it grows, lands in view; once they scroll up to reread, it stays put until they
+// scroll back down or jump to the latest line. The transcript scrolls in a box of its own on every
+// screen, so only that box's own scrolling counts, never the page's.
+import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-// How far below what the user sees the session's bottom may sit and still count as reading along:
-// two transcript lines (16px text at a line height of 1.5), so a scroll that stops just short of the
-// bottom still follows. A round guess, to be tuned by use.
-export const followSlackPx = 48;
+// How far above its bottom the transcript may be scrolled and still count as reading along: a few
+// pixels, for a layout in fractions of a pixel, since the box stops at its own bottom; any more and a
+// small scroll up while a reply streams in would be pulled back down. As the drop-in element does.
+export const followSlackPx = 4;
 
-// Whether the page should keep following, from where the session's bottom sits and the part of the
-// window the user sees, top and bottom, in the same coordinates: yes while the bottom is in view or
-// just below it; no once it is further below, or above, as when the user scrolled down past it to
-// the past sessions beneath it on a narrow screen.
-export function follows(bottom: number, seen: { top: number; bottom: number }): boolean {
-  return bottom >= seen.top && bottom <= seen.bottom + followSlackPx;
+// Whether the transcript should keep following, from how far its box is scrolled: yes while what
+// is shown reaches its bottom, or stops short of it by no more than the slack.
+export function follows(box: { scrollTop: number; clientHeight: number; scrollHeight: number }) {
+  return box.scrollHeight - box.scrollTop - box.clientHeight <= followSlackPx;
 }
 
-// Whether the user reads along: where the marker at the session's bottom sits against the part of
-// the window it can be seen in, which is the window cut down by each ancestor that scrolls.
-function readingAlong(marker: Element): boolean {
-  const seen = { top: 0, bottom: window.innerHeight };
-  for (let p = marker.parentElement; p; p = p.parentElement) {
-    if (getComputedStyle(p).overflowY === "visible") continue;
-    const box = p.getBoundingClientRect();
-    seen.top = Math.max(seen.top, box.top);
-    seen.bottom = Math.min(seen.bottom, box.bottom);
-  }
-  return follows(marker.getBoundingClientRect().top, seen);
-}
-
-// The ref for an empty marker after the session's last line, which is kept in view each time drawn,
-// what the session shows, changes, while the user reads along; nothing is followed before a session
-// shows, so filling in the start form never moves the page. Whether the user reads along is
-// measured on each scroll and once each change is in, so it stands as it was before the next change
-// pushes the bottom down.
-export function useFollow(drawn: unknown): RefObject<HTMLDivElement | null> {
-  const marker = useRef<HTMLDivElement>(null);
+// The ref for the transcript's box, kept scrolled to its bottom each time drawn, what the session
+// shows, changes, while the user reads along; whether they paused it by scrolling up; and a jump
+// back to the latest line. Whether they read along is measured on each scroll of the box and once
+// each change is in, so it stands as it was before the next change grows the transcript.
+export function useFollow(drawn: unknown): {
+  box: RefObject<HTMLElement | null>;
+  paused: boolean;
+  jump(): void;
+} {
+  const box = useRef<HTMLElement>(null);
   const following = useRef(true);
-  // Kept as it was while the session isn't drawn, as with the Agents tab shown, so coming back finds
+  const [paused, setPaused] = useState(false);
+  // Kept as it was while the box isn't drawn, as with the Agents tab shown, so coming back finds
   // the user where they left off.
   const measure = useCallback(() => {
-    const el = marker.current;
-    if (el?.getClientRects().length) following.current = readingAlong(el);
+    const el = box.current;
+    if (!el?.getClientRects().length) return;
+    following.current = follows(el);
+    setPaused(!following.current);
   }, []);
-  useEffect(() => {
-    // A scroll doesn't bubble, so it is caught on its way down, from whichever part scrolled.
-    const options = { capture: true, passive: true };
-    document.addEventListener("scroll", measure, options);
-    window.addEventListener("resize", measure);
-    return () => {
-      document.removeEventListener("scroll", measure, options);
-      window.removeEventListener("resize", measure);
-    };
-  }, [measure]);
-  // Before the browser paints, so a new line never shows below the fold first. Nearest moves only as
-  // far as needed, so a bottom already in view stays where it is. Measured after, for a change that
-  // moves the bottom with no scroll, as a new session's short transcript replacing a long one.
-  useLayoutEffect(() => {
-    if (drawn && following.current) marker.current?.scrollIntoView({ block: "nearest" });
+  // To the bottom while the user reads along, and measured either way.
+  const keep = useCallback(() => {
+    const el = box.current;
+    if (el && following.current) el.scrollTop = el.scrollHeight;
     measure();
-  }, [drawn, measure]);
-  return marker;
+  }, [measure]);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    // Drawn again, as when the Test tab shows after the transcript grew out of sight, or resized.
+    const resized = new ResizeObserver(keep);
+    resized.observe(el);
+    el.addEventListener("scroll", measure, { passive: true });
+    return () => {
+      resized.disconnect();
+      el.removeEventListener("scroll", measure);
+    };
+  }, [keep, measure]);
+  // Before the browser paints, so a new line never shows out of view first. Only the box scrolls,
+  // so the page stays where the user has it.
+  useLayoutEffect(() => {
+    if (drawn) keep();
+  }, [drawn, keep]);
+  const jump = useCallback(() => {
+    following.current = true;
+    keep();
+  }, [keep]);
+  return { box, paused, jump };
 }

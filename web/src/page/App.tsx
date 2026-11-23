@@ -197,60 +197,88 @@ export type SessionViewProps = {
   };
 };
 
+// The conversation's panel: the session's controls at its top, the transcript scrolling between,
+// kept at its newest line, and the box to type in at its bottom.
 export function SessionView(props: SessionViewProps) {
   const { agents, session, shown, words, starting, error, wakeNote, on } = props;
   const busy = starting || Boolean(shown?.busy);
   const locked = shown?.locked ?? true;
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
-  const bottom = useFollow(shown);
+  const { box, paused, jump } = useFollow(shown);
+  const panel = useRef<HTMLElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  // A session started brings the panel into view, as on a phone, where Start is below it.
+  const sessionId = session?.id;
+  useEffect(() => {
+    if (sessionId) panel.current?.scrollIntoView({ block: "nearest" });
+  }, [sessionId]);
   return (
-    <section>
-      {shown && !shown.over && (
-        <div className="row">
-          <button type="button" onClick={on.end} disabled={busy}>
-            End
+    <section className="conversation" aria-label="Conversation" ref={panel}>
+      <div className="conversation-top">
+        {shown && !shown.over && (
+          <div className="row controls">
+            <button type="button" onClick={on.end} disabled={busy}>
+              End
+            </button>
+            {shown.blocked && (
+              <button type="button" onClick={on.playAfterPress}>
+                Tap to hear the agent
+              </button>
+            )}
+            {shown.mute && !shown.blocked && <span className="meta">{shown.status}</span>}
+            {shown.mute && (
+              <button type="button" onClick={on.mute}>
+                {shown.mute}
+              </button>
+            )}
+          </div>
+        )}
+        {!agents.length && !error && <p className="meta">Loading agents…</p>}
+        {shown?.notes.map((n) => (
+          <p className="meta" key={n}>
+            {n}
+          </p>
+        ))}
+        {wakeNote && <p className="meta">{wakeNote}</p>}
+        {session && (
+          <p className="meta">
+            Session {session.id} with {agentName(session.agent_id)}, version {session.agent_version}
+            {shown?.over && " (ended)"}
+          </p>
+        )}
+        {shown?.over && <p className="meta">{shown.over}</p>}
+      </div>
+      <div className="transcript">
+        <section className="lines" ref={box} aria-label="Transcript">
+          {!session && <p className="meta">Start a session to talk.</p>}
+          {shown?.lines.map((l) => (
+            <div className="turn" key={l.id}>
+              <span className="who">
+                {l.who === "you" ? "You" : agentName(session?.agent_id ?? "")}
+              </span>
+              {l.text}
+              {l.meta && <div className="meta">{beneath(l.meta)}</div>}
+            </div>
+          ))}
+        </section>
+        {paused && (
+          <button
+            type="button"
+            className="latest"
+            onClick={() => {
+              jump();
+              // The button goes once pressed, so the focus goes to the box to type in, not lost.
+              input.current?.focus({ preventScroll: true });
+            }}
+          >
+            Jump to latest
           </button>
-        </div>
-      )}
-      {!agents.length && !error && <p className="meta">Loading agents…</p>}
-      {shown?.notes.map((n) => (
-        <p className="meta" key={n}>
-          {n}
-        </p>
-      ))}
-      {wakeNote && <p className="meta">{wakeNote}</p>}
-      {shown?.blocked && (
-        <button type="button" onClick={on.playAfterPress}>
-          Tap to hear the agent
-        </button>
-      )}
-      {shown?.mute && (
-        <div className="row">
-          {!shown.blocked && <span className="meta">{shown.status}</span>}
-          <button type="button" onClick={on.mute}>
-            {shown.mute}
-          </button>
-        </div>
-      )}
-      {session && (
-        <p className="meta">
-          Session {session.id} with {agentName(session.agent_id)}, version {session.agent_version}
-          {shown?.over && " (ended)"}
-        </p>
-      )}
-      {shown?.over && <p className="meta">{shown.over}</p>}
-      {shown?.lines.map((l) => (
-        <div className="turn" key={l.id}>
-          <span className="who">
-            {l.who === "you" ? "You" : agentName(session?.agent_id ?? "")}
-          </span>
-          {l.text}
-          {l.meta && <div className="meta">{beneath(l.meta)}</div>}
-        </div>
-      ))}
+        )}
+      </div>
       {session && (
         <form className="row" onSubmit={on.send}>
           <input
+            ref={input}
             value={words}
             onChange={(e) => on.words(e.target.value)}
             placeholder="Hi, I'm ready. Please start the interview."
@@ -261,8 +289,6 @@ export function SessionView(props: SessionViewProps) {
           </button>
         </form>
       )}
-      {/* The session's bottom, kept in view while the user reads along. */}
-      <div ref={bottom} />
     </section>
   );
 }

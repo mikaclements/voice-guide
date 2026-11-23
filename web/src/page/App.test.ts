@@ -65,6 +65,31 @@ test("the page draws the transcript, beneath each reply what answered and how lo
   assert.match(page([], { blocked: true }), />Tap to hear the agent<\/button>/);
 });
 
+test("the conversation's panel has the session's controls at its top, the transcript between, and the box to type in at its bottom", () => {
+  const html = page([{ id: "1", who: "you", text: "Hi" }]);
+  assert.match(
+    html,
+    /^<section class="conversation" aria-label="Conversation"><div class="conversation-top"><div class="row controls"><button type="button">End<\/button>.*<\/div><div class="transcript"><section class="lines" aria-label="Transcript"><div class="turn">.*Hi<\/div><\/section><\/div><form class="row">.*Send<\/button><\/form><\/section>$/,
+  );
+});
+
+test("before a session, the panel says to start one, with nothing to type in", () => {
+  const html = renderToStaticMarkup(
+    createElement(app.SessionView, {
+      agents: [agent("a1", "Mock interviewer")],
+      words: "",
+      starting: false,
+      error: "",
+      on: { end: none, mute: none, playAfterPress: none, words: none, send: none },
+    }),
+  );
+  assert.match(
+    html,
+    /<div class="conversation-top"><\/div><div class="transcript"><section class="lines"[^>]*><p class="meta">Start a session to talk\.<\/p><\/section>/,
+  );
+  assert.doesNotMatch(html, /<form/);
+});
+
 test("while the browser won't keep the display on, the session says so quietly, beneath its own notes", () => {
   const html = page([], { notes: ["Microphone blocked"] }, { wakeNote: "Display may turn off" });
   assert.match(html, /Microphone blocked<\/p><p class="meta">Display may turn off<\/p>/);
@@ -94,11 +119,11 @@ test("both tabs are drawn, the one the hash doesn't name hidden, so a session an
       Reflect.deleteProperty(globalThis, "window");
     }
   };
-  // The Test tab opens with its columns, the start form first, the Agents tab with its section.
+  // The Test tab opens with its columns, the conversation first, the Agents tab with its section.
   const panels = (html: string) =>
     [
       ...html.matchAll(
-        /<div( hidden="")?>(<div class="columns"><div class="column"><form>)|<div( hidden="")? class="agents"><section>/g,
+        /<div( hidden="")?>(<div class="columns"><section class="conversation" aria-label="Conversation">)|<div( hidden="")? class="agents"><section>/g,
       ),
     ].map((m) =>
       m[2] ? ["test", m[1] ? "hidden" : "shown"] : ["agents", m[3] ? "hidden" : "shown"],
