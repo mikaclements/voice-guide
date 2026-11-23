@@ -177,6 +177,8 @@ The reply is `201 Created`, or `200 OK` for a repeated `request_id`:
 
 The server hands its page `id` and `ticket`, and nothing else. A repeat whose session has ended also carries `ended_at`. A repeat past the ticket's four hours has no `ticket`. In either case, start a new session with a new `request_id`.
 
+A user talks to an agent in one session at a time. A new start, with a new `request_id`, ends the user's live session with the same agent, as ending it would, and its summary starts at once; a page still holding it learns at its next turn. Sessions with other agents carry on. For an agent that `reads` its session summaries, the new session holds, word for word, what was said in the sessions whose summary isn't written yet, the newest 20,000 characters (`VOICE_CARRIED_MAX_CHARS`), so it picks up where the user left off.
+
 An error comes as problem details (`application/problem+json`). Its `detail` says what to fix; a `500` has none. A `503` means send the same request again.
 
 The server ends a session with `POST /v1/sessions/<session ID>/end` and the same key. It answers `200` with the session, now carrying `ended_at`, and answers the same to a repeat.
