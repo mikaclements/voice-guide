@@ -92,9 +92,45 @@ test("past sessions list the agent, when each started and ended, the summary's s
     html,
     /started 2026-11-21 10:00:00 UTC, ended 2026-11-21 10:05:00 UTC · summary written/,
   );
-  assert.match(html, /<div>Covered the resume\.<\/div>/);
+  assert.match(html, /<div class="summary">Covered the resume\.<\/div>/);
   assert.match(html, /"who">a2<\/span><span class="meta">started [^<]*, still live</);
   assert.match(html, />Refresh<\/button>/);
+});
+
+test("each past session is a block of its own, its summary beneath with its paragraphs and line breaks as written", () => {
+  const summary = "Where we got to.\n\nThe story:\n- the bug\n- the fix\n";
+  const html = list([past({ summary }), past({ id: "s2", summary: null })]);
+  assert.equal(html.match(/<article class="past">/g)?.length, 2);
+  assert.match(
+    html,
+    /<article class="past"><div><span class="who">Mock interviewer<\/span><span class="meta">[^<]*<\/span><\/div><div class="summary">/,
+  );
+  assert.match(
+    html,
+    /<div class="summary">Where we got to\.\n\nThe story:\n- the bug\n- the fix<\/div>/,
+  );
+});
+
+test("the session started shows under the start form in one column, the past sessions in the other", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      panel.SessionsPanel,
+      {
+        agents: [{ id: "a1", name: "Mock interviewer", description: "", session_context: [] }],
+        agentId: "a1",
+        onAgent: none,
+        started: true,
+        busy: false,
+        start: none,
+        error: "",
+      },
+      createElement("p", null, "The session"),
+    ),
+  );
+  assert.match(
+    html,
+    /^<div class="columns"><div class="column"><form>.*<\/form><p>The session<\/p><\/div><div class="column"><section><h2>Past sessions<\/h2>.*<\/section><\/div><\/div>$/,
+  );
 });
 
 test("no past sessions says so, and a failed list shows why", () => {
