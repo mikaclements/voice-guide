@@ -197,6 +197,8 @@ paths:
       summary: Start a session
       description: |
         Starts a session for the user the product names, or returns the one the same `request_id` started, so a retry after a lost reply starts nothing new. Each reply carries a fresh ticket for the session, which expires when the session's first ticket would have. The reply is never cached.
+
+        A new session ends the user's live session with the same agent, as ending it would, so a user talks to an agent in one session at a time; their sessions with other agents carry on. For an agent that reads its session summaries, the new session's prompt holds what was said in the user's sessions with the agent whose summary isn't written yet, the newest part within a character limit.
       security:
         - productKey: [run_sessions]
       requestBody:

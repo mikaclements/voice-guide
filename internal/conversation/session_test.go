@@ -78,7 +78,7 @@ func newServiceWithLimit(t *testing.T, limit int) serviceOverFakes {
 	h.items.Add(profile)
 	h.publish(t, agents.Agent{ID: keeperID, Name: "Lighthouse keeper", Persona: "You answer every call from the sea."})
 	h.publish(t, agents.Agent{ID: captainID, Name: "Ferry captain", Persona: "You know every crossing by heart."})
-	h.settings = conversation.Settings{UserContextChars: limit, SessionContextChars: limit, ScreenInputChars: limit, WordsChars: limit, TurnDeadline: time.Minute, Model: "claude-test", SessionIdle: sessionIdle}
+	h.settings = conversation.Settings{UserContextChars: limit, SessionContextChars: limit, CarriedChars: limit, ScreenInputChars: limit, WordsChars: limit, TurnDeadline: time.Minute, Model: "claude-test", SessionIdle: sessionIdle}
 	h.svc = h.instance(h.model)
 	return h
 }

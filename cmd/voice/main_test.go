@@ -63,6 +63,14 @@ func TestTheScreenInputLimitIs40000UnlessSet(t *testing.T) {
 	}
 }
 
+func TestTheCarriedLimitIs20000UnlessSet(t *testing.T) {
+	unset, _ := loadConfig(env(nil))
+	set, err := loadConfig(env(map[string]string{"VOICE_CARRIED_MAX_CHARS": "900"}))
+	if unset.settings.CarriedChars != 20000 || err != nil || set.settings.CarriedChars != 900 {
+		t.Errorf("limit = %d unset, %d set (%v); want 20000, then 900", unset.settings.CarriedChars, set.settings.CarriedChars, err)
+	}
+}
+
 func TestABoardAtTheDefaultLimitIsTakenAndFitsADataChannelMessageAndOneCharacterMoreIsRefused(t *testing.T) {
 	cfg, err := loadConfig(env(nil))
 	if err != nil {
@@ -226,6 +234,7 @@ func TestTheServiceRefusesToStartWithUnsafeSettings(t *testing.T) {
 		"a session context limit below one": {"VOICE_SESSION_CONTEXT_MAX_CHARS": "-1"},
 		"a session context limit in words":  {"VOICE_SESSION_CONTEXT_MAX_CHARS": "plenty"},
 		"a screen input limit of zero":      {"VOICE_SCREEN_INPUT_MAX_CHARS": "0"},
+		"a carried limit of zero":           {"VOICE_CARRIED_MAX_CHARS": "0"},
 		"a limit on a turn's words of zero": {"VOICE_WORDS_MAX_CHARS": "0"},
 		"a model service without a scheme":  {"VOICE_MODEL_URL": "localhost:8091"},
 		"a model service on another scheme": {"VOICE_MODEL_URL": "ftp://localhost:8091"},

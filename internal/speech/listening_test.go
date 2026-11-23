@@ -50,13 +50,14 @@ var startingListening = speech.Listening{Threshold: 0.5, Pause: 200 * time.Milli
 
 // newListeningService returns the service over the fake transport, noticing
 // speech with detection as the starting settings say and hearing nothing in
-// it, and n of the caller's sessions.
+// it, and n of the caller's sessions, each with an agent of its own, since a
+// user's new session with an agent ends their last.
 func newListeningService(t *testing.T, detection speech.SpeechDetection, log *slog.Logger, n int) (*speech.Service, *fake.Transport, []uuid.UUID) {
 	t.Helper()
 	store := sessionsfake.New()
 	var sessions []uuid.UUID
 	for range n {
-		s, _, err := store.Start(context.Background(), conversation.Session{ID: uuid.NewV7(), Workspace: workspace, User: user, Agent: keeperID, AgentVersion: 1}, uuid.NewV7(), "")
+		s, _, err := store.Start(context.Background(), conversation.Session{ID: uuid.NewV7(), Workspace: workspace, User: user, Agent: uuid.NewV7(), AgentVersion: 1}, uuid.NewV7(), "")
 		if err != nil {
 			t.Fatalf("Start: %v", err)
 		}

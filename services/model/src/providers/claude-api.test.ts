@@ -88,6 +88,17 @@ const cachedAt = (message: ReturnType<typeof said>) => ({
   ),
 });
 
+test("a session's third layer, the earlier conversation it carries, leaves a cache point after each", async () => {
+  const { stream, calls } = fakeApi({ events: [] });
+  const layers = ["You are an interviewer.", "<document>Built a queue.</document>", "Earlier: ..."];
+  await collect(provider(stream).reply({ ...request, stableLayers: layers }, never));
+
+  assert.deepEqual(
+    calls[0]?.params?.system,
+    layers.map((text) => ({ type: "text", text, cache_control: cached })),
+  );
+});
+
 test("sends the layers as cached system blocks and the conversation with the newest words last", async () => {
   const { stream, calls } = fakeApi({ events: [] });
   await collect(provider(stream).reply(request, never));

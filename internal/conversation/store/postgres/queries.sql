@@ -21,29 +21,47 @@ RETURNING user_id;
 
 -- A repeat of the same request inserts nothing; the caller then reads the session it made.
 -- name: AddSession :one
-INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
-VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context, @voice, @speed)
+INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed, carried_session_ids)
+VALUES (@id, @workspace_id, @user_id, @agent_id, @agent_version, @request_id, @context_item_ids, @session_context, @voice, @speed, @carried_session_ids)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data;
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids;
+
+-- Starts for one user and agent take turns, until each commits, so a start always sees, and ends,
+-- the session one before it saved, and two at once leave one session live.
+-- name: LockStarts :exec
+SELECT pg_advisory_xact_lock(hashtextextended(concat(@workspace_id::uuid, @user_id::uuid, @agent_id::uuid), 0));
+
+-- The sessions a new one ends: the user's others with its agent still live.
+-- name: OtherLiveSessions :many
+SELECT id FROM sessions
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND agent_id = @agent_id AND ended_at IS NULL AND id <> @id;
+
+-- The sessions a new one carries: the user's with its agent still live, which it ends, or whose
+-- summary is still coming, oldest first.
+-- name: UnsummarizedSessions :many
+SELECT id FROM sessions
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND agent_id = @agent_id
+  AND (ended_at IS NULL OR summary_status = 'pending')
+ORDER BY id;
 
 -- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND request_id = @request_id;
 
 -- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id = @id;
 
 -- A product's server names no user, so its reads find a session by its workspace alone.
 -- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = @workspace_id AND id = @id;
 
 -- A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
 -- @before, the last id of the page before, is where this one starts.
 -- A list reads no session's documents, which may be long and which nothing listing them uses.
 -- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, '[]'::jsonb AS session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, '[]'::jsonb AS session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = @workspace_id AND user_id = @user_id AND id < @before
 ORDER BY id DESC
 LIMIT @page_size;
@@ -191,6 +209,13 @@ SELECT EXISTS (
 SELECT seq, request_id, user_text, screen_input, agent_text, status, heard_chars, opening FROM turns
 WHERE workspace_id = @workspace_id AND session_id = @session_id AND status <> 'in_flight'
 ORDER BY seq;
+
+-- The finished turns of the user's sessions a session carries, in one round trip, with only what
+-- their transcript shows: ids are UUIDv7, so id order is the order the sessions started in.
+-- name: FinishedTurnsOf :many
+SELECT session_id, seq, user_text, agent_text, status, heard_chars, opening FROM turns
+WHERE workspace_id = @workspace_id AND user_id = @user_id AND session_id = ANY(@session_ids::uuid[]) AND status <> 'in_flight'
+ORDER BY session_id, seq;
 
 -- A turn's stages, copied in one round trip; the foreign key checks each row against the turn's
 -- workspace and user.

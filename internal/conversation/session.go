@@ -31,6 +31,11 @@ type Session struct {
 	// SessionContext is what the product sent, in order, kept for the whole
 	// session.
 	SessionContext []SessionContextBlock
+	// CarriedSessions are the IDs, in the order they started, of the user's
+	// earlier sessions with the agent that were live, or whose summary was
+	// still coming, when this one started: every turn's prompt holds their
+	// turns, which nothing else gives it yet.
+	CarriedSessions []uuid.UUID
 	// Voice and Speed are what every reply in the session is spoken in, chosen
 	// when it started; empty and 0 for a session started before they were kept.
 	Voice     string
@@ -104,8 +109,14 @@ type Sessions interface {
 	// whether it is new. A reference is the product's name for a user new to
 	// voice-guide, s's user: it is added with the session, in the same write,
 	// unless a start that committed meanwhile added it, whose user the session
-	// is then for.
+	// is then for. A new session ends, in the same write and as End does, every
+	// other live session of its user with its agent in the workspace, those a
+	// start committed meanwhile included; a repeat ends nothing.
 	Start(ctx context.Context, s Session, requestID uuid.UUID, reference string) (Session, bool, error)
+	// Unsummarized returns the IDs of the user's sessions with agent in the
+	// workspace that are live or whose summary is still pending, in the order
+	// they started.
+	Unsummarized(ctx context.Context, workspace, user, agent uuid.UUID) ([]uuid.UUID, error)
 	// ByID returns the user's session with id in the workspace, if any.
 	ByID(ctx context.Context, workspace, user, id uuid.UUID) (Session, bool, error)
 	// InWorkspace returns the session with id in the workspace, whichever
@@ -227,7 +238,11 @@ func (s *Service) Session(ctx context.Context, c access.Caller, id uuid.UUID) (S
 // names the user by its own reference, which keeps naming the same user: one
 // it names for the first time is added with their first session. Replies are
 // spoken in the voice and speed the request names, else the agent version's,
-// else the server's; a repeat keeps those of the start it repeats.
+// else the server's; a repeat keeps those of the start it repeats. A new
+// session ends the user's other live sessions with the agent, as EndSession
+// does: a user talks to an agent in one conversation at a time, and a start
+// means the last one is over. It carries the turns of those, and of any whose
+// summary is still coming, so it knows what the user just said.
 func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequest) (Session, bool, error) {
 	agent, requestID := r.Agent, r.RequestID
 	if err := checkUserReference(r.User); err != nil {
@@ -281,21 +296,34 @@ func (s *Service) StartSession(ctx context.Context, c access.Caller, r StartRequ
 	if err := s.checkVoiceOffered(ctx, r.Voice); err != nil {
 		return Session{}, false, err
 	}
+	// The new session ends the user's live ones with the agent as it is saved,
+	// and until their summaries are written user context holds nothing of
+	// them, nor of others whose summary is still coming: it carries their
+	// turns instead. They are read before loading, so a summary written in
+	// between is loaded, carried or both, never neither. They stand in for
+	// summaries, so only an agent that reads its summaries carries them.
+	carried := []uuid.UUID{}
+	if newReference == "" && slices.Contains(version.Reads, usercontext.KindSessionSummary) {
+		if carried, err = s.sessions.Unsummarized(ctx, c.Workspace, c.User, agent); err != nil {
+			return Session{}, false, fmt.Errorf("read the sessions to carry: %w", err)
+		}
+	}
 	items, err := s.loadUserContext(ctx, c, version.ID, version.Reads)
 	if err != nil {
 		return Session{}, false, err
 	}
 	voice, speed := s.voiceOf(r, version)
 	started, isNew, err := s.sessions.Start(ctx, Session{
-		ID:             uuid.NewV7(),
-		Workspace:      c.Workspace,
-		User:           c.User,
-		Agent:          agent,
-		AgentVersion:   version.Number,
-		ContextItems:   items,
-		SessionContext: slices.Clone(r.SessionContext),
-		Voice:          voice,
-		Speed:          speed,
+		ID:              uuid.NewV7(),
+		Workspace:       c.Workspace,
+		User:            c.User,
+		Agent:           agent,
+		AgentVersion:    version.Number,
+		ContextItems:    items,
+		SessionContext:  slices.Clone(r.SessionContext),
+		CarriedSessions: carried,
+		Voice:           voice,
+		Speed:           speed,
 	}, requestID, newReference)
 	if err != nil {
 		return Session{}, false, fmt.Errorf("save the session: %w", err)

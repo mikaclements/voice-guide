@@ -599,6 +599,10 @@ func (brokenSessions) EndIdle(context.Context, time.Duration) ([]uuid.UUID, erro
 	return nil, errors.New("connection refused by 10.0.0.7:5432")
 }
 
+func (brokenSessions) Unsummarized(context.Context, uuid.UUID, uuid.UUID, uuid.UUID) ([]uuid.UUID, error) {
+	return nil, errors.New("connection refused by 10.0.0.7:5432")
+}
+
 func TestAFailedStartAnswersWithoutTheReason(t *testing.T) {
 	tests := map[string]struct {
 		f      fixture

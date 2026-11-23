@@ -31,6 +31,9 @@ type Settings struct {
 	UserContextChars int
 	// SessionContextChars bounds the session context a product sends.
 	SessionContextChars int
+	// CarriedChars bounds the words and replies of the sessions a session
+	// carries that its prompt holds, the newest kept.
+	CarriedChars int
 	// ScreenInputChars bounds the screen input sent with a turn.
 	ScreenInputChars int
 	// WordsChars bounds the words the user sends in a turn.

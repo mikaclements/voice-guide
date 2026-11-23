@@ -14,39 +14,41 @@ import (
 )
 
 const addSession = `-- name: AddSession :one
-INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO sessions (id, workspace_id, user_id, agent_id, agent_version, request_id, context_item_ids, session_context, voice, speed, carried_session_ids)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (workspace_id, user_id, request_id) DO NOTHING
-RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data
+RETURNING id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids
 `
 
 type AddSessionParams struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	RequestID      uuid.UUID
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	RequestID         uuid.UUID
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	CarriedSessionIds []uuid.UUID
 }
 
 type AddSessionRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
-	StartedAt      time.Time
-	EndedAt        pgtype.Timestamptz
-	SummaryStatus  pgtype.Text
-	SummaryData    []byte
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	StartedAt         time.Time
+	EndedAt           pgtype.Timestamptz
+	SummaryStatus     pgtype.Text
+	SummaryData       []byte
+	CarriedSessionIds []uuid.UUID
 }
 
 // A repeat of the same request inserts nothing; the caller then reads the session it made.
@@ -62,6 +64,7 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		arg.SessionContext,
 		arg.Voice,
 		arg.Speed,
+		arg.CarriedSessionIds,
 	)
 	var i AddSessionRow
 	err := row.Scan(
@@ -78,6 +81,7 @@ func (q *Queries) AddSession(ctx context.Context, arg AddSessionParams) (AddSess
 		&i.EndedAt,
 		&i.SummaryStatus,
 		&i.SummaryData,
+		&i.CarriedSessionIds,
 	)
 	return i, err
 }
@@ -338,6 +342,113 @@ func (q *Queries) FinishedTurns(ctx context.Context, arg FinishedTurnsParams) ([
 	return items, nil
 }
 
+const finishedTurnsOf = `-- name: FinishedTurnsOf :many
+SELECT session_id, seq, user_text, agent_text, status, heard_chars, opening FROM turns
+WHERE workspace_id = $1 AND user_id = $2 AND session_id = ANY($3::uuid[]) AND status <> 'in_flight'
+ORDER BY session_id, seq
+`
+
+type FinishedTurnsOfParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	SessionIds  []uuid.UUID
+}
+
+type FinishedTurnsOfRow struct {
+	SessionID  uuid.UUID
+	Seq        int32
+	UserText   string
+	AgentText  string
+	Status     string
+	HeardChars pgtype.Int4
+	Opening    bool
+}
+
+// The finished turns of the user's sessions a session carries, in one round trip, with only what
+// their transcript shows: ids are UUIDv7, so id order is the order the sessions started in.
+func (q *Queries) FinishedTurnsOf(ctx context.Context, arg FinishedTurnsOfParams) ([]FinishedTurnsOfRow, error) {
+	rows, err := q.db.Query(ctx, finishedTurnsOf, arg.WorkspaceID, arg.UserID, arg.SessionIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FinishedTurnsOfRow
+	for rows.Next() {
+		var i FinishedTurnsOfRow
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.Seq,
+			&i.UserText,
+			&i.AgentText,
+			&i.Status,
+			&i.HeardChars,
+			&i.Opening,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockStarts = `-- name: LockStarts :exec
+SELECT pg_advisory_xact_lock(hashtextextended(concat($1::uuid, $2::uuid, $3::uuid), 0))
+`
+
+type LockStartsParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	AgentID     uuid.UUID
+}
+
+// Starts for one user and agent take turns, until each commits, so a start always sees, and ends,
+// the session one before it saved, and two at once leave one session live.
+func (q *Queries) LockStarts(ctx context.Context, arg LockStartsParams) error {
+	_, err := q.db.Exec(ctx, lockStarts, arg.WorkspaceID, arg.UserID, arg.AgentID)
+	return err
+}
+
+const otherLiveSessions = `-- name: OtherLiveSessions :many
+SELECT id FROM sessions
+WHERE workspace_id = $1 AND user_id = $2 AND agent_id = $3 AND ended_at IS NULL AND id <> $4
+`
+
+type OtherLiveSessionsParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	AgentID     uuid.UUID
+	ID          uuid.UUID
+}
+
+// The sessions a new one ends: the user's others with its agent still live.
+func (q *Queries) OtherLiveSessions(ctx context.Context, arg OtherLiveSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, otherLiveSessions,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.AgentID,
+		arg.ID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeTurn = `-- name: RemoveTurn :execrows
 DELETE FROM turns WHERE workspace_id = $1 AND id = $2 AND status = 'in_flight'
 `
@@ -398,7 +509,7 @@ func (q *Queries) SaveSummaryData(ctx context.Context, arg SaveSummaryDataParams
 }
 
 const sessionByID = `-- name: SessionByID :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id = $3
 `
 
@@ -409,19 +520,20 @@ type SessionByIDParams struct {
 }
 
 type SessionByIDRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
-	StartedAt      time.Time
-	EndedAt        pgtype.Timestamptz
-	SummaryStatus  pgtype.Text
-	SummaryData    []byte
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	StartedAt         time.Time
+	EndedAt           pgtype.Timestamptz
+	SummaryStatus     pgtype.Text
+	SummaryData       []byte
+	CarriedSessionIds []uuid.UUID
 }
 
 func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (SessionByIDRow, error) {
@@ -441,6 +553,7 @@ func (q *Queries) SessionByID(ctx context.Context, arg SessionByIDParams) (Sessi
 		&i.EndedAt,
 		&i.SummaryStatus,
 		&i.SummaryData,
+		&i.CarriedSessionIds,
 	)
 	return i, err
 }
@@ -462,7 +575,7 @@ func (q *Queries) SessionEnded(ctx context.Context, arg SessionEndedParams) (boo
 }
 
 const sessionForRequest = `-- name: SessionForRequest :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND request_id = $3
 `
 
@@ -473,19 +586,20 @@ type SessionForRequestParams struct {
 }
 
 type SessionForRequestRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
-	StartedAt      time.Time
-	EndedAt        pgtype.Timestamptz
-	SummaryStatus  pgtype.Text
-	SummaryData    []byte
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	StartedAt         time.Time
+	EndedAt           pgtype.Timestamptz
+	SummaryStatus     pgtype.Text
+	SummaryData       []byte
+	CarriedSessionIds []uuid.UUID
 }
 
 func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestParams) (SessionForRequestRow, error) {
@@ -505,12 +619,13 @@ func (q *Queries) SessionForRequest(ctx context.Context, arg SessionForRequestPa
 		&i.EndedAt,
 		&i.SummaryStatus,
 		&i.SummaryData,
+		&i.CarriedSessionIds,
 	)
 	return i, err
 }
 
 const sessionInWorkspace = `-- name: SessionInWorkspace :one
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = $1 AND id = $2
 `
 
@@ -520,19 +635,20 @@ type SessionInWorkspaceParams struct {
 }
 
 type SessionInWorkspaceRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
-	StartedAt      time.Time
-	EndedAt        pgtype.Timestamptz
-	SummaryStatus  pgtype.Text
-	SummaryData    []byte
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	StartedAt         time.Time
+	EndedAt           pgtype.Timestamptz
+	SummaryStatus     pgtype.Text
+	SummaryData       []byte
+	CarriedSessionIds []uuid.UUID
 }
 
 // A product's server names no user, so its reads find a session by its workspace alone.
@@ -553,12 +669,13 @@ func (q *Queries) SessionInWorkspace(ctx context.Context, arg SessionInWorkspace
 		&i.EndedAt,
 		&i.SummaryStatus,
 		&i.SummaryData,
+		&i.CarriedSessionIds,
 	)
 	return i, err
 }
 
 const sessionsOfUser = `-- name: SessionsOfUser :many
-SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, '[]'::jsonb AS session_context, voice, speed, started_at, ended_at, summary_status, summary_data FROM sessions
+SELECT id, workspace_id, user_id, agent_id, agent_version, context_item_ids, '[]'::jsonb AS session_context, voice, speed, started_at, ended_at, summary_status, summary_data, carried_session_ids FROM sessions
 WHERE workspace_id = $1 AND user_id = $2 AND id < $3
 ORDER BY id DESC
 LIMIT $4
@@ -572,19 +689,20 @@ type SessionsOfUserParams struct {
 }
 
 type SessionsOfUserRow struct {
-	ID             uuid.UUID
-	WorkspaceID    uuid.UUID
-	UserID         uuid.UUID
-	AgentID        uuid.UUID
-	AgentVersion   int32
-	ContextItemIds []uuid.UUID
-	SessionContext []byte
-	Voice          string
-	Speed          float64
-	StartedAt      time.Time
-	EndedAt        pgtype.Timestamptz
-	SummaryStatus  pgtype.Text
-	SummaryData    []byte
+	ID                uuid.UUID
+	WorkspaceID       uuid.UUID
+	UserID            uuid.UUID
+	AgentID           uuid.UUID
+	AgentVersion      int32
+	ContextItemIds    []uuid.UUID
+	SessionContext    []byte
+	Voice             string
+	Speed             float64
+	StartedAt         time.Time
+	EndedAt           pgtype.Timestamptz
+	SummaryStatus     pgtype.Text
+	SummaryData       []byte
+	CarriedSessionIds []uuid.UUID
 }
 
 // A page of the user's sessions, newest first: ids are UUIDv7, so id order is start order, and
@@ -618,6 +736,7 @@ func (q *Queries) SessionsOfUser(ctx context.Context, arg SessionsOfUserParams) 
 			&i.EndedAt,
 			&i.SummaryStatus,
 			&i.SummaryData,
+			&i.CarriedSessionIds,
 		); err != nil {
 			return nil, err
 		}
@@ -806,6 +925,41 @@ func (q *Queries) TurnInFlight(ctx context.Context, arg TurnInFlightParams) (boo
 	var in_flight bool
 	err := row.Scan(&in_flight)
 	return in_flight, err
+}
+
+const unsummarizedSessions = `-- name: UnsummarizedSessions :many
+SELECT id FROM sessions
+WHERE workspace_id = $1 AND user_id = $2 AND agent_id = $3
+  AND (ended_at IS NULL OR summary_status = 'pending')
+ORDER BY id
+`
+
+type UnsummarizedSessionsParams struct {
+	WorkspaceID uuid.UUID
+	UserID      uuid.UUID
+	AgentID     uuid.UUID
+}
+
+// The sessions a new one carries: the user's with its agent still live, which it ends, or whose
+// summary is still coming, oldest first.
+func (q *Queries) UnsummarizedSessions(ctx context.Context, arg UnsummarizedSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, unsummarizedSessions, arg.WorkspaceID, arg.UserID, arg.AgentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const userByReference = `-- name: UserByReference :one
