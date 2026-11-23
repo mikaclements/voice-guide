@@ -46,7 +46,7 @@ type detectionFunc func() speech.Detector
 func (f detectionFunc) Detector() speech.Detector { return f() }
 
 // startingListening is how speech notices the user speak unless set otherwise.
-var startingListening = speech.Listening{Threshold: 0.5, Pause: 200 * time.Millisecond, MaxWait: 3 * time.Second, InterruptSpeech: 200 * time.Millisecond, MaxSpeech: time.Minute}
+var startingListening = speech.Listening{Threshold: 0.5, Pause: 200 * time.Millisecond, MaxWait: 3 * time.Second, InterruptSpeech: 200 * time.Millisecond, MaxSpeech: 2 * time.Minute}
 
 // newListeningService returns the service over the fake transport, noticing
 // speech with detection as the starting settings say and hearing nothing in

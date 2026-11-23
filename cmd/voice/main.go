@@ -195,16 +195,18 @@ const defaultMaxWait = 3 * time.Second
 const defaultInterruptSpeech = 200 * time.Millisecond
 
 // defaultMaxSpeech is the most audio one turn's speech may run to before it is taken with what was
-// heard: a minute, a round guess matching the most audio the speech-to-text service holds in one
-// utterance, so none it is sent overflows. It stops speech that never pauses, such as a television
-// left on, from running on, and keeps a turn's words well under what a turn may hold (a minute of
-// speech is about 900 characters). Measured against real answers' lengths once sessions are timed.
-const defaultMaxSpeech = time.Minute
+// heard: two minutes, matching the most audio the speech-to-text service holds in one utterance, so
+// none it is sent overflows. A long spoken answer, such as one to an interview question, runs past a
+// minute; two minutes is a round guess at one. It stops speech that never pauses, such as a
+// television left on, from running on, and keeps a turn's words well under what a turn may hold
+// (two minutes of speech is about 1,800 characters). Measured against real answers' lengths once
+// sessions are timed.
+const defaultMaxSpeech = 2 * time.Minute
 
-// mostSpeech is the most VOICE_MAX_SPEECH may be: the minute of audio the speech-to-text service
-// holds in one utterance. A turn whose speech ran on past it would have the service drop the
-// utterance, and the turn would be lost instead of taken.
-const mostSpeech = time.Minute
+// mostSpeech is the most VOICE_MAX_SPEECH may be: the two minutes of audio the speech-to-text
+// service holds in one utterance. A turn whose speech ran on past it would have the service drop
+// the utterance, and the turn would be lost instead of taken.
+const mostSpeech = 2 * time.Minute
 
 // defaultClientDir is where the drop-in client's build writes it, from the repository's root, where
 // scripts/run.sh starts voice.

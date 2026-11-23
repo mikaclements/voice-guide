@@ -441,7 +441,7 @@ Everything runs on defaults, some measured and some round guesses. Change any of
 | `VOICE_MAX_WAIT` | 3 s | How long voice-guide waits for more when that check says you haven't finished |
 | `VOICE_INTERRUPT_SPEECH` | 0.2 s | How long you must speak over the agent before it stops |
 | `VOICE_SPEECH_THRESHOLD` | 0.5 | How sure speech detection must be that a sound is speech |
-| `VOICE_MAX_SPEECH` | 1 min | The longest one turn of speech |
+| `VOICE_MAX_SPEECH` | 2 min | The longest one turn of speech |
 | `VOICE_TURN_TIMEOUT` | 20 s | The longest a reply may take |
 | `VOICE_SESSION_IDLE` | 5 min | How long a session sits with no turn, speech or screen change before it ends |
 

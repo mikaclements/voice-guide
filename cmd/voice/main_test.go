@@ -173,7 +173,7 @@ func TestAServiceVoiceThatIsNotAVoiceNameStopsTheStart(t *testing.T) {
 
 func TestSpeechIsNoticedBySileroWithItsStartingValuesUnlessSet(t *testing.T) {
 	unset, _ := loadConfig(env(nil))
-	want := speech.Listening{Threshold: 0.5, Pause: 200 * time.Millisecond, MaxWait: 3 * time.Second, InterruptSpeech: 200 * time.Millisecond, MaxSpeech: time.Minute}
+	want := speech.Listening{Threshold: 0.5, Pause: 200 * time.Millisecond, MaxWait: 3 * time.Second, InterruptSpeech: 200 * time.Millisecond, MaxSpeech: 2 * time.Minute}
 	if unset.detection != "silero" || unset.listening != want {
 		t.Errorf("speech detection = %q with %+v unset; want silero with %+v", unset.detection, unset.listening, want)
 	}
@@ -181,6 +181,13 @@ func TestSpeechIsNoticedBySileroWithItsStartingValuesUnlessSet(t *testing.T) {
 	want = speech.Listening{Threshold: 0.7, Pause: 300 * time.Millisecond, MaxWait: 2500 * time.Millisecond, InterruptSpeech: 300 * time.Millisecond, MaxSpeech: 45 * time.Second}
 	if err != nil || set.detection != "fake" || set.listening != want {
 		t.Errorf("speech detection = %q with %+v set (%v); want fake with %+v", set.detection, set.listening, err, want)
+	}
+}
+
+func TestATurnsSpeechMayRunToTheTwoMinutesTheSpeechToTextServiceHolds(t *testing.T) {
+	cfg, err := loadConfig(env(map[string]string{"VOICE_MAX_SPEECH": "2m"}))
+	if err != nil || cfg.listening.MaxSpeech != 2*time.Minute {
+		t.Errorf("a turn's speech of 2m: %v (%v), want two minutes accepted", cfg.listening.MaxSpeech, err)
 	}
 }
 
@@ -249,7 +256,7 @@ func TestTheServiceRefusesToStartWithUnsafeSettings(t *testing.T) {
 		"an interrupt speech of zero":       {"VOICE_INTERRUPT_SPEECH": "0s"},
 		"a turn's speech of zero":           {"VOICE_MAX_SPEECH": "0s"},
 		"a turn's speech of just 0.2 s":     {"VOICE_MAX_SPEECH": "200ms"},
-		"a turn's speech over a minute":     {"VOICE_MAX_SPEECH": "61s"},
+		"a turn's speech over two minutes":  {"VOICE_MAX_SPEECH": "121s"},
 		"a session idle of zero":            {"VOICE_SESSION_IDLE": "0s"},
 		"a session idle within a turn":      {"VOICE_SESSION_IDLE": "20s"},
 	}
