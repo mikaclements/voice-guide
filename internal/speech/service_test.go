@@ -46,14 +46,15 @@ func newService(t *testing.T, max, sessions int) (*speech.Service, *fake.Transpo
 }
 
 // newServiceOver returns the service over the given transport, reading
-// sessions through wrap's store when wrap is set.
+// sessions through wrap's store when wrap is set. Each session is with an
+// agent of its own, since a user's new session with an agent ends their last.
 func newServiceOver(t *testing.T, transport speech.Transport, wrap func(conversation.Sessions) conversation.Sessions, max, sessions int) (*speech.Service, []uuid.UUID) {
 	t.Helper()
 	store := sessionsfake.New()
 	var ids []uuid.UUID
 	for range sessions {
 		s, _, err := store.Start(context.Background(), conversation.Session{
-			ID: uuid.NewV7(), Workspace: workspace, User: user, Agent: keeperID, AgentVersion: 1,
+			ID: uuid.NewV7(), Workspace: workspace, User: user, Agent: uuid.NewV7(), AgentVersion: 1,
 		}, uuid.NewV7(), "")
 		if err != nil {
 			t.Fatalf("Start: %v", err)

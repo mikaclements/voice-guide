@@ -33,7 +33,9 @@ func NewSessions(pool *pgxpool.Pool) *Sessions {
 // its workspace, adding the user the first time a product's reference
 // names them. A second start waits for the first to commit, then
 // finds its session, or the user it added for the reference, so starts at
-// once still make one of each.
+// once still make one of each. A new session ends the user's others with its
+// agent: starts for one user and agent wait for each other, so the later ends
+// the earlier.
 func (st *Sessions) Start(ctx context.Context, s conversation.Session, requestID uuid.UUID, reference string) (conversation.Session, bool, error) {
 	if s.AgentVersion < 1 || s.AgentVersion > math.MaxInt32 {
 		return conversation.Session{}, false, fmt.Errorf("agent version %d out of range", s.AgentVersion)
@@ -66,6 +68,9 @@ func (st *Sessions) Start(ctx context.Context, s conversation.Session, requestID
 	if err := q.AddUser(ctx, s.User); err != nil {
 		return conversation.Session{}, false, fmt.Errorf("add user: %w", err)
 	}
+	if err := q.LockStarts(ctx, db.LockStartsParams{WorkspaceID: s.Workspace, UserID: s.User, AgentID: s.Agent}); err != nil {
+		return conversation.Session{}, false, fmt.Errorf("wait for other starts: %w", err)
+	}
 	added, err := q.AddSession(ctx, db.AddSessionParams{
 		ID: s.ID, WorkspaceID: s.Workspace, UserID: s.User,
 		AgentID: s.Agent, AgentVersion: int32(s.AgentVersion), RequestID: requestID,
@@ -73,6 +78,7 @@ func (st *Sessions) Start(ctx context.Context, s conversation.Session, requestID
 		ContextItemIds: append([]uuid.UUID{}, s.ContextItems...),
 		SessionContext: sessionContext,
 		Voice:          s.Voice, Speed: s.Speed,
+		CarriedSessionIds: append([]uuid.UUID{}, s.CarriedSessions...),
 	})
 	isNew := err == nil
 	got := db.SessionForRequestRow(added)
@@ -84,11 +90,41 @@ func (st *Sessions) Start(ctx context.Context, s conversation.Session, requestID
 	if err != nil {
 		return conversation.Session{}, false, fmt.Errorf("start session: %w", err)
 	}
+	if isNew {
+		if err := endOthers(ctx, q, got); err != nil {
+			return conversation.Session{}, false, err
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return conversation.Session{}, false, fmt.Errorf("commit the session: %w", err)
 	}
 	started, err := sessionFrom(got)
 	return started, isNew, err
+}
+
+// endOthers ends the user's other live sessions with the new session's agent, each as End does,
+// so each gets its summary, its status and its delivery queued.
+func endOthers(ctx context.Context, q *db.Queries, s db.SessionForRequestRow) error {
+	others, err := q.OtherLiveSessions(ctx, db.OtherLiveSessionsParams{WorkspaceID: s.WorkspaceID, UserID: s.UserID, AgentID: s.AgentID, ID: s.ID})
+	if err != nil {
+		return fmt.Errorf("find the user's other live sessions: %w", err)
+	}
+	for _, id := range others {
+		if _, err := q.EndSession(ctx, db.EndSessionParams{WorkspaceID: s.WorkspaceID, UserID: s.UserID, ID: id}); err != nil {
+			return fmt.Errorf("end the user's session %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+// Unsummarized returns the IDs of the user's sessions with agent in the workspace that are live
+// or whose summary is pending, in the order they started.
+func (st *Sessions) Unsummarized(ctx context.Context, workspace, user, agent uuid.UUID) ([]uuid.UUID, error) {
+	ids, err := db.New(st.pool).UnsummarizedSessions(ctx, db.UnsummarizedSessionsParams{WorkspaceID: workspace, UserID: user, AgentID: agent})
+	if err != nil {
+		return nil, fmt.Errorf("find the user's unsummarized sessions: %w", err)
+	}
+	return ids, nil
 }
 
 // UserByReference returns the user a product names by reference in the
@@ -269,7 +305,7 @@ func sessionFrom(r db.SessionForRequestRow) (conversation.Session, error) {
 	}
 	return conversation.Session{
 		ID: r.ID, Workspace: r.WorkspaceID, User: r.UserID, Agent: r.AgentID, AgentVersion: int(r.AgentVersion),
-		ContextItems: r.ContextItemIds, SessionContext: blocks, Voice: r.Voice, Speed: r.Speed, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
+		ContextItems: r.ContextItemIds, SessionContext: blocks, CarriedSessions: r.CarriedSessionIds, Voice: r.Voice, Speed: r.Speed, StartedAt: r.StartedAt, EndedAt: timeOrZero(r.EndedAt),
 		SummaryStatus: conversation.SummaryStatus(r.SummaryStatus.String), SummaryData: r.SummaryData,
 	}, nil
 }

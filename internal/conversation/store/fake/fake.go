@@ -82,7 +82,8 @@ func (f *Sessions) ForRequest(_ context.Context, workspace, user, requestID uuid
 }
 
 // Start saves s unless its user already started a session with requestID, adding the reference
-// for s's user unless another start added it first, whose user the session is then for.
+// for s's user unless another start added it first, whose user the session is then for. A new
+// session ends its user's other live sessions with its agent, as End does.
 func (f *Sessions) Start(_ context.Context, s conversation.Session, requestID uuid.UUID, reference string) (conversation.Session, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -100,7 +101,30 @@ func (f *Sessions) Start(_ context.Context, s conversation.Session, requestID uu
 	}
 	s.StartedAt = f.now()
 	f.byRequest[key] = s
+	for k, other := range f.byRequest {
+		if other.Workspace == s.Workspace && other.User == s.User && other.Agent == s.Agent && other.ID != s.ID && other.EndedAt.IsZero() {
+			other.EndedAt, other.SummaryStatus = s.StartedAt, conversation.SummaryPending
+			f.byRequest[k] = other
+			f.summaries = append(f.summaries, other.ID)
+		}
+	}
 	return s, true, nil
+}
+
+// Unsummarized returns the IDs of the user's sessions with agent in the workspace that are live
+// or whose summary is pending, in the order they started.
+func (f *Sessions) Unsummarized(_ context.Context, workspace, user, agent uuid.UUID) ([]uuid.UUID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var ids []uuid.UUID
+	for _, s := range f.byRequest {
+		if s.Workspace == workspace && s.User == user && s.Agent == agent && (s.EndedAt.IsZero() || s.SummaryStatus == conversation.SummaryPending) {
+			ids = append(ids, s.ID)
+		}
+	}
+	// UUIDv7 sorts as the time the ID was made.
+	slices.SortFunc(ids, uuid.UUID.Compare)
+	return ids, nil
 }
 
 // ByID returns the user's session with id in the workspace.

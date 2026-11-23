@@ -56,7 +56,8 @@ type config struct {
 	// clientDir is the folder voice serves the drop-in client from.
 	clientDir string
 	// settings bound, in characters, what a session loads from user context, what a product
-	// sends as session context and as screen input, and the words of a turn; bound how long a
+	// sends as session context and as screen input, what a session carries of the sessions
+	// before it, and the words of a turn; bound how long a
 	// turn runs; and name the model that answers turns.
 	settings conversation.Settings
 }
@@ -101,6 +102,9 @@ func (cfg *config) loadConversation(getenv func(string) string) (err error) {
 		return err
 	}
 	if cfg.settings.SessionContextChars, err = positive(getenv, "VOICE_SESSION_CONTEXT_MAX_CHARS", defaultSessionContextLimit); err != nil {
+		return err
+	}
+	if cfg.settings.CarriedChars, err = positive(getenv, "VOICE_CARRIED_MAX_CHARS", defaultCarriedLimit); err != nil {
 		return err
 	}
 	if cfg.settings.ScreenInputChars, err = positive(getenv, "VOICE_SCREEN_INPUT_MAX_CHARS", defaultScreenInputLimit); err != nil {

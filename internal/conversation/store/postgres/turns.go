@@ -166,6 +166,24 @@ func (st *Turns) Finished(ctx context.Context, workspace, session uuid.UUID) ([]
 	return turns, nil
 }
 
+// FinishedOf returns the finished turns of the user's sessions in the workspace, in the order the
+// sessions started, oldest first within each, without their screen input.
+func (st *Turns) FinishedOf(ctx context.Context, workspace, user uuid.UUID, sessions []uuid.UUID) ([]conversation.Turn, error) {
+	rows, err := db.New(st.pool).FinishedTurnsOf(ctx, db.FinishedTurnsOfParams{WorkspaceID: workspace, UserID: user, SessionIds: sessions})
+	if err != nil {
+		return nil, fmt.Errorf("read the carried sessions' turns: %w", err)
+	}
+	turns := make([]conversation.Turn, 0, len(rows))
+	for _, r := range rows {
+		turns = append(turns, conversation.Turn{
+			Workspace: workspace, User: user, Session: r.SessionID, Seq: int(r.Seq),
+			Words: r.UserText, Reply: r.AgentText, Status: conversation.TurnStatus(r.Status),
+			Heard: bytesOf(r.AgentText, int(r.HeardChars.Int32)), Opening: r.Opening,
+		})
+	}
+	return turns, nil
+}
+
 // bytesOf returns how many bytes the first chars characters of s take.
 func bytesOf(s string, chars int) int {
 	n := 0

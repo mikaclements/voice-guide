@@ -100,6 +100,10 @@ type Turns interface {
 	Remove(ctx context.Context, t Turn) error
 	// Finished returns the session's turns no longer in flight, oldest first.
 	Finished(ctx context.Context, workspace, session uuid.UUID) ([]Turn, error)
+	// FinishedOf returns the turns no longer in flight of the user's sessions
+	// in the workspace, in the order the sessions started, oldest first within
+	// each, with their words and replies but no screen input.
+	FinishedOf(ctx context.Context, workspace, user uuid.UUID, sessions []uuid.UUID) ([]Turn, error)
 	// ForRequest returns the status of the session's turn with requestID, if
 	// it has one.
 	ForRequest(ctx context.Context, workspace, session, requestID uuid.UUID) (TurnStatus, bool, error)
@@ -420,6 +424,10 @@ func (s *Service) prompt(ctx context.Context, session Session, r TurnRequest) (P
 			return Prompt{}, 0, "", fmt.Errorf("read what the session loaded: %w", err)
 		}
 	}
+	carried, err := s.carriedTranscript(ctx, session)
+	if err != nil {
+		return Prompt{}, 0, "", err
+	}
 	saved, err := s.turns.Finished(ctx, session.Workspace, session.ID)
 	if err != nil {
 		return Prompt{}, 0, "", fmt.Errorf("read the session's turns: %w", err)
@@ -440,7 +448,28 @@ func (s *Service) prompt(ctx context.Context, session Session, r TurnRequest) (P
 	if len(saved) > 0 {
 		last = saved[len(saved)-1].Seq
 	}
-	return buildPrompt(version.Persona, documentsNamed(session.SessionContext, version.SessionContext), items, saved, Turn{ScreenInput: r.ScreenInput, Words: r.Words, Opening: r.Opening}), last, s.modelOf(version), nil
+	p := buildPrompt(version.Persona, documentsNamed(session.SessionContext, version.SessionContext), items, saved, Turn{ScreenInput: r.ScreenInput, Words: r.Words, Opening: r.Opening})
+	if carried != "" {
+		p.StableLayers = append(p.StableLayers, carried)
+	}
+	return p, last, s.modelOf(version), nil
+}
+
+// carriedTranscript renders the turns of the sessions the session carries, as
+// saved now: a turn of theirs still in flight when it started joins once saved.
+func (s *Service) carriedTranscript(ctx context.Context, session Session) (string, error) {
+	if len(session.CarriedSessions) == 0 { // most sessions carry nothing, and needn't ask
+		return "", nil
+	}
+	turns, err := s.turns.FinishedOf(ctx, session.Workspace, session.User, session.CarriedSessions)
+	if err != nil {
+		return "", fmt.Errorf("read the carried sessions' turns: %w", err)
+	}
+	carried, err := carriedTranscript(turns, s.settings.CarriedChars)
+	if err != nil {
+		return "", fmt.Errorf("render the carried sessions' turns: %w", err)
+	}
+	return carried, nil
 }
 
 // checkWords refuses words a turn can't take: none, unless screen input

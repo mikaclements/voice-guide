@@ -129,10 +129,11 @@ func TestASessionEndsOnceItHasNotBeenActiveForTheIdleTime(t *testing.T) {
 			}
 		}, false},
 	}
-	ids := map[string]uuid.UUID{}
+	// Each session is another user's, since a user's new session with an agent ends their last.
+	started := map[string]conversation.Session{}
 	for name, tt := range tests {
-		s, _ := start(t, sessions, sessionOn(tt.ws, user), uuid.NewV7())
-		ids[name] = s.ID
+		s, _ := start(t, sessions, sessionOn(tt.ws, uuid.NewV7()), uuid.NewV7())
+		started[name] = s
 		idleFor(t, pool, s.ID, tt.ago)
 		if tt.then != nil {
 			tt.then(s)
@@ -149,7 +150,7 @@ func TestASessionEndsOnceItHasNotBeenActiveForTheIdleTime(t *testing.T) {
 		t.Errorf("EndIdle = %v, %v; want the 2 idle sessions ended", endedIDs, err)
 	}
 	for name, tt := range tests {
-		s, _, _ := sessions.ByID(ctx, tt.ws, user, ids[name])
+		s, _, _ := sessions.ByID(ctx, tt.ws, started[name].User, started[name].ID)
 		if s.Ended() != tt.ended {
 			t.Errorf("%s: ended %v, want %v", name, s.Ended(), tt.ended)
 		}
@@ -216,8 +217,8 @@ func TestOnlyTheUsersOwnLiveSessionIsMarkedActive(t *testing.T) {
 func TestTwoSweepsAtOnceEndEachIdleSessionOnce(t *testing.T) {
 	sessions, pool := storeWithTwoWorkspaces(t)
 	const idleSessions = 50
-	for range idleSessions {
-		s, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	for range idleSessions { // each another user's, as a user's new session with an agent ends their last
+		s, _ := start(t, sessions, sessionOn(workspace, uuid.NewV7()), uuid.NewV7())
 		idleFor(t, pool, s.ID, time.Hour)
 	}
 	other := postgres.NewSessions(pool) // another instance, sweeping at the same time

@@ -177,6 +177,26 @@ func (f *Turns) Finished(_ context.Context, workspace, session uuid.UUID) ([]con
 	}), nil
 }
 
+// FinishedOf returns the finished turns of the user's sessions in the workspace, in the order the
+// sessions started, oldest first within each, without their screen input, as the database's store
+// reads them.
+func (f *Turns) FinishedOf(_ context.Context, workspace, user uuid.UUID, sessions []uuid.UUID) ([]conversation.Turn, error) {
+	turns := slices.DeleteFunc(f.All(), func(t conversation.Turn) bool {
+		return t.Workspace != workspace || t.User != user || !slices.Contains(sessions, t.Session) || t.Status == conversation.TurnInFlight
+	})
+	for i := range turns {
+		turns[i].ScreenInput = nil
+	}
+	// UUIDv7 sorts as the time the ID was made.
+	slices.SortStableFunc(turns, func(a, b conversation.Turn) int {
+		if c := a.Session.Compare(b.Session); c != 0 {
+			return c
+		}
+		return a.Seq - b.Seq
+	})
+	return turns, nil
+}
+
 // ForRequest returns the status of the session's turn with requestID, if any.
 func (f *Turns) ForRequest(_ context.Context, workspace, session, requestID uuid.UUID) (conversation.TurnStatus, bool, error) {
 	for _, t := range f.All() {

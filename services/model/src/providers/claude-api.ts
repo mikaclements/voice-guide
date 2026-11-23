@@ -136,10 +136,11 @@ function sdkStream(apiKey: string, timeoutMs: number): StreamFn {
 }
 
 // The layers as system blocks, cached after the agent's, shared by every session of its version,
-// and after the last, which closes what the session keeps the same; then the conversation, cached
-// after its last saved message, so the next turn reads it all from the cache; then the new message,
-// after the cache point, since the newest screen input in it changes from turn to turn. Three cache
-// points of the four the API takes. An ask outside any session is asked once, so caching its
+// and after each of the last two, which close what the session keeps the same, so the earlier
+// conversation a session carries, its last layer, changing once leaves the layer before it cached;
+// then the conversation, cached after its last saved message, so the next turn reads it all from the
+// cache; then the new message, after the cache point, since the newest screen input in it changes
+// from turn to turn. At most four cache points, the most the API takes. An ask outside any session is asked once, so caching its
 // conversation would only pay to write it. An ask with a
 // schema answers in JSON the API holds to the schema, at the model's own effort (see heldTo).
 function paramsFor(
@@ -150,7 +151,7 @@ function paramsFor(
   const last = r.stableLayers.length - 1;
   const system = r.stableLayers.flatMap((text, i): Anthropic.TextBlockParam[] =>
     text.trim()
-      ? [{ type: "text", text, ...((i === 0 || i === last) && { cache_control: cached }) }]
+      ? [{ type: "text", text, ...((i === 0 || i >= last - 1) && { cache_control: cached }) }]
       : [],
   );
   return {

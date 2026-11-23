@@ -62,6 +62,12 @@ const defaultContextLimit = 20_000
 // its some 141,000 tokens leave too little of a 200,000-token context for a long conversation.
 const defaultSessionContextLimit = 280_000
 
+// defaultCarriedLimit is about half an hour of the sessions a new one carries: a spoken session
+// measured at 11 minutes held about 6,600 characters of words and replies. Far inside what an
+// opening reads quickly: 120,000 characters of session context reached the first text in 1.4 to
+// 3.9 s cold. A round guess, measured once users start again mid-conversation.
+const defaultCarriedLimit = 20_000
+
 // defaultScreenInputLimit is about 10,000 tokens of English with a turn: room for a whiteboard of
 // boxes and arrows, or a document the user is reading, turned into text. Only the newest block of
 // each name is read fresh each turn, the earlier ones standing as one line in the cached

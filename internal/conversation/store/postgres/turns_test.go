@@ -52,7 +52,7 @@ func TestTurnsAreNumberedFromOneInEachSession(t *testing.T) {
 	sessions, pool := storeWithTwoWorkspaces(t)
 	turns := postgres.NewTurns(pool)
 	one, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
-	two, _ := start(t, sessions, sessionOn(workspace, user), uuid.NewV7())
+	two, _ := start(t, sessions, sessionOn(workspace, uuid.NewV7()), uuid.NewV7()) // another user's: a new session ends the user's last
 
 	var got []int
 	for _, s := range []conversation.Session{one, one, two} {
