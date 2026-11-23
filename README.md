@@ -62,7 +62,7 @@ The Test tab opens with what a start carries: the agent, then settings of your o
 - **Voice and speed:** the voice from the list voice offers (`/v1/voices`), and a speed from 0.5 to 2. Left empty, the agent's own are used.
 - **Documents:** one text area for each document of session context the agent asks for at its start, filled from `seed/local/` or the sample in `seed/placeholder-user/`. Change one to try the agent with other context; a document you empty is refused by voice, and the page shows its problem.
 
-The session shows under the form, and under it the past sessions of the sample user, newest first: the agent, when each started and ended, the summary's status and its text. Press Refresh after ending a session; a summary arrives a few seconds after the end.
+The conversation has a box of its own beside the form, its controls at the top, the box to type in at the bottom, and the transcript always at its newest line; scroll up to reread, and Jump to latest takes you back. On a phone the conversation comes first and the form follows. Under the form are the past sessions of the sample user, newest first: the agent, when each started and ended, the summary's status and its text. Press Refresh after ending a session; a summary arrives a few seconds after the end.
 
 <a id="your-own-data"></a>
 ### Use your own interviewer and resume

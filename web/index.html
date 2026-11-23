@@ -31,16 +31,37 @@
       .past { border: 1px solid #ddd; border-radius: 4px; padding: 0.75rem 1rem; margin: 0.75rem 0; }
       .past .meta { display: block; }
       .past .summary { margin-top: 0.5rem; white-space: pre-wrap; }
-      /* From 60rem, the session and the past sessions sit side by side, each column scrolling on its
-         own under the header: each keeps about 28rem, a readable line of 60 to 70 characters, beside
-         the 2rem gap and the page's padding. Narrower, as on a phone, they stack, the session first.
-         The page widens to two of the single column's 44rem and the gap; the Agents tab keeps one. */
+      /* The conversation: a box of its own, the session's controls at its top, the transcript
+         scrolling between and the box to type in at its bottom. min(60svh, 36rem): 36rem holds the
+         controls, the box to type in and about seventeen transcript lines, the last few exchanges;
+         60% of the screen leaves the context in sight below it on a phone, measured with the
+         browser's toolbar shown, so the box doesn't resize as the toolbar comes and goes. */
+      .conversation { display: flex; flex-direction: column; height: min(60svh, 36rem); box-sizing: border-box; border: 1px solid #ddd; border-radius: 4px; padding: 0 1rem; margin-bottom: 1.5rem; }
+      .conversation-top { border-bottom: 1px solid #eee; }
+      .conversation-top:empty { display: none; }
+      /* Up to 40% of the box, so a note or two leave the transcript room on a phone held sideways. */
+      .conversation-top { max-height: 40%; overflow-y: auto; }
+      .conversation-top > p { margin: 0.5rem 0; }
+      .conversation .controls { align-items: center; margin: 0.75rem 0; }
+      .conversation .controls .meta { flex: 1; }
+      .transcript { flex: 1; min-height: 0; position: relative; }
+      .transcript .lines { height: 100%; overflow-y: auto; }
+      .latest { position: absolute; bottom: 0.5rem; left: 50%; transform: translateX(-50%); font-size: 0.85rem; padding: 0.25rem 0.75rem; background: #fff; border: 1px solid #ccc; border-radius: 1rem; box-shadow: 0 1px 4px rgb(0 0 0 / 15%); }
+      .conversation > form.row { border-top: 1px solid #eee; margin: 0; padding: 0.75rem 0; }
+      /* From 60rem, the context and the conversation sit side by side under the header, the context
+         scrolling on its own: at 60rem the context keeps about 22rem, room for the form, and the
+         conversation about 34rem, a line of about 70 characters. Narrower, as on a phone, the
+         conversation comes first and the context follows. The page widens to 90rem, two of the
+         single column's 44rem and the gap; the Agents tab keeps one. */
       @media (min-width: 60rem) {
         body { max-width: 90rem; margin: 0 auto; }
         main { display: flex; flex-direction: column; height: 100dvh; padding-top: 2rem; box-sizing: border-box; }
         main > div { flex: 1; min-height: 0; overflow-y: auto; }
-        .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; height: 100%; }
-        .column { min-height: 0; overflow-y: auto; padding: 0 0.5rem 1rem 0.25rem; }
+        /* Two to three: the conversation is what is watched during a session, the context is read
+           before and after it. */
+        .columns { display: grid; grid-template-columns: 2fr 3fr; grid-template-rows: minmax(0, 1fr); gap: 2rem; height: 100%; }
+        .context { grid-area: 1 / 1; overflow-y: auto; padding: 0 0.5rem 1rem 0.25rem; }
+        .conversation { grid-area: 1 / 2; margin-top: 1rem; }
         .agents > * { max-width: 44rem; }
       }
     </style>

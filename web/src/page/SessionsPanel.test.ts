@@ -111,7 +111,7 @@ test("each past session is a block of its own, its summary beneath with its para
   );
 });
 
-test("the session started shows under the start form in one column, the past sessions in the other", () => {
+test("the conversation comes first, then the context: the start form above the past sessions", () => {
   const html = renderToStaticMarkup(
     createElement(
       panel.SessionsPanel,
@@ -129,7 +129,7 @@ test("the session started shows under the start form in one column, the past ses
   );
   assert.match(
     html,
-    /^<div class="columns"><div class="column"><form>.*<\/form><p>The session<\/p><\/div><div class="column"><section><h2>Past sessions<\/h2>.*<\/section><\/div><\/div>$/,
+    /^<div class="columns"><p>The session<\/p><div class="context"><form>.*<\/form><section><h2>Past sessions<\/h2>.*<\/section><\/div><\/div>$/,
   );
 });
 
