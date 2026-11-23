@@ -2,6 +2,8 @@ import { type FormEvent, useCallback, useEffect, useRef, useState } from "react"
 import { at, type Session } from "../client/api.ts";
 import { JoinedSession, type ReplyMeta, type Shown } from "../client/joined.ts";
 import { AgentsPanel } from "./AgentsPanel.tsx";
+import { StayAwake } from "./awake.ts";
+import { useFollow } from "./follow.ts";
 import { type Agent, listAgents, type StartOptions, startSession } from "./product.ts";
 import { SessionsPanel } from "./SessionsPanel.tsx";
 import { Starter } from "./starting.ts";
@@ -56,7 +58,11 @@ export function App() {
   const [starting, setStarting] = useState(false);
   // What listing the agents or a start failed with; the session's own notes are in shown.
   const [error, setError] = useState("");
+  // Why the display may turn off during the session, when it may.
+  const [wakeNote, setWakeNote] = useState("");
   const joined = useRef<JoinedSession>(undefined);
+  // Made at the first session, since the page is also drawn where there is no browser.
+  const awake = useRef<StayAwake>(undefined);
   const starter = useRef(new Starter((a, r, o) => startSession(a, r, fetch, o)));
 
   // Listed again after an agent is published, which may add one or change what it asks for.
@@ -70,8 +76,22 @@ export function App() {
     );
   }, []);
   useEffect(loadAgents, [loadAgents]);
+  // The display stays on from the session's first show, and each change it shows after keeps it on
+  // longer, until it is over; one ended idle, which the page hears of only at its next turn, goes
+  // quiet, and the display is let go of after a while.
+  useEffect(() => {
+    if (!shown || shown.over) return;
+    awake.current ??= new StayAwake(navigator, document, setWakeNote);
+    awake.current.hold();
+  }, [shown]);
   // Leaving the page lets the session go, so voice lets its audio connection go at once.
-  useEffect(() => () => joined.current?.leave(), []);
+  useEffect(
+    () => () => {
+      joined.current?.leave();
+      awake.current?.letGo();
+    },
+    [],
+  );
 
   async function start(options?: StartOptions) {
     const agent = agents.find((a) => a.id === agentId);
@@ -89,8 +109,8 @@ export function App() {
         fetcher: at(""),
         show: setShown,
         giveBack: (said) => setWords((w) => (w.trim() ? w : said)),
-        // What it shows says the session is over, and why.
-        ended: () => {},
+        // What it shows says the session is over, and why; the display may turn off again.
+        ended: () => awake.current?.letGo(),
         refused: () => {},
       });
       setSession(s);
@@ -121,7 +141,7 @@ export function App() {
           error={error}
         >
           <SessionView
-            {...{ agents, session, shown, words, starting, error }}
+            {...{ agents, session, shown, words, starting, error, wakeNote }}
             on={{
               // A failed End shows in the session's notes, and leaves it live to press again.
               end: act(() => joined.current?.end().catch(() => {})),
@@ -137,7 +157,7 @@ export function App() {
           />
         </SessionsPanel>
       </div>
-      <div hidden={tab !== "agents"}>
+      <div hidden={tab !== "agents"} className="agents">
         <AgentsPanel onPublished={loadAgents} />
       </div>
     </main>
@@ -169,6 +189,8 @@ export type SessionViewProps = {
   words: string;
   starting: boolean;
   error: string;
+  // Why the display may turn off during the session, when it may.
+  wakeNote?: string;
   on: Record<"end" | "mute" | "playAfterPress", () => void> & {
     words(words: string): void;
     send(e: FormEvent): void;
@@ -176,10 +198,11 @@ export type SessionViewProps = {
 };
 
 export function SessionView(props: SessionViewProps) {
-  const { agents, session, shown, words, starting, error, on } = props;
+  const { agents, session, shown, words, starting, error, wakeNote, on } = props;
   const busy = starting || Boolean(shown?.busy);
   const locked = shown?.locked ?? true;
   const agentName = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
+  const bottom = useFollow(shown);
   return (
     <section>
       {shown && !shown.over && (
@@ -195,6 +218,7 @@ export function SessionView(props: SessionViewProps) {
           {n}
         </p>
       ))}
+      {wakeNote && <p className="meta">{wakeNote}</p>}
       {shown?.blocked && (
         <button type="button" onClick={on.playAfterPress}>
           Tap to hear the agent
@@ -237,6 +261,8 @@ export function SessionView(props: SessionViewProps) {
           </button>
         </form>
       )}
+      {/* The session's bottom, kept in view while the user reads along. */}
+      <div ref={bottom} />
     </section>
   );
 }

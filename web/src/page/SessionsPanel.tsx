@@ -123,7 +123,8 @@ export type PastSessionsProps = {
   refresh(): void;
 };
 
-// The placeholder user's past sessions, newest first.
+// The placeholder user's past sessions, newest first, each a block of its own: what it was, and its
+// summary beneath with the summary's own paragraphs and line breaks.
 export function PastSessions(props: PastSessionsProps) {
   const { sessions, agentName, loading, error, refresh } = props;
   return (
@@ -137,15 +138,17 @@ export function PastSessions(props: PastSessionsProps) {
       {error && <div className="error">{error}</div>}
       {!error && !loading && !sessions.length && <p className="meta">No past sessions yet.</p>}
       {sessions.map((s) => (
-        <div className="turn" key={s.id}>
-          <span className="who">{agentName(s.agent_id)}</span>
-          <span className="meta">
-            started {when(s.started_at)}
-            {s.ended_at ? `, ended ${when(s.ended_at)}` : ", still live"}
-            {s.summary_status && ` · summary ${s.summary_status}`}
-          </span>
-          {s.summary && <div>{s.summary}</div>}
-        </div>
+        <article className="past" key={s.id}>
+          <div>
+            <span className="who">{agentName(s.agent_id)}</span>
+            <span className="meta">
+              started {when(s.started_at)}
+              {s.ended_at ? `, ended ${when(s.ended_at)}` : ", still live"}
+              {s.summary_status && ` · summary ${s.summary_status}`}
+            </span>
+          </div>
+          {s.summary && <div className="summary">{s.summary.trim()}</div>}
+        </article>
       ))}
     </section>
   );
@@ -153,7 +156,8 @@ export function PastSessions(props: PastSessionsProps) {
 
 // The sessions panel: it loads the voices, the documents the chosen agent asks for and the past
 // sessions from the page's dev server, and hands a start with the settings to the page's own start.
-// children, the session started, show between the start form and the past sessions.
+// children, the session started, show under the start form, in a column beside the past sessions
+// on a wide screen and above them on a narrow one.
 export function SessionsPanel(props: {
   agents: Agent[];
   agentId: string;
@@ -214,24 +218,28 @@ export function SessionsPanel(props: {
   }, [agentId, asks]);
 
   return (
-    <>
-      <StartForm
-        {...{ agents, agentId, started, voices, voice, speed, documents, busy }}
-        errors={[voicesError, documentsError, error]}
-        on={{
-          agent: onAgent,
-          voice: setVoice,
-          speed: setSpeed,
-          document: (name, content) =>
-            setDocuments((docs) => docs.map((d) => (d.name === name ? { ...d, content } : d))),
-          start: () => start(startOptions(voice, speed, documents)),
-        }}
-      />
-      {children}
-      <PastSessions
-        {...{ sessions, loading, error: listError, refresh }}
-        agentName={(id) => agents.find((a) => a.id === id)?.name ?? id}
-      />
-    </>
+    <div className="columns">
+      <div className="column">
+        <StartForm
+          {...{ agents, agentId, started, voices, voice, speed, documents, busy }}
+          errors={[voicesError, documentsError, error]}
+          on={{
+            agent: onAgent,
+            voice: setVoice,
+            speed: setSpeed,
+            document: (name, content) =>
+              setDocuments((docs) => docs.map((d) => (d.name === name ? { ...d, content } : d))),
+            start: () => start(startOptions(voice, speed, documents)),
+          }}
+        />
+        {children}
+      </div>
+      <div className="column">
+        <PastSessions
+          {...{ sessions, loading, error: listError, refresh }}
+          agentName={(id) => agents.find((a) => a.id === id)?.name ?? id}
+        />
+      </div>
+    </div>
   );
 }

@@ -18,7 +18,11 @@ const none = () => {};
 const settled = { blocked: false, over: "", locked: false, busy: false };
 
 // The page drawing a session that shows these lines, and the rest as given.
-const page = (lines: Shown["lines"], rest: Partial<Shown> = {}) =>
+const page = (
+  lines: Shown["lines"],
+  rest: Partial<Shown> = {},
+  props: Partial<Parameters<typeof app.SessionView>[0]> = {},
+) =>
   renderToStaticMarkup(
     createElement(app.SessionView, {
       agents: [agent("a1", "Mock interviewer"), agent("a2", "Coach")],
@@ -34,6 +38,7 @@ const page = (lines: Shown["lines"], rest: Partial<Shown> = {}) =>
         words: none,
         send: none,
       },
+      ...props,
     }),
   );
 
@@ -60,6 +65,12 @@ test("the page draws the transcript, beneath each reply what answered and how lo
   assert.match(page([], { blocked: true }), />Tap to hear the agent<\/button>/);
 });
 
+test("while the browser won't keep the display on, the session says so quietly, beneath its own notes", () => {
+  const html = page([], { notes: ["Microphone blocked"] }, { wakeNote: "Display may turn off" });
+  assert.match(html, /Microphone blocked<\/p><p class="meta">Display may turn off<\/p>/);
+  assert.doesNotMatch(page([]), /Display may turn off/);
+});
+
 test("the tab is the one the URL's hash names, Test unless it names Agents, and the tab bar marks it", () => {
   assert.deepEqual(["", "#test", "#agents", "#elsewhere"].map(app.tabFrom), [
     "test",
@@ -83,12 +94,15 @@ test("both tabs are drawn, the one the hash doesn't name hidden, so a session an
       Reflect.deleteProperty(globalThis, "window");
     }
   };
-  // The Test tab opens with its start form, the Agents tab with its section.
+  // The Test tab opens with its columns, the start form first, the Agents tab with its section.
   const panels = (html: string) =>
-    [...html.matchAll(/<div( hidden="")?><(form|section)>/g)].map((m) => [
-      m[2] === "form" ? "test" : "agents",
-      m[1] ? "hidden" : "shown",
-    ]);
+    [
+      ...html.matchAll(
+        /<div( hidden="")?>(<div class="columns"><div class="column"><form>)|<div( hidden="")? class="agents"><section>/g,
+      ),
+    ].map((m) =>
+      m[2] ? ["test", m[1] ? "hidden" : "shown"] : ["agents", m[3] ? "hidden" : "shown"],
+    );
   assert.deepEqual(panels(drawnAt("#agents")), [
     ["test", "hidden"],
     ["agents", "shown"],
